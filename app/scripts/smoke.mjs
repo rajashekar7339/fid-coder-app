@@ -42,11 +42,11 @@ const page = await app.firstWindow();
 page.on("console", (msg) => console.log(`[page:${msg.type()}] ${msg.text()}`));
 page.on("pageerror", (error) => console.log(`[pageerror] ${error.message}`));
 try {
-  await page.waitForSelector("text=To Do List", { timeout: 20000 });
+  await page.waitForSelector("text=JIRA Agent", { timeout: 20000 });
   const hasBridge = await page.evaluate(() => Boolean(window.fid && window.fid.agents));
   if (!hasBridge) throw new Error("window.fid is missing");
 
-  await page.getByRole("button", { name: "To Do List" }).click();
+  await page.getByRole("button", { name: "JIRA Agent" }).click();
   await page.getByRole("button", { name: "Routines" }).click();
   await page.getByPlaceholder("Name").fill("Hourly ping");
   await page.getByPlaceholder("Prompt to run").fill("Say hello");
@@ -68,13 +68,13 @@ try {
   await page.waitForSelector("text=GitHub Copilot");
   console.log("SETTINGS\n" + (await page.locator("section").first().innerText()));
 
-  await page.getByRole("button", { name: "To Do List" }).click();
-  const input = page.getByPlaceholder("Message To Do List");
+  await page.getByRole("button", { name: "JIRA Agent" }).click();
+  const input = page.getByPlaceholder("Message JIRA Agent");
   if (await input.isEnabled()) {
     const chat = await page.evaluate(async () => {
       const agents = await window.fid.agents.list();
-      const todo = agents.find((agent) => agent.name === "To Do List");
-      if (!todo) return { ok: false, error: "To Do List missing" };
+      const todo = agents.find((agent) => agent.name === "JIRA Agent");
+      if (!todo) return { ok: false, error: "JIRA Agent missing" };
       try {
         await window.fid.chat.send(todo.id, "Reply with only the word pong. Do not use tools.");
         const messages = await window.fid.messages.list(todo.id);

@@ -11,6 +11,7 @@ const channels = {
   agentsDelete: "agents:delete",
   messagesList: "messages:list",
   chatSend: "chat:send",
+  chatRunning: "chat:running",
   chatAbort: "chat:abort",
   chatEvent: "chat:event",
   routinesList: "routines:list",
@@ -43,6 +44,7 @@ const api: FidApi = {
   },
   chat: {
     send: (agentId: string, text: string) => ipcRenderer.invoke(channels.chatSend, agentId, text),
+    running: (agentId: string) => ipcRenderer.invoke(channels.chatRunning, agentId),
     abort: (agentId: string) => ipcRenderer.invoke(channels.chatAbort, agentId),
     onEvent: (callback) => {
       const id = nextListener++;

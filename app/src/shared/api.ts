@@ -21,6 +21,7 @@ export interface FidApi {
   };
   chat: {
     send: (agentId: string, text: string) => Promise<void>;
+    running: (agentId: string) => Promise<boolean>;
     abort: (agentId: string) => Promise<void>;
     onEvent: (callback: (event: ChatEvent) => void) => number;
     offEvent: (id: number) => void;

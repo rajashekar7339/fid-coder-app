@@ -30,7 +30,7 @@ export function AgentForm({ agent, onCancel, onSaved }: Props) {
   }
 
   return (
-    <div className="mx-auto flex h-full max-w-2xl flex-col gap-4 overflow-auto p-6">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-2xl flex-1 flex-col gap-4 overflow-auto p-6">
       <div>
         <h1 className="text-xl font-semibold">{agent ? "Edit agent" : "New agent"}</h1>
         <p className="mt-1 text-sm text-zinc-600">Name and responsibility are stored on this machine.</p>

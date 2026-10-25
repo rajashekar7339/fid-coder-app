@@ -159,12 +159,12 @@ app.whenReady().then(async () => {
 
     const seeded = db.listAgents();
     const names = seeded.map((item) => item.name).sort();
-    if (!names.includes("To Do List") || !names.includes("JIRA Agent") || !names.includes("Git PR Review")) {
+    if (names.includes("To Do List") || !names.includes("JIRA Agent") || !names.includes("GIT PR Review")) {
       throw new Error(`seeded agents missing: ${names.join(", ")}`);
     }
     record("PASS", "seed", names.join(", "));
 
-    const todo = seeded.find((item) => item.name === "To Do List");
+    const todo = seeded.find((item) => item.name === "JIRA Agent");
     if (process.env.FID_CODER_SKIP_COPILOT === "1") {
       record("SKIP", "chat", "FID_CODER_SKIP_COPILOT=1");
       return;

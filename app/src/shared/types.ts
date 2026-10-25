@@ -33,6 +33,7 @@ export type Routine = {
 };
 
 export type ChatEvent =
+  | { agentId: string; type: "user"; text: string }
   | { agentId: string; type: "text"; text: string }
   | { agentId: string; type: "tool-start"; toolName: string; text?: string }
   | { agentId: string; type: "tool-end"; toolName: string; ok: boolean; text?: string }

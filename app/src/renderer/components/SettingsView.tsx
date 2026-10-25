@@ -63,7 +63,7 @@ export function SettingsView({ settings, checkingSignIn, signInNote, onStartSign
   }
 
   return (
-    <div className="mx-auto flex h-full max-w-2xl flex-col gap-6 overflow-auto p-6">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-2xl flex-1 flex-col gap-6 overflow-auto p-6">
       <div>
         <h1 className="text-xl font-semibold">Settings</h1>
         <p className="mt-1 text-sm text-zinc-600">Tokens stay in Windows encryption. The chat window never receives them.</p>

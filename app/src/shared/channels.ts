@@ -5,6 +5,7 @@ export const channels = {
   agentsDelete: "agents:delete",
   messagesList: "messages:list",
   chatSend: "chat:send",
+  chatRunning: "chat:running",
   chatAbort: "chat:abort",
   chatEvent: "chat:event",
   routinesList: "routines:list",

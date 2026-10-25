@@ -152,7 +152,7 @@ export function App() {
         onCreate={() => setView({ kind: "edit", agentId: null })}
         onSettings={() => setView({ kind: "settings" })}
       />
-      <main className="min-w-0 flex-1">
+      <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
         {loadError ? <p className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{loadError}</p> : null}
         {view.kind === "settings" ? (
           <SettingsScreen
@@ -183,6 +183,7 @@ export function App() {
           />
         ) : selected ? (
           <ChatView
+            key={selected.id}
             agent={selected}
             signedIn={settings?.signedIn ?? false}
             checkingSignIn={checkingSignIn}
@@ -205,7 +206,7 @@ export function App() {
 
 function FullMessage({ title, body }: { title: string; body: string }) {
   return (
-    <div className="grid h-full place-items-center p-8 text-center">
+    <div className="grid h-full min-h-0 flex-1 place-items-center p-8 text-center">
       <div>
         <h1 className="text-xl font-semibold">{title}</h1>
         <p className="mt-2 max-w-md text-sm text-zinc-600">{body}</p>

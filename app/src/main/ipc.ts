@@ -42,6 +42,7 @@ export function registerIpc(services: AppServices): void {
   ipcMain.handle(channels.chatSend, async (_event, agentId: string, text: string) => {
     await runner.runTurn({ agentId, text: String(text ?? ""), source: "chat" });
   });
+  ipcMain.handle(channels.chatRunning, (_event, agentId: string) => runner.isRunning(String(agentId ?? "")));
   ipcMain.handle(channels.chatAbort, async (_event, agentId: string) => {
     await runner.abort(agentId);
   });

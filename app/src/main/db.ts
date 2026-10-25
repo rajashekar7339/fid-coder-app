@@ -43,22 +43,29 @@ type RoutineRow = {
   updated_at: string;
 };
 
-const OLD_TODO_PROMPT = `You are a To Do List agent on this Windows machine. Track the user's tasks with task_list, task_add, and task_complete. Store a due time as an ISO date-time in dueAt when the user gives one. Keep replies short. When asked what is due, list open tasks and their times. Do not invent tasks.`;
+const SEEDED_TODO_PROMPTS = [
+  `You are a To Do List agent on this Windows machine. Track the user's tasks with task_list, task_add, and task_complete. Store a due time as an ISO date-time in dueAt when the user gives one. Keep replies short. When asked what is due, list open tasks and their times. Do not invent tasks.`,
+  `You are a To Do List agent on this Windows machine. Help the user plan what to do. Keep replies short. Do not invent tasks. You do not have a saved task list.`,
+];
 
-const TODO_PROMPT = `You are a To Do List agent on this Windows machine. Help the user plan what to do. Keep replies short. Do not invent tasks. You do not have a saved task list.`;
+const OLD_JIRA_NAME = "Jira Agent";
+const JIRA_NAME = "JIRA Agent";
 
-const OLD_REMINDER_PROMPT = "List my open tasks, especially anything due today, and give me a short reminder.";
-
-const REMINDER_PROMPT = "Give a short planning reminder for today. A saved task list is not available.";
+const OLD_JIRA_PROMPT = `You are a Jira agent. Use the local browser tools browser_navigate, browser_snapshot, browser_click, and browser_type. The browser profile belongs to this agent and keeps logins. Read browser_snapshot before every click or type. Choose Playwright selectors from the snapshot, such as role=link[name="Boards"] or text=Assigned to me. Report only what the page shows. Do not type passwords unless the user explicitly provides one in this conversation.`;
 
 const JIRA_PROMPT = `You are a JIRA agent. Use the local browser tools browser_navigate, browser_snapshot, browser_click, and browser_type. The browser profile belongs to this agent and keeps logins. Read browser_snapshot before every click or type. Choose Playwright selectors from the snapshot, such as role=link[name="Boards"] or text=Assigned to me. Report only what the page shows. Do not type passwords unless the user explicitly provides one in this conversation.`;
+
+const OLD_GIT_NAME = "Git PR Review";
+const GIT_NAME = "GIT PR Review";
 
 const GIT_PROMPT = `You are a Git pull request review agent. Work only inside the workspace folder. Use shell_run for git and gh, and file_read to inspect files. Summarize the change, name the risks, and quote file paths. Do not push, force-push, or change git config. If no workspace folder is set, ask the user to pick one in the agent editor.`;
 
 export class AppDatabase {
   private readonly db: DatabaseSync;
+  private readonly file: string;
 
   constructor(file: string) {
+    this.file = file;
     fs.mkdirSync(path.dirname(file), { recursive: true });
     this.db = new DatabaseSync(file);
     this.db.exec("PRAGMA journal_mode = WAL");
@@ -121,8 +128,23 @@ export class AppDatabase {
       );
     `);
     const now = new Date().toISOString();
-    this.db.prepare("UPDATE agents SET system_prompt = ?, updated_at = ? WHERE system_prompt = ?").run(TODO_PROMPT, now, OLD_TODO_PROMPT);
-    this.db.prepare("UPDATE routines SET prompt = ?, updated_at = ? WHERE prompt = ?").run(REMINDER_PROMPT, now, OLD_REMINDER_PROMPT);
+    this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(JIRA_NAME, now, OLD_JIRA_NAME);
+    this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(GIT_NAME, now, OLD_GIT_NAME);
+    this.db.prepare("UPDATE agents SET system_prompt = ?, updated_at = ? WHERE system_prompt = ?").run(JIRA_PROMPT, now, OLD_JIRA_PROMPT);
+    this.removeSeededTodo();
+  }
+
+  private removeSeededTodo(): void {
+    const placeholders = SEEDED_TODO_PROMPTS.map(() => "?").join(", ");
+    const rows = this.db
+      .prepare(`SELECT id FROM agents WHERE name = ? AND system_prompt IN (${placeholders})`)
+      .all("To Do List", ...SEEDED_TODO_PROMPTS) as { id: string }[];
+    const remove = this.db.prepare("DELETE FROM agents WHERE id = ?");
+    for (const row of rows) {
+      remove.run(row.id);
+      if (!/^[0-9a-f-]{36}$/i.test(row.id)) continue;
+      fs.rmSync(path.join(path.dirname(this.file), "browser-profiles", row.id), { recursive: true, force: true });
+    }
   }
 
   private seed(): void {
@@ -134,27 +156,10 @@ export class AppDatabase {
       `INSERT INTO agents (id, name, system_prompt, workspace_dir, created_at, updated_at)
        VALUES (?, ?, ?, NULL, ?, ?)`,
     );
-    const todoId = crypto.randomUUID();
     this.db.exec("BEGIN");
     try {
-      insertAgent.run(todoId, "To Do List", TODO_PROMPT, now, now);
-      insertAgent.run(crypto.randomUUID(), "JIRA Agent", JIRA_PROMPT, now, now);
-      insertAgent.run(crypto.randomUUID(), "Git PR Review", GIT_PROMPT, now, now);
-      this.db
-        .prepare(
-          `INSERT INTO routines (
-            id, agent_id, name, prompt, cron, enabled, notify, last_run_at, next_run_at, last_status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, 0, 1, NULL, NULL, NULL, ?, ?)`,
-        )
-        .run(
-          crypto.randomUUID(),
-          todoId,
-          "Morning task reminder",
-          REMINDER_PROMPT,
-          "0 9 * * 1-5",
-          now,
-          now,
-        );
+      insertAgent.run(crypto.randomUUID(), JIRA_NAME, JIRA_PROMPT, now, now);
+      insertAgent.run(crypto.randomUUID(), GIT_NAME, GIT_PROMPT, now, now);
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");

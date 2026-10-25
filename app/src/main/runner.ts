@@ -65,6 +65,7 @@ export class Runner {
     });
     const visible = input.source === "routine" ? `[Routine] ${text}` : text;
     const userMessage = this.db.addMessage(agent.id, "user", visible);
+    this.sink({ agentId: agent.id, type: "user", text: visible });
 
     try {
       const systemMessage = this.systemMessage(agent);
