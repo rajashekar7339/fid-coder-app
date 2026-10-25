@@ -3,14 +3,25 @@ import { spawn, spawnSync } from "child_process";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import type { SettingsView } from "../shared/types";
+import { AUTO_MODEL_ID, catalogModels, type CatalogModel, type CatalogPrice } from "../shared/model";
+import type { CopilotModel, SettingsView } from "../shared/types";
 import type { AppTool, ToolContext } from "../tools/types";
-import { clearSecret, hasSecret, secretKeys } from "./secrets";
+import { clearSecret, getSecret, hasSecret, secretKeys } from "./secrets";
 import { userDataDir } from "./paths";
 
 type SdkEvent = { type?: string; data?: Record<string, unknown> };
 
 type SessionLike = {
+  sessionId?: string;
+  rpc?: {
+    model?: {
+      list?: (params?: { skipCache?: boolean }) => Promise<{
+        list?: CatalogModel[];
+        modelPriceCategories?: CatalogPrice[];
+      }>;
+      switchTo?: (params: { modelId: string }) => Promise<unknown>;
+    };
+  };
   on(handler: (event: SdkEvent) => void): (() => void) | { unsubscribe?: () => void };
   sendAndWait(input: { prompt: string }, timeoutMs?: number): Promise<unknown>;
   abort?(): Promise<void> | void;
@@ -21,6 +32,8 @@ type ClientLike = {
   start(): Promise<void>;
   stop?(): Promise<unknown>;
   createSession(config: Record<string, unknown>): Promise<SessionLike>;
+  deleteSession?(sessionId: string): Promise<void>;
+  listModels?(): Promise<CatalogModel[]>;
 };
 
 type SdkModule = {
@@ -38,6 +51,7 @@ export type LiveSession = {
 
 let client: ClientLike | null = null;
 let clientKey = "";
+let modelsInFlight: Promise<CopilotModel[]> | null = null;
 let approveAll: ((request: unknown) => unknown) | null = null;
 let exeCache: { path: string | null; at: number } | null = null;
 let versionCache: { exe: string; version: string | null } | null = null;
@@ -129,7 +143,54 @@ function selectionIdOf(item: unknown): string | null {
   return typeof selectionId === "string" && selectionId.length > 0 ? selectionId : null;
 }
 
+export function listCopilotModels(): Promise<CopilotModel[]> {
+  if (modelsInFlight) return modelsInFlight;
+  const pending = loadCopilotModels().finally(() => {
+    if (modelsInFlight === pending) modelsInFlight = null;
+  });
+  modelsInFlight = pending;
+  return pending;
+}
+
+async function loadCopilotModels(): Promise<CopilotModel[]> {
+  const token = hasSecret(secretKeys.copilot) ? getSecret(secretKeys.copilot) : null;
+  const copilot = await ensureClient(token);
+  const clientModels = copilot.listModels ? await copilot.listModels().catch(() => []) : [];
+  const sessionCatalog = await readSessionCatalog(copilot);
+  return catalogModels({
+    clientModels: Array.isArray(clientModels) ? clientModels : [],
+    sessionModels: sessionCatalog.sessionModels,
+    priceCategories: sessionCatalog.priceCategories,
+  });
+}
+
+async function readSessionCatalog(copilot: ClientLike): Promise<{ sessionModels: CatalogModel[]; priceCategories: CatalogPrice[] }> {
+  let session: SessionLike | null = null;
+  try {
+    session = await copilot.createSession({
+      model: AUTO_MODEL_ID,
+      clientName: "fid-coder",
+      streaming: true,
+      availableTools: [],
+      infiniteSessions: { enabled: false },
+      onPermissionRequest: () => ({ kind: "reject", feedback: "Only Fid Coder tools are allowed" }),
+    });
+    const listed = await session.rpc?.model?.list?.({ skipCache: true });
+    return {
+      sessionModels: Array.isArray(listed?.list) ? listed.list : [],
+      priceCategories: Array.isArray(listed?.modelPriceCategories) ? listed.modelPriceCategories : [],
+    };
+  } catch {
+    return { sessionModels: [], priceCategories: [] };
+  } finally {
+    const sessionId = session?.sessionId;
+    await Promise.resolve(session?.disconnect?.()).catch(() => undefined);
+    if (sessionId) await copilot.deleteSession?.(sessionId).catch(() => undefined);
+  }
+}
+
 export async function openSession(input: {
+  model: string;
   systemMessage: string;
   tools: AppTool[];
   getContext: () => ToolContext;
@@ -141,6 +202,7 @@ export async function openSession(input: {
   const allowed = new Set(input.tools.map((tool) => tool.name));
   const session = await copilot.createSession({
     streaming: true,
+    model: input.model,
     clientName: "fid-coder",
     systemMessage: { mode: "replace", content: input.systemMessage },
     availableTools: [...allowed],
@@ -166,12 +228,27 @@ export async function openSession(input: {
     })),
     onPermissionRequest: (request: unknown) => decidePermission(request, allowed),
   });
+  if (input.model !== AUTO_MODEL_ID) {
+    try {
+      await session.rpc?.model?.switchTo?.({ modelId: input.model });
+    } catch (error) {
+      await Promise.resolve(session.disconnect?.()).catch(() => undefined);
+      throw new Error(modelSwitchError(error, input.model));
+    }
+  }
   return {
     session,
     unsubscribe() {
       /* Event subscription is attached by the caller. */
     },
   };
+}
+
+function modelSwitchError(error: unknown, model: string): string {
+  const fallback = `Copilot could not use ${model}. Choose Auto or another model.`;
+  const message = error instanceof Error ? error.message : fallback;
+  if (!message.trim() || /ghp_|github_pat_|gho_|ghu_|eyJ/.test(message)) return fallback;
+  return message;
 }
 
 function decidePermission(request: unknown, allowed: Set<string>): unknown {

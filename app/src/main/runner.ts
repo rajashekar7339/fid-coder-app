@@ -69,7 +69,7 @@ export class Runner {
 
     try {
       const systemMessage = this.systemMessage(agent);
-      const opened = await this.sessionFor(agent.id, systemMessage);
+      const opened = await this.sessionFor(agent.id, agent.model, systemMessage);
       const prior = this.db
         .listMessages(agent.id)
         .filter((message) => message.id !== userMessage.id)
@@ -93,14 +93,16 @@ export class Runner {
     }
   }
 
-  private async sessionFor(agentId: string, systemMessage: string): Promise<{ live: LiveSession; fresh: boolean }> {
+  private async sessionFor(agentId: string, model: string, systemMessage: string): Promise<{ live: LiveSession; fresh: boolean }> {
+    const signature = JSON.stringify([model, systemMessage]);
     const existing = this.sessions.get(agentId);
-    if (existing && existing.signature === systemMessage) {
+    if (existing && existing.signature === signature) {
       return { live: existing.live, fresh: false };
     }
     if (existing) await this.dropSession(agentId);
 
     const live = await openSession({
+      model,
       systemMessage,
       tools: allTools(),
       getContext: () => this.context(agentId),
@@ -123,7 +125,7 @@ export class Runner {
     });
 
     this.sessions.set(agentId, {
-      signature: systemMessage,
+      signature,
       live,
       unsubscribe: () => detach(subscription),
     });
@@ -164,6 +166,9 @@ export class Runner {
 function explainCopilotError(message: string): string {
   if (/authorization|credential|access denied by policy/i.test(message)) {
     return `${message} GitHub is refusing Copilot requests for this login. Open https://github.com/settings/copilot, confirm Copilot is enabled, then use Settings and Copilot login.`;
+  }
+  if (/unknown model|invalid model|model .* not (found|available)|model is not available/i.test(message)) {
+    return `${message} Choose Auto or another model for this agent.`;
   }
   return message;
 }

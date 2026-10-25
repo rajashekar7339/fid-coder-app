@@ -1,15 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Agent, SettingsView } from "../shared/types";
+import type { Agent, CopilotModel, SettingsView } from "../shared/types";
 import { AgentForm } from "./components/AgentForm";
 import { ChatView } from "./components/ChatView";
-import { SettingsView as SettingsScreen } from "./components/SettingsView";
+import { CreateAgentDialog } from "./components/CreateAgentDialog";
+import { Dialog } from "./components/Dialog";
+import { SettingsView as SettingsScreen, type SettingsSection } from "./components/SettingsView";
 import { Sidebar, type CopilotPresence } from "./components/Sidebar";
 import { errorText, fid } from "./fid";
-
-type View =
-  | { kind: "chat"; agentId: string }
-  | { kind: "edit"; agentId: string | null }
-  | { kind: "settings" };
 
 type SignInNote = { tone: "progress" | "ok" | "error"; text: string };
 
@@ -18,18 +15,43 @@ const SIGN_IN_TIMEOUT_MS = 3 * 60 * 1000;
 
 export function App() {
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [view, setView] = useState<View>({ kind: "edit", agentId: null });
+  const [models, setModels] = useState<CopilotModel[]>([]);
+  const [modelsNote, setModelsNote] = useState<string | null>(null);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const modelsRequest = useRef(0);
+  const [agentId, setAgentId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editAgentId, setEditAgentId] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("copilot");
   const [settings, setSettings] = useState<SettingsView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [checkingSignIn, setCheckingSignIn] = useState(false);
   const [signInNote, setSignInNote] = useState<SignInNote | null>(null);
   const signInWatch = useRef(0);
   const signInTimer = useRef<number | null>(null);
+  const offeredCreate = useRef(false);
 
   const refreshAgents = useCallback(async () => {
     const list = await fid().agents.list();
     setAgents(list);
     return list;
+  }, []);
+
+  const refreshModels = useCallback(async () => {
+    const request = ++modelsRequest.current;
+    setModelsLoading(true);
+    try {
+      const list = await fid().models.list();
+      if (modelsRequest.current !== request) return;
+      setModels(list);
+      setModelsNote(null);
+    } catch (caught) {
+      if (modelsRequest.current !== request) return;
+      setModelsNote(errorText(caught));
+    } finally {
+      if (modelsRequest.current === request) setModelsLoading(false);
+    }
   }, []);
 
   const refreshSettings = useCallback(async () => {
@@ -108,6 +130,40 @@ export function App() {
     }
   }, [stopSignInWatch, watchSignIn]);
 
+  const signOutCopilot = useCallback(async () => {
+    const confirmed = window.confirm("Sign out of GitHub Copilot on this computer? The next chat has to sign in again.");
+    if (!confirmed) return null;
+    const signOutFn = fid().settings.signOut;
+    if (typeof signOutFn !== "function") {
+      throw new Error("Restart Fid Coder, then sign out again.");
+    }
+    const next = await signOutFn();
+    stopSignInWatch();
+    setCheckingSignIn(false);
+    setSignInNote(null);
+    setSettings(next);
+    return next;
+  }, [stopSignInWatch]);
+
+  function openSettings(section: SettingsSection = "copilot") {
+    setCreateOpen(false);
+    setEditAgentId(null);
+    setSettingsSection(section);
+    setSettingsOpen(true);
+  }
+
+  function openCreate() {
+    setSettingsOpen(false);
+    setEditAgentId(null);
+    setCreateOpen(true);
+  }
+
+  function openEdit(id: string) {
+    setCreateOpen(false);
+    setSettingsOpen(false);
+    setEditAgentId(id);
+  }
+
   useEffect(() => {
     if (!window.fid) {
       setLoadError("Open Fid Coder from the desktop app. The page has no connection to the local agent engine.");
@@ -115,16 +171,26 @@ export function App() {
     }
     void refreshAgents()
       .then((list) => {
-        if (list[0]) setView({ kind: "chat", agentId: list[0].id });
+        if (list[0]) setAgentId(list[0].id);
+        else if (!offeredCreate.current) {
+          offeredCreate.current = true;
+          setCreateOpen(true);
+        }
       })
       .catch((error: unknown) => setLoadError(errorText(error)));
     void refreshSettings().catch((error: unknown) => setLoadError(errorText(error)));
-  }, [refreshAgents, refreshSettings]);
+    void refreshModels();
+  }, [refreshAgents, refreshModels, refreshSettings]);
 
   useEffect(() => {
-    if (view.kind !== "settings") return;
+    if (!settings?.signedIn) return;
+    void refreshModels();
+  }, [settings?.signedIn, refreshModels]);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
     void refreshSettings().catch((error: unknown) => setLoadError(errorText(error)));
-  }, [view.kind, refreshSettings]);
+  }, [settingsOpen, refreshSettings]);
 
   useEffect(() => {
     const onFocus = () => {
@@ -134,7 +200,26 @@ export function App() {
     return () => window.removeEventListener("focus", onFocus);
   }, [refreshSettings]);
 
-  const selected = agents.find((agent) => view.kind !== "settings" && agent.id === view.agentId) ?? null;
+  async function deleteAgent(agent: Agent) {
+    if (!window.confirm(`Delete ${agent.name}? This removes its chat, routines, and browser profile.`)) return;
+    try {
+      await fid().agents.delete(agent.id);
+      const list = await refreshAgents();
+      if (editAgentId === agent.id) setEditAgentId(null);
+      if (agentId !== agent.id) return;
+      if (list[0]) {
+        setAgentId(list[0].id);
+        return;
+      }
+      setAgentId(null);
+      setCreateOpen(true);
+    } catch (caught) {
+      setLoadError(errorText(caught));
+    }
+  }
+
+  const selected = agents.find((agent) => agent.id === agentId) ?? null;
+  const editing = agents.find((agent) => agent.id === editAgentId) ?? null;
   const copilotPresence: CopilotPresence = settings?.signedIn ? "ready" : checkingSignIn ? "checking" : settings === null ? "unknown" : "out";
 
   if (loadError && agents.length === 0 && !window.fid) {
@@ -145,61 +230,89 @@ export function App() {
     <div className="flex h-full">
       <Sidebar
         agents={agents}
-        selectedId={view.kind === "chat" || view.kind === "edit" ? view.agentId : null}
-        settingsOpen={view.kind === "settings"}
+        models={models}
+        selectedId={agentId}
         copilotPresence={copilotPresence}
-        onSelect={(agentId) => setView({ kind: "chat", agentId })}
-        onCreate={() => setView({ kind: "edit", agentId: null })}
-        onSettings={() => setView({ kind: "settings" })}
+        loginName={settings?.loginName ?? null}
+        signedIn={settings?.signedIn ?? false}
+        onSelect={(id) => setAgentId(id)}
+        onCreate={openCreate}
+        onEdit={(agent) => openEdit(agent.id)}
+        onDelete={(agent) => void deleteAgent(agent)}
+        onSettings={() => openSettings("copilot")}
+        onSignIn={() => {
+          openSettings("copilot");
+          void startSignIn();
+        }}
+        onSignOut={() => {
+          void signOutCopilot().catch((caught: unknown) => {
+            setSignInNote({ tone: "error", text: errorText(caught) });
+            openSettings("copilot");
+          });
+        }}
       />
       <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-        {loadError ? <p className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{loadError}</p> : null}
-        {view.kind === "settings" ? (
-          <SettingsScreen
-            settings={settings}
-            checkingSignIn={checkingSignIn}
-            signInNote={signInNote}
-            onStartSignIn={() => void startSignIn()}
-            onSaved={() => {
-              void refreshSettings();
-            }}
-            onSignedOut={(next) => {
-              stopSignInWatch();
-              setCheckingSignIn(false);
-              setSignInNote(null);
-              setSettings(next);
-            }}
-          />
-        ) : view.kind === "edit" ? (
-          <AgentForm
-            agent={selected}
-            onCancel={() => {
-              if (selected) setView({ kind: "chat", agentId: selected.id });
-              else if (agents[0]) setView({ kind: "chat", agentId: agents[0].id });
-            }}
-            onSaved={(agent) => {
-              void refreshAgents().then(() => setView({ kind: "chat", agentId: agent.id }));
-            }}
-          />
-        ) : selected ? (
+        {loadError ? <p className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-[13px] text-destructive">{loadError}</p> : null}
+        {selected ? (
           <ChatView
             key={selected.id}
             agent={selected}
+            models={models}
+            modelsNote={modelsNote}
             signedIn={settings?.signedIn ?? false}
             checkingSignIn={checkingSignIn}
-            onEdit={() => setView({ kind: "edit", agentId: selected.id })}
-            onOpenSettings={() => setView({ kind: "settings" })}
-            onDeleted={() => {
-              void refreshAgents().then((list) => {
-                if (list[0]) setView({ kind: "chat", agentId: list[0].id });
-                else setView({ kind: "edit", agentId: null });
-              });
+            onOpenSettings={() => openSettings("copilot")}
+            onRetryModels={() => void refreshModels()}
+            onUpdated={(agent) => {
+              setAgents((current) => current.map((item) => (item.id === agent.id ? agent : item)));
             }}
           />
         ) : (
           <FullMessage title="No agents yet" body="Create an agent to start a conversation." />
         )}
       </main>
+      {createOpen ? (
+        <CreateAgentDialog
+          onCancel={() => setCreateOpen(false)}
+          onCreated={(agent) => {
+            void refreshAgents().then(() => setAgentId(agent.id));
+            setCreateOpen(false);
+          }}
+        />
+      ) : null}
+      {editing ? (
+        <Dialog title="Edit agent" width="max-w-2xl" onClose={() => setEditAgentId(null)}>
+          <AgentForm
+            agent={editing}
+            models={models}
+            modelsNote={modelsNote}
+            modelsLoading={modelsLoading}
+            onRetryModels={() => void refreshModels()}
+            onCancel={() => setEditAgentId(null)}
+            onSaved={(agent) => {
+              setAgents((current) => current.map((item) => (item.id === agent.id ? agent : item)));
+              void refreshAgents();
+              setAgentId(agent.id);
+              setEditAgentId(null);
+            }}
+          />
+        </Dialog>
+      ) : null}
+      {settingsOpen ? (
+        <SettingsScreen
+          settings={settings}
+          section={settingsSection}
+          checkingSignIn={checkingSignIn}
+          signInNote={signInNote}
+          onSectionChange={setSettingsSection}
+          onClose={() => setSettingsOpen(false)}
+          onStartSignIn={() => void startSignIn()}
+          onSignOut={signOutCopilot}
+          onSaved={() => {
+            void refreshSettings();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -208,8 +321,8 @@ function FullMessage({ title, body }: { title: string; body: string }) {
   return (
     <div className="grid h-full min-h-0 flex-1 place-items-center p-8 text-center">
       <div>
-        <h1 className="text-xl font-semibold">{title}</h1>
-        <p className="mt-2 max-w-md text-sm text-zinc-600">{body}</p>
+        <h1 className="text-[20px] font-medium">{title}</h1>
+        <p className="mt-2 max-w-md text-[13px] leading-[1.5] text-muted-foreground">{body}</p>
       </div>
     </div>
   );

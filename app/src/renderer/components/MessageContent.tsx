@@ -102,7 +102,7 @@ function renderInline(text: string, keyPrefix: string) {
     count += 1;
     if (token.startsWith("`")) {
       nodes.push(
-        <code key={key} className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[0.85em] text-zinc-800">
+        <code key={key} className="rounded bg-accent px-1 py-0.5 font-mono text-[0.85em] text-foreground">
           {token.slice(1, -1)}
         </code>,
       );
@@ -112,7 +112,7 @@ function renderInline(text: string, keyPrefix: string) {
       const link = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/.exec(token);
       if (link) {
         nodes.push(
-          <a key={key} href={link[2]} target="_blank" rel="noreferrer" className="text-zinc-950 underline underline-offset-2">
+          <a key={key} href={link[2]} target="_blank" rel="noreferrer" className="text-link underline underline-offset-2">
             {link[1]}
           </a>,
         );
@@ -130,10 +130,10 @@ function CodeBlock({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
 
   return (
-    <div className="relative my-3 overflow-hidden rounded-2xl bg-zinc-950 text-zinc-100">
+    <div className="relative my-3 overflow-hidden rounded-[14px] bg-background text-foreground">
       <button
         type="button"
-        className="absolute right-2 top-2 rounded-lg px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
+        className="absolute right-2 top-2 rounded-lg px-2 py-1 text-[12px] text-muted-foreground hover:bg-accent"
         onClick={() => {
           void navigator.clipboard.writeText(text).then(() => {
             setCopied(true);
@@ -143,7 +143,7 @@ function CodeBlock({ text }: { text: string }) {
       >
         {copied ? "Copied" : "Copy"}
       </button>
-      <pre className="overflow-x-auto px-4 py-3 pr-16 text-[13px] leading-6">
+      <pre className="overflow-x-auto px-4 py-3 pr-16 font-mono text-[13px] leading-6">
         <code>{text}</code>
       </pre>
     </div>
@@ -158,7 +158,7 @@ export function MessageContent({ text }: { text: string }) {
         const key = `${block.type}-${index}`;
         if (block.type === "code") return <CodeBlock key={key} text={block.text} />;
         if (block.type === "heading") {
-          const className = block.level === 1 ? "text-lg font-semibold" : "text-base font-semibold";
+          const className = block.level === 1 ? "text-[1.35em] font-medium" : block.level === 2 ? "text-[1.2em] font-medium" : "text-[1.05em] font-medium";
           return (
             <p key={key} className={className}>
               {renderInline(block.text, key)}
@@ -177,7 +177,7 @@ export function MessageContent({ text }: { text: string }) {
         }
         if (block.type === "quote") {
           return (
-            <blockquote key={key} className="border-l-2 border-zinc-300 pl-3 text-zinc-600">
+            <blockquote key={key} className="border-l-2 border-border pl-3 text-muted-foreground">
               {renderInline(block.text, key)}
             </blockquote>
           );

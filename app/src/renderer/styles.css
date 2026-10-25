@@ -1,10 +1,58 @@
 @import "tailwindcss";
+@import "@fontsource-variable/geist/wght.css";
+
+@theme {
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --color-background: #141414;
+  --color-dialog: #1e1e1e;
+  --color-foreground: #ffffff;
+  --color-card: #202020;
+  --color-muted: #202020;
+  --color-muted-foreground: rgb(235 235 245 / 0.6);
+  --color-faint-foreground: rgb(235 235 245 / 0.45);
+  --color-accent: rgb(120 120 128 / 0.32);
+  --color-border: rgb(252 252 252 / 0.08);
+  --color-input: rgb(84 84 88 / 0.6);
+  --color-ring: #3b82f6;
+  --color-sidebar: #1e1e1e;
+  --color-sidebar-foreground: #ffffff;
+  --color-sidebar-accent: #2b2b2e;
+  --color-chat-user: #5c5c5c;
+  --color-destructive: #ff9592;
+  --color-success: #3fa266;
+  --color-warning: #db941e;
+  --color-link: #459ffe;
+  --color-overlay: rgb(0 0 0 / 0.28);
+}
 
 html,
 body,
 #root {
   height: 100%;
+  margin: 0;
   overflow: hidden;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  color-scheme: dark;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button:not(:disabled),
+[role="button"]:not(:disabled) {
+  cursor: pointer;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2e313a transparent;
 }
 
 @keyframes fid-blink {
@@ -28,17 +76,4 @@ body,
 
 .fid-typing-dot:nth-child(3) {
   animation-delay: 0.3s;
-}
-
-body {
-  margin: 0;
-  font-family: "Segoe UI", sans-serif;
-  background: #f4f4f5;
-  color: #18181b;
-}
-
-button,
-input,
-textarea {
-  font: inherit;
 }

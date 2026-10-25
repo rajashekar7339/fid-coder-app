@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { DatabaseSync } from "node:sqlite";
+import { AUTO_MODEL_ID, normalizeModelId } from "../shared/model";
 import type {
   Agent,
   AgentInput,
@@ -16,6 +17,7 @@ type AgentRow = {
   name: string;
   system_prompt: string;
   workspace_dir: string | null;
+  model: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -85,6 +87,7 @@ export class AppDatabase {
         name TEXT NOT NULL,
         system_prompt TEXT NOT NULL,
         workspace_dir TEXT,
+        model TEXT NOT NULL DEFAULT 'auto',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -127,11 +130,18 @@ export class AppDatabase {
         value TEXT NOT NULL
       );
     `);
+    this.ensureAgentModelColumn();
     const now = new Date().toISOString();
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(JIRA_NAME, now, OLD_JIRA_NAME);
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(GIT_NAME, now, OLD_GIT_NAME);
     this.db.prepare("UPDATE agents SET system_prompt = ?, updated_at = ? WHERE system_prompt = ?").run(JIRA_PROMPT, now, OLD_JIRA_PROMPT);
     this.removeSeededTodo();
+  }
+
+  private ensureAgentModelColumn(): void {
+    const columns = this.db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+    if (columns.some((column) => column.name === "model")) return;
+    this.db.exec("ALTER TABLE agents ADD COLUMN model TEXT NOT NULL DEFAULT 'auto'");
   }
 
   private removeSeededTodo(): void {
@@ -153,13 +163,13 @@ export class AppDatabase {
 
     const now = new Date().toISOString();
     const insertAgent = this.db.prepare(
-      `INSERT INTO agents (id, name, system_prompt, workspace_dir, created_at, updated_at)
-       VALUES (?, ?, ?, NULL, ?, ?)`,
+      `INSERT INTO agents (id, name, system_prompt, workspace_dir, model, created_at, updated_at)
+       VALUES (?, ?, ?, NULL, ?, ?, ?)`,
     );
     this.db.exec("BEGIN");
     try {
-      insertAgent.run(crypto.randomUUID(), JIRA_NAME, JIRA_PROMPT, now, now);
-      insertAgent.run(crypto.randomUUID(), GIT_NAME, GIT_PROMPT, now, now);
+      insertAgent.run(crypto.randomUUID(), JIRA_NAME, JIRA_PROMPT, AUTO_MODEL_ID, now, now);
+      insertAgent.run(crypto.randomUUID(), GIT_NAME, GIT_PROMPT, AUTO_MODEL_ID, now, now);
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");
@@ -182,10 +192,10 @@ export class AppDatabase {
     const id = crypto.randomUUID();
     this.db
       .prepare(
-        `INSERT INTO agents (id, name, system_prompt, workspace_dir, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO agents (id, name, system_prompt, workspace_dir, model, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, input.name.trim(), input.systemPrompt, emptyToNull(input.workspaceDir), now, now);
+      .run(id, input.name.trim(), input.systemPrompt, emptyToNull(input.workspaceDir), normalizeModelId(input.model), now, now);
     return this.requireAgent(id);
   }
 
@@ -194,10 +204,10 @@ export class AppDatabase {
     const result = this.db
       .prepare(
         `UPDATE agents
-         SET name = ?, system_prompt = ?, workspace_dir = ?, updated_at = ?
+         SET name = ?, system_prompt = ?, workspace_dir = ?, model = ?, updated_at = ?
          WHERE id = ?`,
       )
-      .run(input.name.trim(), input.systemPrompt, emptyToNull(input.workspaceDir), now, id);
+      .run(input.name.trim(), input.systemPrompt, emptyToNull(input.workspaceDir), normalizeModelId(input.model), now, id);
     if (result.changes === 0) throw new Error("Agent not found");
     return this.requireAgent(id);
   }
@@ -327,6 +337,7 @@ function mapAgent(row: AgentRow): Agent {
     name: row.name,
     systemPrompt: row.system_prompt,
     workspaceDir: row.workspace_dir,
+    model: readModel(row.model),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -357,6 +368,13 @@ function mapRoutine(row: RoutineRow): Routine {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function readModel(value: string | null | undefined): string {
+  if (typeof value !== "string") return AUTO_MODEL_ID;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.toLowerCase() === AUTO_MODEL_ID) return AUTO_MODEL_ID;
+  return trimmed;
 }
 
 function emptyToNull(value: string | null | undefined): string | null {

@@ -27,6 +27,7 @@ const channels = {
   settingsSaveJiraToken: "settings:save-jira-token",
   settingsClearJiraToken: "settings:clear-jira-token",
   dialogPickFolder: "dialog:pick-folder",
+  modelsList: "models:list",
 } as const;
 
 const listeners = new Map<number, (event: IpcRendererEvent, payload: ChatEvent) => void>();
@@ -78,6 +79,9 @@ const api: FidApi = {
   },
   dialog: {
     pickFolder: () => ipcRenderer.invoke(channels.dialogPickFolder),
+  },
+  models: {
+    list: () => ipcRenderer.invoke(channels.modelsList),
   },
 };
 

@@ -13,6 +13,7 @@
     "start": "electron ."
   },
   "dependencies": {
+    "@fontsource-variable/geist": "^5.3.0",
     "@github/copilot-sdk": "^1.0.26",
     "cron-parser": "^4.9.0",
     "node-cron": "^3.0.3",

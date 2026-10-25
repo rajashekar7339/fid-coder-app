@@ -1,9 +1,10 @@
 import { BrowserWindow, dialog, ipcMain } from "electron";
 import { channels } from "../shared/channels";
+import { normalizeModelId } from "../shared/model";
 import type { AgentInput, RoutineInput, RoutinePatch } from "../shared/types";
 import type { BrowserManager } from "./browser-manager";
 import { assertCron, nextRunIso } from "./cron";
-import { getCopilotStatus, signOutCopilot, startCopilotLogin } from "./copilot";
+import { getCopilotStatus, listCopilotModels, signOutCopilot, startCopilotLogin } from "./copilot";
 import type { AppDatabase } from "./db";
 import type { Runner } from "./runner";
 import type { Scheduler } from "./scheduler";
@@ -103,6 +104,8 @@ export function registerIpc(services: AppServices): void {
     await runner.dropAllSessions();
   });
 
+  ipcMain.handle(channels.modelsList, () => listCopilotModels());
+
   ipcMain.handle(channels.dialogPickFolder, async () => {
     const parent = services.getWindow();
     const result = parent
@@ -118,7 +121,7 @@ function cleanAgent(input: AgentInput): AgentInput {
   const systemPrompt = input?.systemPrompt?.trim();
   if (!name) throw new Error("Name is required");
   if (!systemPrompt) throw new Error("System prompt is required");
-  return { name, systemPrompt, workspaceDir: input.workspaceDir?.trim() || null };
+  return { name, systemPrompt, workspaceDir: input.workspaceDir?.trim() || null, model: normalizeModelId(input?.model) };
 }
 
 function cleanRoutine(input: RoutineInput): RoutineInput {

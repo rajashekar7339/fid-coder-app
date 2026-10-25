@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { groupToolCalls, liveTurnSettled, projectThread, userTurnAccepted, type LiveTurn } from "../../shared/chat-thread";
-import type { Agent, ChatEvent, Message } from "../../shared/types";
+import type { Agent, ChatEvent, CopilotModel, Message } from "../../shared/types";
 import { errorText, fid } from "../fid";
 import { MessageContent } from "./MessageContent";
+import { ModelSelect } from "./ModelSelect";
 import { RoutineDrawer } from "./RoutineDrawer";
 
 type Props = {
   agent: Agent;
+  models: CopilotModel[];
+  modelsNote: string | null;
   signedIn: boolean;
   checkingSignIn: boolean;
-  onEdit: () => void;
   onOpenSettings: () => void;
-  onDeleted: () => void;
+  onRetryModels: () => void;
+  onUpdated: (agent: Agent) => void;
 };
 
 const liveByAgent = new Map<string, LiveTurn>();
@@ -21,13 +24,23 @@ function remember(agentId: string, live: LiveTurn | null) {
   else liveByAgent.delete(agentId);
 }
 
-export function ChatView({ agent, signedIn, checkingSignIn, onEdit, onOpenSettings, onDeleted }: Props) {
+export function ChatView({
+  agent,
+  models,
+  modelsNote,
+  signedIn,
+  checkingSignIn,
+  onOpenSettings,
+  onRetryModels,
+  onUpdated,
+}: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [live, setLiveState] = useState<LiveTurn | null>(() => liveByAgent.get(agent.id) ?? null);
   const [draft, setDraft] = useState("");
   const [running, setRunning] = useState(() => liveByAgent.has(agent.id));
   const [error, setError] = useState<string | null>(null);
   const [showRoutines, setShowRoutines] = useState(false);
+  const [savingModel, setSavingModel] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
@@ -197,39 +210,60 @@ export function ChatView({ agent, signedIn, checkingSignIn, onEdit, onOpenSettin
       });
   }
 
+  async function changeModel(model: string) {
+    if (model === agent.model || savingModel || running) return;
+    setSavingModel(true);
+    setError(null);
+    try {
+      const saved = await fid().agents.update(agent.id, {
+        name: agent.name,
+        systemPrompt: agent.systemPrompt,
+        workspaceDir: agent.workspaceDir,
+        model,
+      });
+      onUpdated(saved);
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      setSavingModel(false);
+    }
+  }
+
   const empty = projected.messages.length === 0 && !projected.thinking;
   const initial = agent.name.trim().charAt(0).toUpperCase() || "A";
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col bg-white">
-      <header className="flex items-center gap-2 border-b border-zinc-200 px-4 py-2.5">
+    <div className="relative flex min-h-0 flex-1 flex-col bg-background">
+      <header className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-sm font-semibold">{agent.name}</h1>
-          <p className="truncate text-xs text-zinc-500">{agent.workspaceDir || "No workspace folder"}</p>
+          <h1 className="truncate text-[15px] font-medium">{agent.name}</h1>
+          <p className="truncate text-[12.5px] text-faint-foreground">{agent.workspaceDir || "No workspace folder"}</p>
         </div>
-        <button type="button" className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-700 hover:bg-zinc-50" onClick={() => setShowRoutines(true)}>
+        <div className="flex shrink-0 items-center gap-2">
+          <label className="flex items-center gap-2 text-[12.5px] text-muted-foreground" htmlFor="chat-model">
+            Model
+          </label>
+          <ModelSelect
+            id="chat-model"
+            value={agent.model}
+            models={models}
+            disabled={running || savingModel}
+            className="max-w-52 rounded-lg border border-border bg-card px-2 py-1 text-[13px] outline-none focus:border-input"
+            onChange={(model) => void changeModel(model)}
+          />
+          {modelsNote ? (
+            <button type="button" className="text-[12.5px] text-destructive underline" title={modelsNote} onClick={onRetryModels}>
+              Retry
+            </button>
+          ) : null}
+        </div>
+        <button type="button" className="rounded-full border border-border px-3 py-1 text-[13px] text-foreground/75 hover:bg-accent" onClick={() => setShowRoutines(true)}>
           Routines
-        </button>
-        <button type="button" className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-700 hover:bg-zinc-50" onClick={onEdit}>
-          Edit
-        </button>
-        <button
-          type="button"
-          className="rounded-full border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
-          onClick={() => {
-            if (!window.confirm(`Delete ${agent.name}? This removes its chat, routines, and browser profile.`)) return;
-            void fid()
-              .agents.delete(agent.id)
-              .then(onDeleted)
-              .catch((caught: unknown) => setError(errorText(caught)));
-          }}
-        >
-          Delete
         </button>
       </header>
 
       {!signedIn ? (
-        <div className="flex items-center justify-between bg-amber-50 px-4 py-2 text-sm text-amber-900">
+        <div className="flex items-center justify-between bg-warning/10 px-4 py-2 text-[13px] text-warning">
           <span>{checkingSignIn ? "Checking Copilot sign-in…" : "Sign in to Copilot before sending a message."}</span>
           <button type="button" className="underline" onClick={onOpenSettings}>
             Open settings
@@ -240,12 +274,12 @@ export function ChatView({ agent, signedIn, checkingSignIn, onEdit, onOpenSettin
       <div ref={scroller} className="flex min-h-0 flex-1 flex-col overflow-y-auto" onScroll={handleScroll}>
         {empty ? (
           <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
-            <div className="grid h-12 w-12 place-items-center rounded-full bg-zinc-950 text-lg font-semibold text-white">{initial}</div>
-            <h2 className="mt-4 text-2xl font-semibold tracking-tight">{agent.name}</h2>
-            <p className="mt-2 max-w-sm text-sm text-zinc-500">Send a message to start.</p>
+            <div className="grid h-12 w-12 place-items-center rounded-full bg-card text-[15px] font-medium text-foreground">{initial}</div>
+            <h2 className="mt-4 text-[20px] font-medium tracking-tight">{agent.name}</h2>
+            <p className="mt-2 max-w-sm text-[13px] text-muted-foreground">Send a message to start.</p>
           </div>
         ) : (
-          <div role="log" aria-label={`Conversation with ${agent.name}`} className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6">
+          <div role="log" aria-label={`Conversation with ${agent.name}`} className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
             {groupToolCalls(projected.messages).map((item) =>
               item.kind === "tools" ? (
                 <ToolGroup key={item.id} calls={item.calls} />
@@ -264,7 +298,7 @@ export function ChatView({ agent, signedIn, checkingSignIn, onEdit, onOpenSettin
                 />
               ),
             )}
-            {projected.toolLine ? <p className="text-sm text-zinc-500">{projected.toolLine}</p> : projected.thinking ? <TypingIndicator /> : null}
+            {projected.toolLine ? <p className="text-[13px] text-muted-foreground">{projected.toolLine}</p> : projected.thinking ? <TypingIndicator /> : null}
           </div>
         )}
       </div>
@@ -272,7 +306,7 @@ export function ChatView({ agent, signedIn, checkingSignIn, onEdit, onOpenSettin
       {showJump ? (
         <button
           type="button"
-          className="absolute bottom-28 left-1/2 z-10 -translate-x-1/2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 shadow-md"
+          className="absolute bottom-28 left-1/2 z-10 -translate-x-1/2 rounded-full border border-border bg-card px-3 py-1.5 text-[12.5px] text-foreground shadow-md"
           onClick={() => {
             pinned.current = true;
             setShowJump(false);
@@ -284,7 +318,7 @@ export function ChatView({ agent, signedIn, checkingSignIn, onEdit, onOpenSettin
         </button>
       ) : null}
 
-      {error ? <p className="px-4 py-2 text-center text-sm text-red-700">{error}</p> : null}
+      {error ? <p className="px-4 py-2 text-center text-[13px] text-destructive">{error}</p> : null}
 
       <form
         className="px-4 pb-3"
@@ -293,11 +327,11 @@ export function ChatView({ agent, signedIn, checkingSignIn, onEdit, onOpenSettin
           send();
         }}
       >
-        <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-[28px] border border-zinc-200 bg-white py-2 pl-4 pr-2 shadow-[0_8px_30px_rgba(0,0,0,0.06)]">
+        <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-[26px] border border-border bg-background py-[9px] pl-4 pr-2.5 focus-within:border-input">
           <textarea
             ref={composer}
             rows={1}
-            className="max-h-48 min-h-8 flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-6 outline-none placeholder:text-zinc-400"
+            className="max-h-48 min-h-8 flex-1 resize-none bg-transparent py-1.5 text-[15.5px] leading-[1.45] outline-none placeholder:text-muted-foreground"
             value={draft}
             placeholder={signedIn ? `Message ${agent.name}` : checkingSignIn ? "Checking Copilot sign-in…" : "Sign in to Copilot to chat"}
             disabled={!signedIn}
@@ -313,7 +347,7 @@ export function ChatView({ agent, signedIn, checkingSignIn, onEdit, onOpenSettin
           {running ? (
             <button
               type="button"
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-zinc-950 text-white"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-foreground text-background"
               aria-label="Stop generating"
               onClick={() => {
                 void fid()
@@ -326,7 +360,7 @@ export function ChatView({ agent, signedIn, checkingSignIn, onEdit, onOpenSettin
           ) : (
             <button
               type="submit"
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-zinc-950 text-white disabled:bg-zinc-200 disabled:text-zinc-400"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-foreground text-background disabled:bg-accent disabled:text-muted-foreground"
               aria-label="Send message"
               disabled={!signedIn || !draft.trim()}
             >
@@ -334,7 +368,7 @@ export function ChatView({ agent, signedIn, checkingSignIn, onEdit, onOpenSettin
             </button>
           )}
         </div>
-        <p className="mx-auto mt-2 max-w-3xl text-center text-[11px] text-zinc-400">Enter to send. Shift+Enter for a new line.</p>
+        <p className="mx-auto mt-2 max-w-3xl text-center text-[11.5px] text-faint-foreground">Enter to send. Shift+Enter for a new line.</p>
       </form>
       {showRoutines ? <RoutineDrawer agentId={agent.id} onClose={() => setShowRoutines(false)} /> : null}
     </div>
@@ -344,9 +378,9 @@ export function ChatView({ agent, signedIn, checkingSignIn, onEdit, onOpenSettin
 function TypingIndicator() {
   return (
     <div className="flex items-center gap-1 py-1" aria-label="Thinking">
-      <span className="fid-typing-dot h-2 w-2 rounded-full bg-zinc-400" />
-      <span className="fid-typing-dot h-2 w-2 rounded-full bg-zinc-400" />
-      <span className="fid-typing-dot h-2 w-2 rounded-full bg-zinc-400" />
+      <span className="fid-typing-dot h-2 w-2 rounded-full bg-muted-foreground" />
+      <span className="fid-typing-dot h-2 w-2 rounded-full bg-muted-foreground" />
+      <span className="fid-typing-dot h-2 w-2 rounded-full bg-muted-foreground" />
     </div>
   );
 }
@@ -373,19 +407,21 @@ function MessageRow({
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[min(85%,40rem)] whitespace-pre-wrap break-words rounded-[24px] bg-zinc-100 px-4 py-2.5 text-[15px] leading-6 text-zinc-900">
+        <div className="max-w-[min(85%,40rem)] whitespace-pre-wrap break-words rounded-[20px] bg-chat-user px-[18px] py-3 text-[15.5px] leading-[1.45] text-white">
           {message.content}
         </div>
       </div>
     );
   }
   return (
-    <div className="group text-[15px] leading-7 text-zinc-900">
-      <MessageContent text={message.content} />
-      {streaming ? <span className="ml-0.5 inline-block h-4 w-[3px] translate-y-0.5 animate-pulse bg-zinc-800 align-middle" /> : null}
+    <div className="group max-w-full">
+      <div className="rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90">
+        <MessageContent text={message.content} />
+        {streaming ? <span className="ml-0.5 inline-block h-4 w-[3px] translate-y-0.5 animate-pulse bg-foreground align-middle" /> : null}
+      </div>
       <button
         type="button"
-        className="mt-1 rounded-lg px-2 py-1 text-xs text-zinc-500 opacity-0 hover:bg-zinc-100 group-hover:opacity-100 focus:opacity-100"
+        className="mt-1 rounded-lg px-2 py-1 text-[12px] text-muted-foreground opacity-0 hover:bg-accent group-hover:opacity-100 focus:opacity-100"
         onClick={() => onCopy(message.content)}
       >
         {copied ? "Copied" : "Copy"}
@@ -398,10 +434,10 @@ function ToolGroup({ calls }: { calls: Message[] }) {
   const [open, setOpen] = useState(false);
   const label = calls.length === 1 ? "1 tool call" : `${calls.length} tool calls`;
   return (
-    <div className="text-sm text-zinc-500">
+    <div className="text-[13px] text-muted-foreground">
       <button
         type="button"
-        className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+        className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[12.5px] text-foreground/75 hover:bg-accent"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
@@ -415,9 +451,9 @@ function ToolGroup({ calls }: { calls: Message[] }) {
             const name = splitAt === -1 ? call.content : call.content.slice(0, splitAt);
             const body = splitAt === -1 ? "" : call.content.slice(splitAt + 2);
             return (
-              <div key={call.id} className="overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50">
-                <p className="border-b border-zinc-200 px-3 py-1.5 font-mono text-xs text-zinc-700">{name}</p>
-                {body ? <pre className="max-h-48 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-xs text-zinc-600">{body}</pre> : null}
+              <div key={call.id} className="overflow-hidden rounded-xl border border-border bg-card">
+                <p className="border-b border-border px-3 py-1.5 font-mono text-[12px] text-foreground/80">{name}</p>
+                {body ? <pre className="max-h-48 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-[12px] text-muted-foreground">{body}</pre> : null}
               </div>
             );
           })}

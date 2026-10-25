@@ -2,6 +2,7 @@ import type {
   Agent,
   AgentInput,
   ChatEvent,
+  CopilotModel,
   Message,
   Routine,
   RoutineInput,
@@ -44,5 +45,8 @@ export interface FidApi {
   };
   dialog: {
     pickFolder: () => Promise<string | null>;
+  };
+  models: {
+    list: () => Promise<CopilotModel[]>;
   };
 }

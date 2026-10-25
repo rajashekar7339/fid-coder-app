@@ -3,8 +3,14 @@ export type Agent = {
   name: string;
   systemPrompt: string;
   workspaceDir: string | null;
+  model: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type CopilotModel = {
+  id: string;
+  name: string;
 };
 
 export type MessageRole = "user" | "assistant" | "tool";
@@ -56,6 +62,7 @@ export type AgentInput = {
   name: string;
   systemPrompt: string;
   workspaceDir: string | null;
+  model: string;
 };
 
 export type RoutineInput = {

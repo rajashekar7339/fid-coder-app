@@ -23,21 +23,21 @@ export function RoutineDrawer({ agentId, onClose }: Props) {
   }, [agentId]);
 
   return (
-    <div className="absolute inset-y-0 right-0 z-10 flex w-96 flex-col border-l border-zinc-200 bg-white shadow-xl">
-      <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
-        <h2 className="font-medium">Routines</h2>
-        <button type="button" className="text-sm text-zinc-500" onClick={onClose}>
+    <div className="absolute inset-y-0 right-0 z-10 flex w-96 flex-col border-l border-border bg-dialog shadow-xl">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <h2 className="text-[15px] font-medium">Routines</h2>
+        <button type="button" className="text-[13px] text-muted-foreground hover:text-foreground" onClick={onClose}>
           Close
         </button>
       </div>
       <div className="flex-1 space-y-3 overflow-auto p-4">
         {routines.map((routine) => (
-          <article key={routine.id} className="rounded-md border border-zinc-200 p-3 text-sm">
+          <article key={routine.id} className="rounded-xl border border-border bg-card p-3 text-[14px]">
             <div className="flex items-center justify-between gap-2">
-              <strong>{routine.name}</strong>
+              <strong className="font-medium">{routine.name}</strong>
               <button
                 type="button"
-                className="text-xs text-zinc-500"
+                className="text-[12.5px] text-muted-foreground hover:text-foreground"
                 onClick={() => {
                   void fid()
                     .routines.update(routine.id, { enabled: !routine.enabled })
@@ -48,15 +48,15 @@ export function RoutineDrawer({ agentId, onClose }: Props) {
                 {routine.enabled ? "Disable" : "Enable"}
               </button>
             </div>
-            <p className="mt-1 text-zinc-600">{routine.prompt}</p>
-            <p className="mt-1 font-mono text-xs text-zinc-500">{routine.cron}</p>
-            <p className="mt-1 text-xs text-zinc-500">
+            <p className="mt-1 text-[13px] leading-[1.5] text-muted-foreground">{routine.prompt}</p>
+            <p className="mt-1 font-mono text-[12px] text-faint-foreground">{routine.cron}</p>
+            <p className="mt-1 text-[12.5px] text-faint-foreground">
               {routine.lastStatus ? `Last: ${routine.lastStatus}` : "Has not run"}
               {routine.nextRunAt ? ` · next ${new Date(routine.nextRunAt).toLocaleString()}` : ""}
             </p>
             <button
               type="button"
-              className="mt-2 text-xs text-red-700"
+              className="mt-2 text-[12.5px] text-destructive"
               onClick={() => {
                 void fid()
                   .routines.delete(routine.id)
@@ -69,7 +69,7 @@ export function RoutineDrawer({ agentId, onClose }: Props) {
           </article>
         ))}
         <form
-          className="space-y-2 border-t border-zinc-200 pt-3"
+          className="space-y-2 border-t border-border pt-3"
           onSubmit={(event) => {
             event.preventDefault();
             void fid()
@@ -82,15 +82,15 @@ export function RoutineDrawer({ agentId, onClose }: Props) {
               .catch((caught: unknown) => setError(errorText(caught)));
           }}
         >
-          <input className="w-full rounded-md border border-zinc-300 px-2 py-1 text-sm" placeholder="Name" value={name} onChange={(event) => setName(event.target.value)} />
-          <textarea className="min-h-20 w-full rounded-md border border-zinc-300 px-2 py-1 text-sm" placeholder="Prompt to run" value={prompt} onChange={(event) => setPrompt(event.target.value)} />
-          <input className="w-full rounded-md border border-zinc-300 px-2 py-1 font-mono text-sm" value={cron} onChange={(event) => setCron(event.target.value)} />
-          <p className="text-xs text-zinc-500">5-field cron. Example: * * * * * runs every minute. A new routine starts enabled. Use Disable to turn it off.</p>
-          <button type="submit" className="rounded-md bg-zinc-950 px-3 py-1.5 text-sm text-white">
+          <input className="w-full rounded-xl border border-border bg-card px-3 py-2 text-[14px] outline-none placeholder:text-muted-foreground focus:border-input" placeholder="Name" value={name} onChange={(event) => setName(event.target.value)} />
+          <textarea className="min-h-20 w-full rounded-xl border border-border bg-card px-3 py-2 text-[14px] outline-none placeholder:text-muted-foreground focus:border-input" placeholder="Prompt to run" value={prompt} onChange={(event) => setPrompt(event.target.value)} />
+          <input className="w-full rounded-xl border border-border bg-card px-3 py-2 font-mono text-[13px] outline-none focus:border-input" value={cron} onChange={(event) => setCron(event.target.value)} />
+          <p className="text-[12.5px] leading-[1.5] text-muted-foreground">5-field cron. Example: * * * * * runs every minute. A new routine starts enabled. Use Disable to turn it off.</p>
+          <button type="submit" className="rounded-lg bg-foreground px-3 py-1.5 text-[14px] text-background">
             Add routine
           </button>
         </form>
-        {error ? <p className="text-sm text-red-700">{error}</p> : null}
+        {error ? <p className="text-[13px] text-destructive">{error}</p> : null}
       </div>
     </div>
   );

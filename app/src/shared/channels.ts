@@ -21,4 +21,5 @@ export const channels = {
   settingsSaveJiraToken: "settings:save-jira-token",
   settingsClearJiraToken: "settings:clear-jira-token",
   dialogPickFolder: "dialog:pick-folder",
+  modelsList: "models:list",
 } as const;
