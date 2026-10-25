@@ -1,6 +1,7 @@
 import type {
   Agent,
   AgentInput,
+  BrowserPreview,
   ChatEvent,
   CopilotModel,
   Message,
@@ -27,14 +28,19 @@ export interface FidApi {
     onEvent: (callback: (event: ChatEvent) => void) => number;
     offEvent: (id: number) => void;
   };
+  browser: {
+    preview: (agentId: string) => Promise<BrowserPreview | null>;
+    focus: (agentId: string) => Promise<boolean>;
+  };
   routines: {
     list: (agentId: string) => Promise<Routine[]>;
     create: (input: RoutineInput) => Promise<Routine>;
     update: (id: string, patch: RoutinePatch) => Promise<Routine>;
     delete: (id: string) => Promise<void>;
+    run: (id: string) => Promise<Routine>;
   };
   settings: {
-    get: () => Promise<SettingsView>;
+    get: (options?: { refreshAuth?: boolean }) => Promise<SettingsView>;
     signOut: () => Promise<SettingsView>;
     startCopilotLogin: () => Promise<{ ok: boolean; message: string }>;
     saveGithubPat: (token: string) => Promise<void>;

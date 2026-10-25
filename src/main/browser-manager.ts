@@ -1,5 +1,6 @@
 import fs from "fs";
 import { chromium, type BrowserContext, type Page } from "playwright";
+import type { BrowserPreview } from "../shared/types";
 import { profileDir } from "./paths";
 
 const channels: Array<"msedge" | "chrome" | null> = ["msedge", "chrome", null];
@@ -26,6 +27,34 @@ export class BrowserManager {
     const title = await page.title();
     const body = text.length > 20000 ? `${text.slice(0, 20000)}\n…truncated` : text;
     return `url: ${url}\ntitle: ${title}\n${body}`;
+  }
+
+  async preview(agentId: string): Promise<BrowserPreview | null> {
+    const context = this.contexts.get(agentId);
+    const page = context?.pages().find((candidate) => !candidate.isClosed());
+    if (!page) return null;
+    try {
+      const image = await page.screenshot({ type: "jpeg", quality: 55, timeout: 5000, animations: "disabled" });
+      return {
+        image: `data:image/jpeg;base64,${image.toString("base64")}`,
+        url: page.url(),
+        title: await page.title(),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async focus(agentId: string): Promise<boolean> {
+    const context = this.contexts.get(agentId);
+    const page = context?.pages().find((candidate) => !candidate.isClosed());
+    if (!page) return false;
+    try {
+      await page.bringToFront();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async click(agentId: string, selector: string): Promise<string> {

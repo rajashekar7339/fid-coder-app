@@ -5,7 +5,7 @@ const path = require("node:path");
 const test = require("node:test");
 const { DatabaseSync } = require("node:sqlite");
 const { AppDatabase } = require("../dist/main/db.js");
-const { AUTO_MODEL_ID, catalogModels, isListedModelId, modelLabel, normalizeModelId } = require("../dist/shared/model.js");
+const { AUTO_MODEL_ID, catalogModels, isListedModelId, normalizeModelId } = require("../dist/shared/model.js");
 
 test("Auto is the default model id", () => {
   assert.equal(normalizeModelId(undefined), AUTO_MODEL_ID);
@@ -15,9 +15,6 @@ test("Auto is the default model id", () => {
   assert.equal(isListedModelId("auto"), false);
   assert.equal(isListedModelId("gpt-5.4"), true);
   assert.throws(() => normalizeModelId("not a model"), /available model/);
-  assert.equal(modelLabel("auto", []), "Auto");
-  assert.equal(modelLabel("gpt-5", [{ id: "gpt-5", name: "GPT-5" }]), "GPT-5");
-  assert.equal(modelLabel("missing", []), "missing");
 });
 
 test("model menu uses the session list, or price categories when that list is empty", () => {
@@ -110,6 +107,54 @@ test("new databases seed agents on Auto", () => {
     const agents = db.listAgents();
     assert.ok(agents.length >= 2);
     assert.ok(agents.every((agent) => agent.model === AUTO_MODEL_ID));
+    assert.equal(agents.find((agent) => agent.name === "JIRA Agent")?.description, "Jira teammate");
+    assert.ok(agents.every((agent) => agent.lastActivityAt === null));
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("agents expose their latest activity and next routine", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-summary-"));
+  const db = new AppDatabase(path.join(dir, "app.sqlite"));
+  try {
+    const jira = db.listAgents().find((agent) => agent.name === "JIRA Agent");
+    assert.ok(jira);
+    const added = db.addMessage(jira.id, "user", "Hello");
+    const active = db.getAgent(jira.id);
+    assert.equal(active?.lastActivityAt, added.createdAt);
+
+    const next = new Date(Date.now() + 60_000).toISOString();
+    db.createRoutine(
+      {
+        agentId: jira.id,
+        name: "Soon",
+        prompt: "Say hello",
+        cron: "0 9 * * *",
+        enabled: true,
+        notify: false,
+      },
+      next,
+    );
+    assert.equal(db.getAgent(jira.id)?.nextRoutineAt, next);
+
+    const created = db.createAgent({
+      name: "Desk",
+      description: "A short role",
+      systemPrompt: "Reply briefly.",
+      workspaceDir: null,
+      model: AUTO_MODEL_ID,
+    });
+    assert.equal(created.description, "A short role");
+    const updated = db.updateAgent(created.id, {
+      name: created.name,
+      description: "",
+      systemPrompt: created.systemPrompt,
+      workspaceDir: null,
+      model: created.model,
+    });
+    assert.equal(updated.description, "");
   } finally {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });

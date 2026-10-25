@@ -28,13 +28,20 @@ export class Scheduler {
     this.jobs.clear();
   }
 
-  private async fire(id: string): Promise<void> {
+  async runNow(id: string): Promise<void> {
     const routine = this.db.getRoutine(id);
-    if (!routine || !routine.enabled) return;
-    const next = nextRunIso(routine.cron);
+    if (!routine) throw new Error("Routine not found");
+    if (this.runner.isRunning(routine.agentId)) throw new Error("This agent is already working");
+    await this.fire(id, true);
+  }
+
+  private async fire(id: string, manual = false): Promise<void> {
+    const routine = this.db.getRoutine(id);
+    if (!routine || (!manual && !routine.enabled)) return;
+    const next = routine.enabled ? nextRunIso(routine.cron) : null;
     if (this.runner.isRunning(routine.agentId)) {
       this.db.markRoutineRun(id, "skipped: agent busy", next);
-      if (routine.notify) notify(routine.name, "Skipped because the agent is already working.");
+      if (!manual && routine.notify) notify(routine.name, "Skipped because the agent is already working.");
       return;
     }
     try {
@@ -44,11 +51,11 @@ export class Scheduler {
         source: "routine",
       });
       this.db.markRoutineRun(id, "ok", next);
-      if (routine.notify) notify(routine.name, text || "Finished");
+      if (!manual && routine.notify) notify(routine.name, text || "Finished");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.db.markRoutineRun(id, `error: ${message}`, next);
-      if (routine.notify) notify(routine.name, message);
+      if (!manual && routine.notify) notify(routine.name, message);
     }
   }
 }

@@ -46,31 +46,36 @@ try {
   const hasBridge = await page.evaluate(() => Boolean(window.fid && window.fid.agents));
   if (!hasBridge) throw new Error("window.fid is missing");
 
-  await page.getByRole("button", { name: "JIRA Agent" }).click();
-  await page.getByRole("button", { name: "Routines" }).click();
-  await page.getByPlaceholder("Name").fill("Hourly ping");
-  await page.getByPlaceholder("Prompt to run").fill("Say hello");
-  await page.getByRole("button", { name: "Add routine" }).click();
-  await page.waitForSelector("text=Hourly ping");
-  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("button", { name: /JIRA Agent/ }).first().click();
+  await page.getByRole("button", { name: "Manage routines" }).click();
+  await page.getByRole("button", { name: "New routine" }).first().click();
+  await page.getByLabel("Name").fill("Hourly ping");
+  await page.getByLabel("Instruction").fill("Say hello");
+  await page.getByRole("button", { name: "Create routine" }).click();
+  await page.getByRole("button", { name: /Hourly ping/ }).first().waitFor();
+  await page.getByRole("button", { name: "Close routines" }).click();
 
-  await page.getByRole("button", { name: "New agent" }).click();
-  await page.getByRole("textbox").nth(0).fill("Smoke Agent");
-  await page.locator("textarea").first().fill("Reply briefly.");
-  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "New agent" }).first().click();
+  await page.getByLabel("Name").fill("Smoke Agent");
+  await page.getByLabel("Instructions").fill("Reply briefly.");
+  await page.getByRole("button", { name: "Create agent" }).click();
   await page.waitForSelector("text=Smoke Agent");
 
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("button", { name: "Actions for Smoke Agent" }).click();
+  await page.getByRole("menuitem", { name: "Delete agent" }).click();
+  await page.locator(".confirm-modal").getByRole("button", { name: "Delete agent" }).click();
   await page.waitForSelector("text=Smoke Agent", { state: "detached" });
 
-  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Open settings" }).click();
   await page.waitForSelector("text=GitHub Copilot");
-  console.log("SETTINGS\n" + (await page.locator("section").first().innerText()));
+  console.log("SETTINGS\n" + (await page.locator(".settings-scroll").innerText()));
+  await page.getByRole("button", { name: "Close settings" }).click();
 
-  await page.getByRole("button", { name: "JIRA Agent" }).click();
+  await page.getByRole("button", { name: /JIRA Agent/ }).first().click();
   const input = page.getByPlaceholder("Message JIRA Agent");
-  if (await input.isEnabled()) {
+  if (process.env.FID_CODER_SKIP_CHAT === "1") {
+    console.log("CHAT skipped: FID_CODER_SKIP_CHAT=1");
+  } else if (await input.isEnabled()) {
     const chat = await page.evaluate(async () => {
       const agents = await window.fid.agents.list();
       const todo = agents.find((agent) => agent.name === "JIRA Agent");

@@ -1,7 +1,8 @@
+import { Check, Copy } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 type Block =
-  | { type: "code"; text: string }
+  | { type: "code"; text: string; language: string }
   | { type: "heading"; level: number; text: string }
   | { type: "list"; ordered: boolean; items: string[] }
   | { type: "quote"; text: string }
@@ -16,6 +17,7 @@ function parseBlocks(source: string): Block[] {
     const line = lines[index] ?? "";
     const fence = /^```([^`]*)$/.exec(line);
     if (fence) {
+      const language = fence[1]?.trim() ?? "";
       const body: string[] = [];
       index += 1;
       while (index < lines.length && !lines[index]?.startsWith("```")) {
@@ -23,7 +25,7 @@ function parseBlocks(source: string): Block[] {
         index += 1;
       }
       if (index < lines.length) index += 1;
-      blocks.push({ type: "code", text: body.join("\n") });
+      blocks.push({ type: "code", text: body.join("\n"), language });
       continue;
     }
 
@@ -102,7 +104,7 @@ function renderInline(text: string, keyPrefix: string) {
     count += 1;
     if (token.startsWith("`")) {
       nodes.push(
-        <code key={key} className="rounded bg-accent px-1 py-0.5 font-mono text-[0.85em] text-foreground">
+        <code key={key} className="md-code">
           {token.slice(1, -1)}
         </code>,
       );
@@ -112,7 +114,7 @@ function renderInline(text: string, keyPrefix: string) {
       const link = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/.exec(token);
       if (link) {
         nodes.push(
-          <a key={key} href={link[2]} target="_blank" rel="noreferrer" className="text-link underline underline-offset-2">
+          <a key={key} href={link[2]} target="_blank" rel="noreferrer" className="md-link">
             {link[1]}
           </a>,
         );
@@ -126,24 +128,28 @@ function renderInline(text: string, keyPrefix: string) {
   return nodes;
 }
 
-function CodeBlock({ text }: { text: string }) {
+function CodeBlock({ text, language }: { text: string; language: string }) {
   const [copied, setCopied] = useState(false);
 
   return (
-    <div className="relative my-3 overflow-hidden rounded-[14px] bg-background text-foreground">
-      <button
-        type="button"
-        className="absolute right-2 top-2 rounded-lg px-2 py-1 text-[12px] text-muted-foreground hover:bg-accent"
-        onClick={() => {
-          void navigator.clipboard.writeText(text).then(() => {
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 1200);
-          });
-        }}
-      >
-        {copied ? "Copied" : "Copy"}
-      </button>
-      <pre className="overflow-x-auto px-4 py-3 pr-16 font-mono text-[13px] leading-6">
+    <div className="code-block">
+      <div className="code-block-bar">
+        <span>{language || "Code"}</span>
+        <button
+          type="button"
+          className="code-copy"
+          onClick={() => {
+            void navigator.clipboard.writeText(text).then(() => {
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 1200);
+            });
+          }}
+        >
+          {copied ? <Check size={11} /> : <Copy size={11} />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <pre>
         <code>{text}</code>
       </pre>
     </div>
@@ -153,14 +159,15 @@ function CodeBlock({ text }: { text: string }) {
 export function MessageContent({ text }: { text: string }) {
   const blocks = parseBlocks(text);
   return (
-    <div className="space-y-3 break-words">
+    <div className="md">
       {blocks.map((block, index) => {
         const key = `${block.type}-${index}`;
-        if (block.type === "code") return <CodeBlock key={key} text={block.text} />;
+        if (block.type === "code") {
+          return <CodeBlock key={key} text={block.text} language={block.language} />;
+        }
         if (block.type === "heading") {
-          const className = block.level === 1 ? "text-[1.35em] font-medium" : block.level === 2 ? "text-[1.2em] font-medium" : "text-[1.05em] font-medium";
           return (
-            <p key={key} className={className}>
+            <p key={key} className={`md-heading md-h${block.level}`}>
               {renderInline(block.text, key)}
             </p>
           );
@@ -168,7 +175,7 @@ export function MessageContent({ text }: { text: string }) {
         if (block.type === "list") {
           const ListTag = block.ordered ? "ol" : "ul";
           return (
-            <ListTag key={key} className={`space-y-1 pl-5 ${block.ordered ? "list-decimal" : "list-disc"}`}>
+            <ListTag key={key} className={`md-list ${block.ordered ? "is-ordered" : ""}`}>
               {block.items.map((item, itemIndex) => (
                 <li key={`${key}-${itemIndex}`}>{renderInline(item, `${key}-${itemIndex}`)}</li>
               ))}
@@ -177,13 +184,13 @@ export function MessageContent({ text }: { text: string }) {
         }
         if (block.type === "quote") {
           return (
-            <blockquote key={key} className="border-l-2 border-border pl-3 text-muted-foreground">
+            <blockquote key={key} className="md-quote">
               {renderInline(block.text, key)}
             </blockquote>
           );
         }
         return (
-          <p key={key} className="whitespace-pre-wrap">
+          <p key={key} className="md-paragraph">
             {renderInline(block.text, key)}
           </p>
         );

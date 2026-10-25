@@ -1,9 +1,12 @@
 export type Agent = {
   id: string;
   name: string;
+  description: string;
   systemPrompt: string;
   workspaceDir: string | null;
   model: string;
+  lastActivityAt: string | null;
+  nextRoutineAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -60,9 +63,16 @@ export type SettingsView = {
 
 export type AgentInput = {
   name: string;
+  description?: string;
   systemPrompt: string;
   workspaceDir: string | null;
   model: string;
+};
+
+export type BrowserPreview = {
+  image: string;
+  url: string;
+  title: string;
 };
 
 export type RoutineInput = {

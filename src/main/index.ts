@@ -1,5 +1,5 @@
 import path from "path";
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, nativeTheme } from "electron";
 import { BrowserManager } from "./browser-manager";
 import { AppDatabase } from "./db";
 import { registerIpc } from "./ipc";
@@ -11,6 +11,7 @@ import { ensureWindowsToastShortcut } from "./notify";
 import { channels } from "../shared/channels";
 
 app.setName("fid-coder");
+nativeTheme.themeSource = "dark";
 if (process.env.FID_CODER_USER_DATA) {
   app.setPath("userData", process.env.FID_CODER_USER_DATA);
 }
@@ -81,7 +82,9 @@ function createWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 640,
     title: "Fid Coder",
-    backgroundColor: "#fafafa",
+    backgroundColor: "#0a0b09",
+    autoHideMenuBar: true,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
       contextIsolation: true,
@@ -89,6 +92,8 @@ function createWindow(): BrowserWindow {
       sandbox: true,
     },
   });
+
+  window.once("ready-to-show", () => window.show());
 
   if (app.isPackaged) {
     void window.loadFile(path.join(__dirname, "../renderer/index.html"));

@@ -2,7 +2,7 @@ import type { Agent, ChatEvent, Message } from "../shared/types";
 import { allTools } from "../tools/registry";
 import type { ToolContext } from "../tools/types";
 import type { BrowserManager } from "./browser-manager";
-import { detach, openSession, readAssistantText, type LiveSession } from "./copilot";
+import { detach, getCopilotStatus, openSession, readAssistantText, type LiveSession } from "./copilot";
 import type { AppDatabase } from "./db";
 import { getSecret, hasSecret, secretKeys } from "./secrets";
 
@@ -57,6 +57,10 @@ export class Runner {
     const agent = this.db.getAgent(input.agentId);
     if (!agent) throw new Error("Agent not found");
     if (this.running.has(agent.id)) throw new Error("This agent is already working");
+    const auth = await getCopilotStatus();
+    if (!auth.signedIn) {
+      throw new Error("Copilot is not signed in. Open Settings, sign in, then try again.");
+    }
 
     this.running.add(agent.id);
     let streamed = "";
@@ -164,6 +168,9 @@ export class Runner {
 }
 
 function explainCopilotError(message: string): string {
+  if (/No GitHub OAuth token|Copilot HMAC key|not authenticated|authentication required/i.test(message)) {
+    return "Copilot is not signed in. Open Settings, sign in, then try again.";
+  }
   if (/authorization|credential|access denied by policy/i.test(message)) {
     return `${message} GitHub is refusing Copilot requests for this login. Open https://github.com/settings/copilot, confirm Copilot is enabled, then use Settings and Copilot login.`;
   }

@@ -1,7 +1,6 @@
 import { createHash } from "crypto";
 import { spawn, spawnSync } from "child_process";
 import fs from "fs";
-import os from "os";
 import path from "path";
 import { AUTO_MODEL_ID, catalogModels, type CatalogModel, type CatalogPrice } from "../shared/model";
 import type { CopilotModel, SettingsView } from "../shared/types";
@@ -28,12 +27,21 @@ type SessionLike = {
   disconnect?(): Promise<void> | void;
 };
 
+type AuthStatus = {
+  isAuthenticated: boolean;
+  authType?: string;
+  host?: string;
+  login?: string;
+  statusMessage?: string;
+};
+
 type ClientLike = {
   start(): Promise<void>;
   stop?(): Promise<unknown>;
   createSession(config: Record<string, unknown>): Promise<SessionLike>;
   deleteSession?(sessionId: string): Promise<void>;
   listModels?(): Promise<CatalogModel[]>;
+  getAuthStatus?(): Promise<AuthStatus>;
 };
 
 type SdkModule = {
@@ -51,6 +59,7 @@ export type LiveSession = {
 
 let client: ClientLike | null = null;
 let clientKey = "";
+let clientStarting: { key: string; promise: Promise<ClientLike> } | null = null;
 let modelsInFlight: Promise<CopilotModel[]> | null = null;
 let approveAll: ((request: unknown) => unknown) | null = null;
 let exeCache: { path: string | null; at: number } | null = null;
@@ -61,22 +70,33 @@ export async function ensureClient(token: string | null): Promise<ClientLike> {
   const tokenKey = token ? createHash("sha256").update(token).digest("hex").slice(0, 16) : "cli";
   const key = `${tokenKey}|${exe ?? "bundled"}`;
   if (client && clientKey === key) return client;
-  await stopClient();
-  const sdk = (await import("@github/copilot-sdk")) as unknown as SdkModule;
-  approveAll = typeof sdk.approveAll === "function" ? sdk.approveAll : null;
-  const options: Record<string, unknown> = {
-    logLevel: "error",
-    workingDirectory: userDataDir(),
-  };
-  if (token) options.gitHubToken = token;
-  if (exe && sdk.RuntimeConnection) {
-    options.connection = sdk.RuntimeConnection.forStdio({ path: exe });
+  if (clientStarting?.key === key) return clientStarting.promise;
+
+  const pending = (async () => {
+    await stopClient();
+    const sdk = (await import("@github/copilot-sdk")) as unknown as SdkModule;
+    approveAll = typeof sdk.approveAll === "function" ? sdk.approveAll : null;
+    const options: Record<string, unknown> = {
+      logLevel: "error",
+      workingDirectory: userDataDir(),
+    };
+    if (token) options.gitHubToken = token;
+    if (exe && sdk.RuntimeConnection) {
+      options.connection = sdk.RuntimeConnection.forStdio({ path: exe });
+    }
+    const next = new sdk.CopilotClient(options);
+    await next.start();
+    client = next;
+    clientKey = key;
+    return next;
+  })();
+
+  clientStarting = { key, promise: pending };
+  try {
+    return await pending;
+  } finally {
+    if (clientStarting?.promise === pending) clientStarting = null;
   }
-  const next = new sdk.CopilotClient(options);
-  await next.start();
-  client = next;
-  clientKey = key;
-  return next;
 }
 
 export async function stopClient(): Promise<void> {
@@ -92,14 +112,20 @@ type AccountApi = {
 };
 
 export async function signOutCopilot(): Promise<void> {
+  let token: string | null = null;
   try {
-    const current = await ensureClient(null);
+    token = hasSecret(secretKeys.copilot) ? getSecret(secretKeys.copilot) : null;
+  } catch {
+    token = null;
+  }
+  try {
+    const current = await ensureClient(token);
     await logoutActiveAccount(current);
   } finally {
     clearSecret(secretKeys.copilot);
     await stopClient();
   }
-  const status = getCopilotStatus();
+  const status = await getCopilotStatus();
   if (status.signedIn) {
     throw new Error(`${status.authStatus}. Copilot is still signed in on this computer.`);
   }
@@ -110,7 +136,8 @@ async function logoutActiveAccount(current: ClientLike): Promise<void> {
   if (!account?.logout) {
     throw new Error("This Copilot CLI cannot sign out from the app.");
   }
-  const login = readLoginName();
+  const auth = await current.getAuthStatus?.();
+  const login = auth?.login ?? null;
   let users: unknown[] = [];
   try {
     const listed = await account.getAllUsers?.();
@@ -120,8 +147,11 @@ async function logoutActiveAccount(current: ClientLike): Promise<void> {
   }
   const match = users.find((item) => loginOf(item) === login) ?? users[0];
   const selectionId = selectionIdOf(match);
+  if (!selectionId) {
+    throw new Error("No signed-in Copilot account was found to sign out.");
+  }
   try {
-    await account.logout(selectionId ? { selectionId } : {});
+    await account.logout({ selectionId });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Copilot sign out failed";
     if (/ghp_|github_pat_|gho_|ghu_|eyJ/.test(message)) {
@@ -294,17 +324,38 @@ export function detach(subscription: (() => void) | { unsubscribe?: () => void }
   else subscription.unsubscribe?.();
 }
 
-export function getCopilotStatus(): SettingsView {
+export async function getCopilotStatus(): Promise<SettingsView> {
   const exe = resolveCopilotExe();
   const version = exe ? readVersion(exe) : null;
-  const loginName = readLoginName();
   const stored = hasSecret(secretKeys.copilot);
-  const signedIn = Boolean(loginName) || stored;
+  let token: string | null = null;
+  try {
+    token = stored ? getSecret(secretKeys.copilot) : null;
+  } catch {
+    token = null;
+  }
+
+  let auth: AuthStatus | null = null;
+  if (exe || token) {
+    try {
+      const current = await ensureClient(token);
+      auth = (await current.getAuthStatus?.()) ?? null;
+    } catch {
+      auth = null;
+    }
+  }
+
+  const signedIn = auth?.isAuthenticated === true;
+  const loginName = signedIn ? (auth?.login ?? null) : null;
   let authStatus = "Not signed in";
-  if (loginName && stored) authStatus = `Signed in as ${loginName}. A saved token overrides the CLI login.`;
-  else if (loginName) authStatus = `Signed in as ${loginName}`;
-  else if (stored) authStatus = "Using a token saved in this app";
-  else if (!exe) authStatus = "Copilot CLI was not found. Install GitHub Copilot CLI, then try again.";
+  if (signedIn) {
+    const who = loginName ? ` as ${loginName}` : "";
+    authStatus = token ? `Signed in${who} with a saved token` : `Signed in${who}`;
+  } else if (!exe) {
+    authStatus = "Copilot CLI was not found. Install GitHub Copilot CLI, then try again.";
+  } else if (auth?.statusMessage?.trim()) {
+    authStatus = auth.statusMessage.trim();
+  }
 
   return {
     cliFound: Boolean(exe),
@@ -319,11 +370,12 @@ export function getCopilotStatus(): SettingsView {
   };
 }
 
-export function startCopilotLogin(): { ok: boolean; message: string } {
+export async function startCopilotLogin(): Promise<{ ok: boolean; message: string }> {
   const exe = resolveCopilotExe();
   if (!exe) {
     return { ok: false, message: "Copilot CLI was not found on PATH. Install GitHub Copilot CLI, then try again." };
   }
+  await stopClient();
   if (process.env.FID_CODER_FAKE_LOGIN === "1") {
     return { ok: true, message: "Copilot login started. Finish the sign-in in the browser. This app checks until you are signed in." };
   }
@@ -370,42 +422,4 @@ function readVersion(exe: string): string | null {
   const version = line || null;
   versionCache = { exe, version };
   return version;
-}
-
-function stripJsonComments(text: string): string {
-  const start = text.indexOf("{");
-  return start >= 0 ? text.slice(start) : text;
-}
-
-function copilotConfigFile(): string {
-  const root = process.env.FID_CODER_COPILOT_HOME || os.homedir();
-  return path.join(root, ".copilot", "config.json");
-}
-
-function readLoginName(): string | null {
-  try {
-    const file = copilotConfigFile();
-    const json = JSON.parse(stripJsonComments(fs.readFileSync(file, "utf8"))) as {
-      lastLoggedInUser?: { login?: string };
-      loggedInUsers?: { login?: string }[];
-    };
-    const fromLast = loginText(json.lastLoggedInUser?.login);
-    if (fromLast) return fromLast;
-    if (!Array.isArray(json.loggedInUsers)) return null;
-    for (const user of json.loggedInUsers) {
-      const login = loginText(user?.login);
-      if (login) return login;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function loginText(login: unknown): string | null {
-  if (typeof login !== "string") return null;
-  const trimmed = login.trim();
-  if (trimmed.length === 0 || trimmed.length > 80) return null;
-  if (/ghp_|github_pat_|gho_|ghu_/.test(trimmed)) return null;
-  return trimmed;
 }

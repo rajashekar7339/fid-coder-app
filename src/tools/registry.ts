@@ -6,7 +6,3 @@ import type { AppTool } from "./types";
 export function allTools(): AppTool[] {
   return [...browserTools, ...shellTools, ...fileTools];
 }
-
-export function toolNames(): string[] {
-  return allTools().map((tool) => tool.name);
-}

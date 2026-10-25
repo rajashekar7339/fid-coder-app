@@ -15,12 +15,26 @@ import type {
 type AgentRow = {
   id: string;
   name: string;
+  description: string;
   system_prompt: string;
   workspace_dir: string | null;
   model: string | null;
+  last_activity_at: string | null;
+  next_routine_at: string | null;
   created_at: string;
   updated_at: string;
 };
+
+const AGENT_SELECT = `
+  SELECT
+    a.*,
+    (SELECT MAX(m.created_at) FROM messages m WHERE m.agent_id = a.id) AS last_activity_at,
+    (
+      SELECT MIN(r.next_run_at) FROM routines r
+      WHERE r.agent_id = a.id AND r.enabled = 1 AND r.next_run_at IS NOT NULL
+    ) AS next_routine_at
+  FROM agents a
+`;
 
 type MessageRow = {
   id: string;
@@ -52,6 +66,8 @@ const SEEDED_TODO_PROMPTS = [
 
 const OLD_JIRA_NAME = "Jira Agent";
 const JIRA_NAME = "JIRA Agent";
+const JIRA_DESCRIPTION = "Jira teammate";
+const GIT_DESCRIPTION = "Code reviewer";
 
 const OLD_JIRA_PROMPT = `You are a Jira agent. Use the local browser tools browser_navigate, browser_snapshot, browser_click, and browser_type. The browser profile belongs to this agent and keeps logins. Read browser_snapshot before every click or type. Choose Playwright selectors from the snapshot, such as role=link[name="Boards"] or text=Assigned to me. Report only what the page shows. Do not type passwords unless the user explicitly provides one in this conversation.`;
 
@@ -85,6 +101,7 @@ export class AppDatabase {
       CREATE TABLE IF NOT EXISTS agents (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
         system_prompt TEXT NOT NULL,
         workspace_dir TEXT,
         model TEXT NOT NULL DEFAULT 'auto',
@@ -131,10 +148,13 @@ export class AppDatabase {
       );
     `);
     this.ensureAgentModelColumn();
+    this.ensureAgentDescriptionColumn();
     const now = new Date().toISOString();
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(JIRA_NAME, now, OLD_JIRA_NAME);
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(GIT_NAME, now, OLD_GIT_NAME);
     this.db.prepare("UPDATE agents SET system_prompt = ?, updated_at = ? WHERE system_prompt = ?").run(JIRA_PROMPT, now, OLD_JIRA_PROMPT);
+    this.db.prepare("UPDATE agents SET description = ? WHERE name = ? AND description = ''").run(JIRA_DESCRIPTION, JIRA_NAME);
+    this.db.prepare("UPDATE agents SET description = ? WHERE name = ? AND description = ''").run(GIT_DESCRIPTION, GIT_NAME);
     this.removeSeededTodo();
   }
 
@@ -142,6 +162,12 @@ export class AppDatabase {
     const columns = this.db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
     if (columns.some((column) => column.name === "model")) return;
     this.db.exec("ALTER TABLE agents ADD COLUMN model TEXT NOT NULL DEFAULT 'auto'");
+  }
+
+  private ensureAgentDescriptionColumn(): void {
+    const columns = this.db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+    if (columns.some((column) => column.name === "description")) return;
+    this.db.exec("ALTER TABLE agents ADD COLUMN description TEXT NOT NULL DEFAULT ''");
   }
 
   private removeSeededTodo(): void {
@@ -163,13 +189,13 @@ export class AppDatabase {
 
     const now = new Date().toISOString();
     const insertAgent = this.db.prepare(
-      `INSERT INTO agents (id, name, system_prompt, workspace_dir, model, created_at, updated_at)
-       VALUES (?, ?, ?, NULL, ?, ?, ?)`,
+      `INSERT INTO agents (id, name, description, system_prompt, workspace_dir, model, created_at, updated_at)
+       VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
     );
     this.db.exec("BEGIN");
     try {
-      insertAgent.run(crypto.randomUUID(), JIRA_NAME, JIRA_PROMPT, AUTO_MODEL_ID, now, now);
-      insertAgent.run(crypto.randomUUID(), GIT_NAME, GIT_PROMPT, AUTO_MODEL_ID, now, now);
+      insertAgent.run(crypto.randomUUID(), JIRA_NAME, JIRA_DESCRIPTION, JIRA_PROMPT, AUTO_MODEL_ID, now, now);
+      insertAgent.run(crypto.randomUUID(), GIT_NAME, GIT_DESCRIPTION, GIT_PROMPT, AUTO_MODEL_ID, now, now);
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");
@@ -178,12 +204,14 @@ export class AppDatabase {
   }
 
   listAgents(): Agent[] {
-    const rows = this.db.prepare("SELECT * FROM agents ORDER BY name COLLATE NOCASE").all() as AgentRow[];
+    const rows = this.db
+      .prepare(`${AGENT_SELECT} ORDER BY COALESCE(last_activity_at, a.updated_at) DESC, a.name COLLATE NOCASE`)
+      .all() as AgentRow[];
     return rows.map(mapAgent);
   }
 
   getAgent(id: string): Agent | null {
-    const row = this.db.prepare("SELECT * FROM agents WHERE id = ?").get(id) as AgentRow | undefined;
+    const row = this.db.prepare(`${AGENT_SELECT} WHERE a.id = ?`).get(id) as AgentRow | undefined;
     return row ? mapAgent(row) : null;
   }
 
@@ -192,10 +220,19 @@ export class AppDatabase {
     const id = crypto.randomUUID();
     this.db
       .prepare(
-        `INSERT INTO agents (id, name, system_prompt, workspace_dir, model, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO agents (id, name, description, system_prompt, workspace_dir, model, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, input.name.trim(), input.systemPrompt, emptyToNull(input.workspaceDir), normalizeModelId(input.model), now, now);
+      .run(
+        id,
+        input.name.trim(),
+        cleanDescription(input.description),
+        input.systemPrompt,
+        emptyToNull(input.workspaceDir),
+        normalizeModelId(input.model),
+        now,
+        now,
+      );
     return this.requireAgent(id);
   }
 
@@ -204,10 +241,18 @@ export class AppDatabase {
     const result = this.db
       .prepare(
         `UPDATE agents
-         SET name = ?, system_prompt = ?, workspace_dir = ?, model = ?, updated_at = ?
+         SET name = ?, description = ?, system_prompt = ?, workspace_dir = ?, model = ?, updated_at = ?
          WHERE id = ?`,
       )
-      .run(input.name.trim(), input.systemPrompt, emptyToNull(input.workspaceDir), normalizeModelId(input.model), now, id);
+      .run(
+        input.name.trim(),
+        cleanDescription(input.description),
+        input.systemPrompt,
+        emptyToNull(input.workspaceDir),
+        normalizeModelId(input.model),
+        now,
+        id,
+      );
     if (result.changes === 0) throw new Error("Agent not found");
     return this.requireAgent(id);
   }
@@ -234,7 +279,7 @@ export class AppDatabase {
 
   listRoutines(agentId: string): Routine[] {
     const rows = this.db
-      .prepare("SELECT * FROM routines WHERE agent_id = ? ORDER BY name COLLATE NOCASE")
+      .prepare("SELECT * FROM routines WHERE agent_id = ? ORDER BY enabled DESC, name COLLATE NOCASE")
       .all(agentId) as RoutineRow[];
     return rows.map(mapRoutine);
   }
@@ -335,9 +380,12 @@ function mapAgent(row: AgentRow): Agent {
   return {
     id: row.id,
     name: row.name,
+    description: row.description,
     systemPrompt: row.system_prompt,
     workspaceDir: row.workspace_dir,
     model: readModel(row.model),
+    lastActivityAt: row.last_activity_at,
+    nextRoutineAt: row.next_routine_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -380,4 +428,8 @@ function readModel(value: string | null | undefined): string {
 function emptyToNull(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function cleanDescription(value: string | null | undefined): string {
+  return typeof value === "string" ? value.trim().slice(0, 160) : "";
 }

@@ -16,11 +16,6 @@ export function isListedModelId(value: string): boolean {
   return value.toLowerCase() !== AUTO_MODEL_ID && MODEL_ID.test(value);
 }
 
-export function modelLabel(modelId: string, models: CopilotModel[]): string {
-  if (!modelId || modelId === AUTO_MODEL_ID) return "Auto";
-  return models.find((model) => model.id === modelId)?.name ?? modelId;
-}
-
 const COST_LABEL: Record<string, string> = {
   low: "Lower cost",
   medium: "Medium cost",

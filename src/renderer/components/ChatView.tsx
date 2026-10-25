@@ -1,20 +1,59 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  ChevronDown,
+  Clock3,
+  Copy,
+  FileText,
+  Folder,
+  Globe2,
+  Keyboard,
+  Loader2,
+  MousePointerClick,
+  PanelRight,
+  ScanSearch,
+  Square,
+  Terminal,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 import { groupToolCalls, liveTurnSettled, projectThread, userTurnAccepted, type LiveTurn } from "../../shared/chat-thread";
 import type { Agent, ChatEvent, CopilotModel, Message } from "../../shared/types";
+import { agentSubtitle } from "../agent-display";
 import { errorText, fid } from "../fid";
+import { formatClock, formatDay, formatNextRun } from "../format";
+import { AgentAvatar } from "./AgentAvatar";
 import { MessageContent } from "./MessageContent";
 import { ModelSelect } from "./ModelSelect";
-import { RoutineDrawer } from "./RoutineDrawer";
 
 type Props = {
   agent: Agent;
   models: CopilotModel[];
   modelsNote: string | null;
+  settingsReady: boolean;
   signedIn: boolean;
   checkingSignIn: boolean;
-  onOpenSettings: () => void;
+  deskOpen: boolean;
+  onStartSignIn: () => void;
   onRetryModels: () => void;
+  onToggleDesk: () => void;
   onUpdated: (agent: Agent) => void;
+  onActivity: () => void;
+  onAuthRequired: () => void;
+};
+
+type ToolMeta = { label: string; Icon: LucideIcon };
+
+const TOOL_META: Record<string, ToolMeta> = {
+  browser_navigate: { label: "Opened a page", Icon: Globe2 },
+  browser_snapshot: { label: "Read the page", Icon: ScanSearch },
+  browser_click: { label: "Clicked an element", Icon: MousePointerClick },
+  browser_type: { label: "Typed into a field", Icon: Keyboard },
+  shell_run: { label: "Ran a shell command", Icon: Terminal },
+  file_read: { label: "Read a file", Icon: FileText },
+  file_write: { label: "Wrote a file", Icon: FileText },
 };
 
 const liveByAgent = new Map<string, LiveTurn>();
@@ -24,22 +63,39 @@ function remember(agentId: string, live: LiveTurn | null) {
   else liveByAgent.delete(agentId);
 }
 
+function toolMeta(name: string): ToolMeta {
+  return TOOL_META[name] ?? { label: "Used a tool", Icon: Wrench };
+}
+
+function splitTool(content: string): { name: string; body: string } {
+  const at = content.indexOf(": ");
+  return at === -1 ? { name: content, body: "" } : { name: content.slice(0, at), body: content.slice(at + 2) };
+}
+
+function signInRequired(message: string): boolean {
+  return /not signed in|no github oauth token|copilot hmac key|not authenticated/i.test(message);
+}
+
 export function ChatView({
   agent,
   models,
   modelsNote,
+  settingsReady,
   signedIn,
   checkingSignIn,
-  onOpenSettings,
+  deskOpen,
+  onStartSignIn,
   onRetryModels,
+  onToggleDesk,
   onUpdated,
+  onActivity,
+  onAuthRequired,
 }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [live, setLiveState] = useState<LiveTurn | null>(() => liveByAgent.get(agent.id) ?? null);
   const [draft, setDraft] = useState("");
   const [running, setRunning] = useState(() => liveByAgent.has(agent.id));
   const [error, setError] = useState<string | null>(null);
-  const [showRoutines, setShowRoutines] = useState(false);
   const [savingModel, setSavingModel] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
@@ -67,7 +123,6 @@ export function ChatView({
     const gen = ++generation.current;
     let cancelled = false;
     setError(null);
-    setShowRoutines(false);
     const loadId = ++messageLoad.current;
     void fid()
       .messages.list(agent.id)
@@ -100,7 +155,12 @@ export function ChatView({
         setRunning(true);
         updateLive((current) => {
           if (current?.userText === event.text) return current;
-          return { userText: event.text, assistant: current?.assistant ?? "", toolLine: current?.toolLine ?? null, startedAt: current?.startedAt ?? Date.now() };
+          return {
+            userText: event.text,
+            assistant: current?.assistant ?? "",
+            toolLine: current?.toolLine ?? null,
+            startedAt: current?.startedAt ?? Date.now(),
+          };
         });
       }
       if (event.type === "text") {
@@ -111,27 +171,29 @@ export function ChatView({
         });
       }
       if (event.type === "tool-start") {
-        const preview = event.text?.trim();
-        const detail = preview ? `: ${preview.slice(0, 80)}` : "";
         updateLive((current) => {
           const base = current ?? { userText: "", assistant: "", toolLine: null, startedAt: Date.now() };
-          return { ...base, toolLine: `Using ${event.toolName}${detail}…` };
+          return { ...base, toolLine: event.toolName };
         });
       }
       if (event.type === "tool-end") {
         updateLive((current) => (current ? { ...current, toolLine: null } : current));
       }
       if (event.type === "done" || event.type === "error") {
-        if (event.type === "error") setError(event.error);
-        const loadId = ++messageLoad.current;
+        if (event.type === "error") {
+          setError(event.error);
+          if (signInRequired(event.error)) onAuthRequired();
+        }
+        const nextLoad = ++messageLoad.current;
         void fid()
           .messages.list(agent.id)
           .then((list) => {
-            if (generation.current !== gen || loadId !== messageLoad.current) return;
+            if (generation.current !== gen || nextLoad !== messageLoad.current) return;
             remember(agent.id, null);
             setMessages(list);
             setLiveState(null);
             setRunning(false);
+            onActivity();
           })
           .catch((caught: unknown) => {
             if (generation.current === gen) setError(errorText(caught));
@@ -143,7 +205,7 @@ export function ChatView({
       cancelled = true;
       fid().chat.offEvent(id);
     };
-  }, [agent.id, updateLive]);
+  }, [agent.id, onActivity, updateLive]);
 
   useEffect(() => {
     if (signedIn) composer.current?.focus();
@@ -153,19 +215,37 @@ export function ChatView({
     const field = composer.current;
     if (!field) return;
     field.style.height = "0px";
-    field.style.height = `${Math.min(field.scrollHeight, 192)}px`;
+    field.style.height = `${Math.min(field.scrollHeight, 176)}px`;
   }, [draft]);
 
   useLayoutEffect(() => {
-    const el = scroller.current;
-    if (!el || !pinned.current) return;
-    el.scrollTop = el.scrollHeight;
+    const element = scroller.current;
+    if (!element || !pinned.current) return;
+    element.scrollTop = element.scrollHeight;
   }, [projected.messages, projected.thinking, projected.toolLine, draft]);
 
+  useEffect(() => {
+    const element = scroller.current;
+    if (!element) return;
+    const keepPinned = () => {
+      if (!pinned.current) return;
+      window.requestAnimationFrame(() => {
+        element.scrollTop = element.scrollHeight;
+      });
+    };
+    const observer = new ResizeObserver(keepPinned);
+    observer.observe(element);
+    window.addEventListener("resize", keepPinned);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", keepPinned);
+    };
+  }, []);
+
   function handleScroll() {
-    const el = scroller.current;
-    if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    const element = scroller.current;
+    if (!element) return;
+    const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
     pinned.current = atBottom;
     setShowJump((current) => (current === !atBottom ? current : !atBottom));
   }
@@ -206,7 +286,9 @@ export function ChatView({
           setRunning(false);
           setDraft((current) => (current.trim() ? current : text));
         }
-        setError(errorText(caught));
+        const message = errorText(caught);
+        setError(message);
+        if (signInRequired(message)) onAuthRequired();
       });
   }
 
@@ -217,6 +299,7 @@ export function ChatView({
     try {
       const saved = await fid().agents.update(agent.id, {
         name: agent.name,
+        description: agent.description,
         systemPrompt: agent.systemPrompt,
         workspaceDir: agent.workspaceDir,
         model,
@@ -230,75 +313,128 @@ export function ChatView({
   }
 
   const empty = projected.messages.length === 0 && !projected.thinking;
-  const initial = agent.name.trim().charAt(0).toUpperCase() || "A";
+  const items = groupToolCalls(projected.messages);
+  const status = !settingsReady
+    ? "Checking"
+    : running
+      ? "Working"
+      : signedIn
+        ? "Ready"
+        : "Sign in";
+  let lastDay = "";
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col bg-background">
-      <header className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-[15px] font-medium">{agent.name}</h1>
-          <p className="truncate text-[12.5px] text-faint-foreground">{agent.workspaceDir || "No workspace folder"}</p>
+    <main className="chat-pane">
+      <header className="chat-header">
+        <div className="chat-identity">
+          <AgentAvatar agent={agent} size="sm" />
+          <div className="chat-title">
+            <div className="chat-title-line">
+              <h1>{agent.name}</h1>
+              <span
+                className={`status-pill ${
+                  !settingsReady || running ? "is-working" : signedIn ? "is-ready" : "is-warning"
+                }`}
+              >
+                <span />
+                {status}
+              </span>
+            </div>
+            <div className="chat-sub">
+              {agentSubtitle(agent)}
+              <span className="slash">/</span>
+              Local browser
+            </div>
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <label className="flex items-center gap-2 text-[12.5px] text-muted-foreground" htmlFor="chat-model">
-            Model
-          </label>
-          <ModelSelect
-            id="chat-model"
-            value={agent.model}
-            models={models}
-            disabled={running || savingModel}
-            className="max-w-52 rounded-lg border border-border bg-card px-2 py-1 text-[13px] outline-none focus:border-input"
-            onChange={(model) => void changeModel(model)}
-          />
-          {modelsNote ? (
-            <button type="button" className="text-[12.5px] text-destructive underline" title={modelsNote} onClick={onRetryModels}>
-              Retry
-            </button>
-          ) : null}
+        <div className="chat-actions">
+          <button
+            type="button"
+            className={`icon-button ${deskOpen ? "is-active" : ""}`}
+            aria-label={deskOpen ? "Hide agent desk" : "Show agent desk"}
+            onClick={onToggleDesk}
+          >
+            <PanelRight size={15} />
+          </button>
         </div>
-        <button type="button" className="rounded-full border border-border px-3 py-1 text-[13px] text-foreground/75 hover:bg-accent" onClick={() => setShowRoutines(true)}>
-          Routines
-        </button>
       </header>
 
-      {!signedIn ? (
-        <div className="flex items-center justify-between bg-warning/10 px-4 py-2 text-[13px] text-warning">
-          <span>{checkingSignIn ? "Checking Copilot sign-in…" : "Sign in to Copilot before sending a message."}</span>
-          <button type="button" className="underline" onClick={onOpenSettings}>
-            Open settings
+      {settingsReady && !signedIn ? (
+        <div className="sign-in-banner">
+          <span>{checkingSignIn ? "Checking Copilot sign-in…" : "Sign in to Copilot before messaging this agent."}</span>
+          <button type="button" onClick={onStartSignIn} disabled={checkingSignIn}>
+            {checkingSignIn ? "Checking…" : "Sign in"}
           </button>
         </div>
       ) : null}
 
-      <div ref={scroller} className="flex min-h-0 flex-1 flex-col overflow-y-auto" onScroll={handleScroll}>
+      <div ref={scroller} className="chat-scroll" onScroll={handleScroll}>
         {empty ? (
-          <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
-            <div className="grid h-12 w-12 place-items-center rounded-full bg-card text-[15px] font-medium text-foreground">{initial}</div>
-            <h2 className="mt-4 text-[20px] font-medium tracking-tight">{agent.name}</h2>
-            <p className="mt-2 max-w-sm text-[13px] text-muted-foreground">Send a message to start.</p>
+          <div className="chat-empty">
+            <AgentAvatar agent={agent} size="lg" />
+            <h2>{agent.name}</h2>
+            <p>{agentSubtitle(agent)}</p>
+            <div className="empty-chips">
+              <span>
+                <Globe2 size={12} /> Local browser
+              </span>
+              {agent.workspaceDir ? (
+                <span>
+                  <Folder size={12} /> Workspace
+                </span>
+              ) : null}
+              {agent.nextRoutineAt ? (
+                <span>
+                  <Clock3 size={12} /> Next {formatNextRun(agent.nextRoutineAt)}
+                </span>
+              ) : null}
+            </div>
+            <p className="empty-hint">
+              {!settingsReady
+                ? "Checking Copilot…"
+                : signedIn
+                  ? "Send a message to start."
+                  : "Sign in to Copilot, then send a message."}
+            </p>
           </div>
         ) : (
-          <div role="log" aria-label={`Conversation with ${agent.name}`} className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
-            {groupToolCalls(projected.messages).map((item) =>
-              item.kind === "tools" ? (
-                <ToolGroup key={item.id} calls={item.calls} />
-              ) : (
-                <MessageRow
-                  key={item.message.id}
-                  message={item.message}
-                  streaming={projected.streaming && item.message.id === "live-assistant"}
-                  copied={copiedId === item.message.id}
-                  onCopy={(content) => {
-                    void navigator.clipboard.writeText(content).then(() => {
-                      setCopiedId(item.message.id);
-                      window.setTimeout(() => setCopiedId((current) => (current === item.message.id ? null : current)), 1200);
-                    });
-                  }}
-                />
-              ),
-            )}
-            {projected.toolLine ? <p className="text-[13px] text-muted-foreground">{projected.toolLine}</p> : projected.thinking ? <TypingIndicator /> : null}
+          <div className="thread" role="log" aria-label={`Conversation with ${agent.name}`}>
+            {items.map((item) => {
+              const stamp =
+                item.kind === "message" ? item.message.createdAt : item.calls[0]?.createdAt ?? "";
+              const day = formatDay(stamp);
+              const showDay = Boolean(day && day !== lastDay);
+              if (day) lastDay = day;
+              return (
+                <Fragment key={item.kind === "message" ? item.message.id : item.id}>
+                  {showDay ? <div className="day-separator">{day}</div> : null}
+                  {item.kind === "tools" ? (
+                    <ToolGroup calls={item.calls} />
+                  ) : (
+                    <MessageRow
+                      agent={agent}
+                      message={item.message}
+                      streaming={projected.streaming && item.message.id === "live-assistant"}
+                      copied={copiedId === item.message.id}
+                      onCopy={(content) => {
+                        void navigator.clipboard.writeText(content).then(() => {
+                          setCopiedId(item.message.id);
+                          window.setTimeout(
+                            () => setCopiedId((current) => (current === item.message.id ? null : current)),
+                            1200,
+                          );
+                        });
+                      }}
+                    />
+                  )}
+                </Fragment>
+              );
+            })}
+            {projected.toolLine ? (
+              <ToolStatus name={projected.toolLine} />
+            ) : projected.thinking ? (
+              <TypingRow agent={agent} />
+            ) : null}
           </div>
         )}
       </div>
@@ -306,36 +442,50 @@ export function ChatView({
       {showJump ? (
         <button
           type="button"
-          className="absolute bottom-28 left-1/2 z-10 -translate-x-1/2 rounded-full border border-border bg-card px-3 py-1.5 text-[12.5px] text-foreground shadow-md"
+          className="jump-latest"
           onClick={() => {
             pinned.current = true;
             setShowJump(false);
-            const el = scroller.current;
-            if (el) el.scrollTop = el.scrollHeight;
+            const element = scroller.current;
+            if (element) element.scrollTop = element.scrollHeight;
           }}
         >
+          <ArrowDown size={12} />
           Jump to latest
         </button>
       ) : null}
 
-      {error ? <p className="px-4 py-2 text-center text-[13px] text-destructive">{error}</p> : null}
+      {error ? (
+        <p className="chat-error" role="alert">
+          {error}
+        </p>
+      ) : null}
 
       <form
-        className="px-4 pb-3"
+        className="composer-dock"
         onSubmit={(event) => {
           event.preventDefault();
           send();
         }}
       >
-        <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-[26px] border border-border bg-background py-[9px] pl-4 pr-2.5 focus-within:border-input">
+        <div className="composer">
           <textarea
             ref={composer}
             rows={1}
-            className="max-h-48 min-h-8 flex-1 resize-none bg-transparent py-1.5 text-[15.5px] leading-[1.45] outline-none placeholder:text-muted-foreground"
+            className="composer-input"
             value={draft}
-            placeholder={signedIn ? `Message ${agent.name}` : checkingSignIn ? "Checking Copilot sign-in…" : "Sign in to Copilot to chat"}
-            disabled={!signedIn}
+            placeholder={
+              !settingsReady
+                ? "Checking Copilot…"
+                : signedIn
+                  ? `Message ${agent.name}`
+                  : checkingSignIn
+                    ? "Checking Copilot sign-in…"
+                    : "Sign in to Copilot to chat"
+            }
+            disabled={!settingsReady || !signedIn}
             aria-label={`Message ${agent.name}`}
+            title="Enter to send. Shift+Enter for a new line."
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -344,61 +494,91 @@ export function ChatView({
               }
             }}
           />
-          {running ? (
-            <button
-              type="button"
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-foreground text-background"
-              aria-label="Stop generating"
-              onClick={() => {
-                void fid()
-                  .chat.abort(agent.id)
-                  .catch((caught: unknown) => setError(errorText(caught)));
-              }}
-            >
-              <span className="block h-2.5 w-2.5 rounded-[2px] bg-current" />
-            </button>
-          ) : (
-            <button
-              type="submit"
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-foreground text-background disabled:bg-accent disabled:text-muted-foreground"
-              aria-label="Send message"
-              disabled={!signedIn || !draft.trim()}
-            >
-              <ArrowUp />
-            </button>
-          )}
+          <div className="composer-bottom">
+            <ModelSelect
+              value={agent.model}
+              models={models}
+              disabled={running || savingModel}
+              className="model-picker-compact"
+              onChange={(model) => void changeModel(model)}
+            />
+            {agent.nextRoutineAt ? (
+              <span className="composer-context">
+                <Clock3 size={10} aria-hidden="true" />
+                Next {formatNextRun(agent.nextRoutineAt)}
+              </span>
+            ) : null}
+            {modelsNote ? (
+              <button type="button" className="model-warning" title={modelsNote} onClick={onRetryModels}>
+                Model list unavailable · Retry
+              </button>
+            ) : null}
+            {running ? (
+              <button
+                type="button"
+                className="send-button is-stop"
+                aria-label="Stop generating"
+                onClick={() => {
+                  void fid()
+                    .chat.abort(agent.id)
+                    .catch((caught: unknown) => setError(errorText(caught)));
+                }}
+              >
+                <Square size={11} fill="currentColor" />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                className="send-button"
+                aria-label="Send message"
+                disabled={!settingsReady || !signedIn || !draft.trim()}
+              >
+                <ArrowUp size={15} />
+              </button>
+            )}
+          </div>
         </div>
-        <p className="mx-auto mt-2 max-w-3xl text-center text-[11.5px] text-faint-foreground">Enter to send. Shift+Enter for a new line.</p>
       </form>
-      {showRoutines ? <RoutineDrawer agentId={agent.id} onClose={() => setShowRoutines(false)} /> : null}
+    </main>
+  );
+}
+
+function TypingRow({ agent }: { agent: Agent }) {
+  return (
+    <div className="message">
+      <div className="message-head">
+        <AgentAvatar agent={agent} size="xs" />
+        <span className="message-author">{agent.name}</span>
+        <span className="typing-label">Thinking</span>
+      </div>
+      <div className="typing-dots" aria-label="Thinking">
+        <span className="typing-dot" />
+        <span className="typing-dot" />
+        <span className="typing-dot" />
+      </div>
     </div>
   );
 }
 
-function TypingIndicator() {
+function ToolStatus({ name }: { name: string }) {
+  const meta = toolMeta(name);
   return (
-    <div className="flex items-center gap-1 py-1" aria-label="Thinking">
-      <span className="fid-typing-dot h-2 w-2 rounded-full bg-muted-foreground" />
-      <span className="fid-typing-dot h-2 w-2 rounded-full bg-muted-foreground" />
-      <span className="fid-typing-dot h-2 w-2 rounded-full bg-muted-foreground" />
+    <div className="tool-status">
+      <Loader2 size={13} className="spin" aria-hidden="true" />
+      <span>{meta.label}</span>
+      <code>{name}</code>
     </div>
-  );
-}
-
-function ArrowUp() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M8 13V3.5M8 3.5 4.5 7M8 3.5 11.5 7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }
 
 function MessageRow({
+  agent,
   message,
   streaming,
   copied,
   onCopy,
 }: {
+  agent: Agent;
   message: Message;
   streaming: boolean;
   copied: boolean;
@@ -406,67 +586,64 @@ function MessageRow({
 }) {
   if (message.role === "user") {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[min(85%,40rem)] whitespace-pre-wrap break-words rounded-[20px] bg-chat-user px-[18px] py-3 text-[15.5px] leading-[1.45] text-white">
-          {message.content}
-        </div>
+      <div className="user-message">
+        <div className="user-bubble">{message.content}</div>
+        <span className="user-time">{formatClock(message.createdAt)}</span>
       </div>
     );
   }
   return (
-    <div className="group max-w-full">
-      <div className="rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90">
-        <MessageContent text={message.content} />
-        {streaming ? <span className="ml-0.5 inline-block h-4 w-[3px] translate-y-0.5 animate-pulse bg-foreground align-middle" /> : null}
+    <article className="message">
+      <div className="message-head">
+        <AgentAvatar agent={agent} size="xs" />
+        <span className="message-author">{agent.name}</span>
+        <span className="message-time">{formatClock(message.createdAt)}</span>
       </div>
-      <button
-        type="button"
-        className="mt-1 rounded-lg px-2 py-1 text-[12px] text-muted-foreground opacity-0 hover:bg-accent group-hover:opacity-100 focus:opacity-100"
-        onClick={() => onCopy(message.content)}
-      >
-        {copied ? "Copied" : "Copy"}
-      </button>
-    </div>
+      <div className="message-body">
+        <MessageContent text={message.content} />
+        {streaming ? <span className="stream-caret" /> : null}
+      </div>
+      {!streaming ? (
+        <button type="button" className="message-copy" onClick={() => onCopy(message.content)}>
+          {copied ? <Check size={11} /> : <Copy size={11} />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      ) : null}
+    </article>
   );
 }
 
 function ToolGroup({ calls }: { calls: Message[] }) {
-  const [open, setOpen] = useState(false);
-  const label = calls.length === 1 ? "1 tool call" : `${calls.length} tool calls`;
+  const names = calls.map((call) => toolMeta(splitTool(call.content).name).label);
   return (
-    <div className="text-[13px] text-muted-foreground">
-      <button
-        type="button"
-        className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[12.5px] text-foreground/75 hover:bg-accent"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <Chevron open={open} />
-        {open ? "Hide tool calls" : label}
-      </button>
-      {open ? (
-        <div className="mt-2 space-y-2">
-          {calls.map((call) => {
-            const splitAt = call.content.indexOf(": ");
-            const name = splitAt === -1 ? call.content : call.content.slice(0, splitAt);
-            const body = splitAt === -1 ? "" : call.content.slice(splitAt + 2);
-            return (
-              <div key={call.id} className="overflow-hidden rounded-xl border border-border bg-card">
-                <p className="border-b border-border px-3 py-1.5 font-mono text-[12px] text-foreground/80">{name}</p>
-                {body ? <pre className="max-h-48 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-[12px] text-muted-foreground">{body}</pre> : null}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function Chevron({ open }: { open: boolean }) {
-  return (
-    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" className={open ? "rotate-90" : ""}>
-      <path d="M4.5 2.5 8 6 4.5 9.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <details className="tool-card">
+      <summary>
+        <span className="tool-check">
+          <Wrench size={11} aria-hidden="true" />
+        </span>
+        <b>{calls.length === 1 ? "1 tool step" : `${calls.length} tool steps`}</b>
+        <span className="tool-summary">{names.slice(0, 2).join(" · ")}</span>
+        <ChevronDown size={12} className="tool-chevron" aria-hidden="true" />
+      </summary>
+      <div className="tool-steps">
+        {calls.map((call) => {
+          const split = splitTool(call.content);
+          const meta = toolMeta(split.name);
+          const Icon = meta.Icon;
+          return (
+            <details className="tool-step" key={call.id}>
+              <summary>
+                <Icon size={12} className="tool-step-icon" aria-hidden="true" />
+                <span className="tool-step-label">{meta.label}</span>
+                <code>{split.name}</code>
+                <span className="tool-step-time">{formatClock(call.createdAt)}</span>
+                <ChevronDown size={10} className="tool-step-chevron" aria-hidden="true" />
+              </summary>
+              {split.body ? <pre>{split.body}</pre> : null}
+            </details>
+          );
+        })}
+      </div>
+    </details>
   );
 }
