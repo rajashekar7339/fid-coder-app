@@ -41,5 +41,8 @@
     "better-sqlite3@13.0.3": true,
     "electron-winstaller@5.4.0": true,
     "koffi@3.2.1": true
+  },
+  "overrides": {
+    "node-abi": "4.39.0"
   }
 }
