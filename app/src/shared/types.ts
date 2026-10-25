@@ -1,0 +1,90 @@
+export type Agent = {
+  id: string;
+  name: string;
+  systemPrompt: string;
+  workspaceDir: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MessageRole = "user" | "assistant" | "tool";
+
+export type Message = {
+  id: string;
+  agentId: string;
+  role: MessageRole;
+  content: string;
+  createdAt: string;
+};
+
+export type Routine = {
+  id: string;
+  agentId: string;
+  name: string;
+  prompt: string;
+  cron: string;
+  enabled: boolean;
+  notify: boolean;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  lastStatus: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type Task = {
+  id: string;
+  agentId: string;
+  title: string;
+  dueAt: string | null;
+  done: boolean;
+  createdAt: string;
+};
+
+export type ChatEvent =
+  | { agentId: string; type: "text"; text: string }
+  | { agentId: string; type: "tool-start"; toolName: string; text?: string }
+  | { agentId: string; type: "tool-end"; toolName: string; ok: boolean; text?: string }
+  | { agentId: string; type: "done"; text: string }
+  | { agentId: string; type: "error"; error: string };
+
+export type SettingsView = {
+  cliFound: boolean;
+  cliVersion: string | null;
+  authStatus: string;
+  signedIn: boolean;
+  loginName: string | null;
+  hasStoredToken: boolean;
+  hasGithubPat: boolean;
+  hasJiraToken: boolean;
+  jiraSiteUrl: string;
+};
+
+export type AgentInput = {
+  name: string;
+  systemPrompt: string;
+  workspaceDir: string | null;
+};
+
+export type RoutineInput = {
+  agentId: string;
+  name: string;
+  prompt: string;
+  cron: string;
+  enabled: boolean;
+  notify: boolean;
+};
+
+export type RoutinePatch = {
+  name?: string;
+  prompt?: string;
+  cron?: string;
+  enabled?: boolean;
+  notify?: boolean;
+};
+
+export type TaskInput = {
+  agentId: string;
+  title: string;
+  dueAt: string | null;
+};

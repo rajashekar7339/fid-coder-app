@@ -1,0 +1,43 @@
+{
+  "name": "fid-coder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Windows desktop app for local AI agents",
+  "author": "Fid Coder",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "build:node": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json",
+    "dev": "npm run build:node && concurrently -k -n vite,main,preload,electron -c blue,green,yellow,magenta \"vite\" \"tsc -p tsconfig.main.json --watch --preserveWatchOutput\" \"tsc -p tsconfig.preload.json --watch --preserveWatchOutput\" \"wait-on tcp:127.0.0.1:5173 dist/main/index.js dist/preload/index.js && electron .\"",
+    "build": "npm run build:node && vite build",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.preload.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "@github/copilot-sdk": "^1.0.26",
+    "cron-parser": "^4.9.0",
+    "node-cron": "^3.0.3",
+    "playwright": "^1.64.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.5",
+    "@types/node-cron": "^3.0.11",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.6",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "wait-on": "^9.5.1"
+  },
+  "allowScripts": {
+    "better-sqlite3@13.0.3": true,
+    "electron-winstaller@5.4.0": true,
+    "koffi@3.2.1": true
+  }
+}
