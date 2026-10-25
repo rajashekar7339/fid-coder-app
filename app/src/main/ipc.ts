@@ -1,9 +1,9 @@
 import { BrowserWindow, dialog, ipcMain } from "electron";
 import { channels } from "../shared/channels";
-import type { AgentInput, RoutineInput, RoutinePatch, TaskInput } from "../shared/types";
+import type { AgentInput, RoutineInput, RoutinePatch } from "../shared/types";
 import type { BrowserManager } from "./browser-manager";
 import { assertCron, nextRunIso } from "./cron";
-import { getCopilotStatus, signOutCopilot, startCopilotLogin, stopClient } from "./copilot";
+import { getCopilotStatus, signOutCopilot, startCopilotLogin } from "./copilot";
 import type { AppDatabase } from "./db";
 import type { Runner } from "./runner";
 import type { Scheduler } from "./scheduler";
@@ -68,22 +68,6 @@ export function registerIpc(services: AppServices): void {
     scheduler.reload();
   });
 
-  ipcMain.handle(channels.tasksList, (_event, agentId: string) => db.listTasks(agentId));
-  ipcMain.handle(channels.tasksAdd, (_event, input: TaskInput) => {
-    if (!db.getAgent(input.agentId)) throw new Error("Agent not found");
-    const title = input.title?.trim();
-    if (!title) throw new Error("Task title is required");
-    const dueAt = input.dueAt?.trim() || null;
-    if (dueAt && Number.isNaN(Date.parse(dueAt))) throw new Error("Due time must be a valid date");
-    return db.addTask({ agentId: input.agentId, title, dueAt });
-  });
-  ipcMain.handle(channels.tasksSetDone, (_event, id: string, done: boolean) => {
-    db.setTaskDone(id, Boolean(done));
-  });
-  ipcMain.handle(channels.tasksDelete, (_event, id: string) => {
-    db.deleteTask(id);
-  });
-
   ipcMain.handle(channels.settingsGet, () => ({
     ...getCopilotStatus(),
     jiraSiteUrl: db.getSetting("jira_site_url") ?? "",
@@ -97,16 +81,6 @@ export function registerIpc(services: AppServices): void {
     };
   });
   ipcMain.handle(channels.settingsLogin, () => startCopilotLogin());
-  ipcMain.handle(channels.settingsSaveCopilotToken, async (_event, token: string) => {
-    setSecret(secretKeys.copilot, token);
-    await runner.dropAllSessions();
-    await stopClient();
-  });
-  ipcMain.handle(channels.settingsClearCopilotToken, async () => {
-    clearSecret(secretKeys.copilot);
-    await runner.dropAllSessions();
-    await stopClient();
-  });
   ipcMain.handle(channels.settingsSaveGithubPat, async (_event, token: string) => {
     setSecret(secretKeys.githubPat, token);
     await runner.dropAllSessions();
@@ -136,9 +110,6 @@ export function registerIpc(services: AppServices): void {
     if (result.canceled) return null;
     return result.filePaths[0] ?? null;
   });
-  ipcMain.handle(channels.browserClose, async (_event, agentId: string) => {
-    await browser.close(agentId);
-  });
 }
 
 function cleanAgent(input: AgentInput): AgentInput {
@@ -160,7 +131,7 @@ function cleanRoutine(input: RoutineInput): RoutineInput {
     name,
     prompt,
     cron: assertCron(input.cron ?? ""),
-    enabled: Boolean(input.enabled),
+    enabled: input.enabled !== false,
     notify: input.notify !== false,
   };
 }

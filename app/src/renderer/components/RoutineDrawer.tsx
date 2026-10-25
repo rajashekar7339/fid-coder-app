@@ -73,7 +73,7 @@ export function RoutineDrawer({ agentId, onClose }: Props) {
           onSubmit={(event) => {
             event.preventDefault();
             void fid()
-              .routines.create({ agentId, name, prompt, cron, enabled: false, notify: true })
+              .routines.create({ agentId, name, prompt, cron, enabled: true, notify: true })
               .then(() => {
                 setName("");
                 setPrompt("");
@@ -85,7 +85,7 @@ export function RoutineDrawer({ agentId, onClose }: Props) {
           <input className="w-full rounded-md border border-zinc-300 px-2 py-1 text-sm" placeholder="Name" value={name} onChange={(event) => setName(event.target.value)} />
           <textarea className="min-h-20 w-full rounded-md border border-zinc-300 px-2 py-1 text-sm" placeholder="Prompt to run" value={prompt} onChange={(event) => setPrompt(event.target.value)} />
           <input className="w-full rounded-md border border-zinc-300 px-2 py-1 font-mono text-sm" value={cron} onChange={(event) => setCron(event.target.value)} />
-          <p className="text-xs text-zinc-500">5-field cron. Example: * * * * * runs every minute. New routines start disabled.</p>
+          <p className="text-xs text-zinc-500">5-field cron. Example: * * * * * runs every minute. A new routine starts enabled. Use Disable to turn it off.</p>
           <button type="submit" className="rounded-md bg-zinc-950 px-3 py-1.5 text-sm text-white">
             Add routine
           </button>

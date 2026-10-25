@@ -47,10 +47,6 @@ try {
   if (!hasBridge) throw new Error("window.fid is missing");
 
   await page.getByRole("button", { name: "To Do List" }).click();
-  await page.getByPlaceholder("Add a task").fill("Buy milk");
-  await page.getByRole("button", { name: "Add", exact: true }).click();
-  await page.waitForSelector("text=Buy milk");
-
   await page.getByRole("button", { name: "Routines" }).click();
   await page.getByPlaceholder("Name").fill("Hourly ping");
   await page.getByPlaceholder("Prompt to run").fill("Say hello");

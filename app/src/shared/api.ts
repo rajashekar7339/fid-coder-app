@@ -7,8 +7,6 @@ import type {
   RoutineInput,
   RoutinePatch,
   SettingsView,
-  Task,
-  TaskInput,
 } from "./types";
 
 export interface FidApi {
@@ -33,18 +31,10 @@ export interface FidApi {
     update: (id: string, patch: RoutinePatch) => Promise<Routine>;
     delete: (id: string) => Promise<void>;
   };
-  tasks: {
-    list: (agentId: string) => Promise<Task[]>;
-    add: (input: TaskInput) => Promise<Task>;
-    setDone: (id: string, done: boolean) => Promise<void>;
-    delete: (id: string) => Promise<void>;
-  };
   settings: {
     get: () => Promise<SettingsView>;
     signOut: () => Promise<SettingsView>;
     startCopilotLogin: () => Promise<{ ok: boolean; message: string }>;
-    saveCopilotToken: (token: string) => Promise<void>;
-    clearCopilotToken: () => Promise<void>;
     saveGithubPat: (token: string) => Promise<void>;
     clearGithubPat: () => Promise<void>;
     saveJiraSite: (url: string) => Promise<void>;
@@ -53,8 +43,5 @@ export interface FidApi {
   };
   dialog: {
     pickFolder: () => Promise<string | null>;
-  };
-  browser: {
-    close: (agentId: string) => Promise<void>;
   };
 }

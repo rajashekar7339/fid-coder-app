@@ -9,8 +9,6 @@ import type {
   Routine,
   RoutineInput,
   RoutinePatch,
-  Task,
-  TaskInput,
 } from "../shared/types";
 
 type AgentRow = {
@@ -45,18 +43,15 @@ type RoutineRow = {
   updated_at: string;
 };
 
-type TaskRow = {
-  id: string;
-  agent_id: string;
-  title: string;
-  due_at: string | null;
-  done: number;
-  created_at: string;
-};
+const OLD_TODO_PROMPT = `You are a To Do List agent on this Windows machine. Track the user's tasks with task_list, task_add, and task_complete. Store a due time as an ISO date-time in dueAt when the user gives one. Keep replies short. When asked what is due, list open tasks and their times. Do not invent tasks.`;
 
-const TODO_PROMPT = `You are a To Do List agent on this Windows machine. Track the user's tasks with task_list, task_add, and task_complete. Store a due time as an ISO date-time in dueAt when the user gives one. Keep replies short. When asked what is due, list open tasks and their times. Do not invent tasks.`;
+const TODO_PROMPT = `You are a To Do List agent on this Windows machine. Help the user plan what to do. Keep replies short. Do not invent tasks. You do not have a saved task list.`;
 
-const JIRA_PROMPT = `You are a Jira agent. Use the local browser tools browser_navigate, browser_snapshot, browser_click, and browser_type. The browser profile belongs to this agent and keeps logins. Read browser_snapshot before every click or type. Choose Playwright selectors from the snapshot, such as role=link[name="Boards"] or text=Assigned to me. Report only what the page shows. Do not type passwords unless the user explicitly provides one in this conversation.`;
+const OLD_REMINDER_PROMPT = "List my open tasks, especially anything due today, and give me a short reminder.";
+
+const REMINDER_PROMPT = "Give a short planning reminder for today. A saved task list is not available.";
+
+const JIRA_PROMPT = `You are a JIRA agent. Use the local browser tools browser_navigate, browser_snapshot, browser_click, and browser_type. The browser profile belongs to this agent and keeps logins. Read browser_snapshot before every click or type. Choose Playwright selectors from the snapshot, such as role=link[name="Boards"] or text=Assigned to me. Report only what the page shows. Do not type passwords unless the user explicitly provides one in this conversation.`;
 
 const GIT_PROMPT = `You are a Git pull request review agent. Work only inside the workspace folder. Use shell_run for git and gh, and file_read to inspect files. Summarize the change, name the risks, and quote file paths. Do not push, force-push, or change git config. If no workspace folder is set, ask the user to pick one in the agent editor.`;
 
@@ -125,6 +120,9 @@ export class AppDatabase {
         value TEXT NOT NULL
       );
     `);
+    const now = new Date().toISOString();
+    this.db.prepare("UPDATE agents SET system_prompt = ?, updated_at = ? WHERE system_prompt = ?").run(TODO_PROMPT, now, OLD_TODO_PROMPT);
+    this.db.prepare("UPDATE routines SET prompt = ?, updated_at = ? WHERE prompt = ?").run(REMINDER_PROMPT, now, OLD_REMINDER_PROMPT);
   }
 
   private seed(): void {
@@ -140,7 +138,7 @@ export class AppDatabase {
     this.db.exec("BEGIN");
     try {
       insertAgent.run(todoId, "To Do List", TODO_PROMPT, now, now);
-      insertAgent.run(crypto.randomUUID(), "Jira Agent", JIRA_PROMPT, now, now);
+      insertAgent.run(crypto.randomUUID(), "JIRA Agent", JIRA_PROMPT, now, now);
       insertAgent.run(crypto.randomUUID(), "Git PR Review", GIT_PROMPT, now, now);
       this.db
         .prepare(
@@ -152,7 +150,7 @@ export class AppDatabase {
           crypto.randomUUID(),
           todoId,
           "Morning task reminder",
-          "List my open tasks, especially anything due today, and give me a short reminder.",
+          REMINDER_PROMPT,
           "0 9 * * 1-5",
           now,
           now,
@@ -296,36 +294,6 @@ export class AppDatabase {
       .run(new Date().toISOString(), status.slice(0, 500), nextRunAt, new Date().toISOString(), id);
   }
 
-  listTasks(agentId: string): Task[] {
-    const rows = this.db
-      .prepare("SELECT * FROM tasks WHERE agent_id = ? ORDER BY done ASC, created_at ASC")
-      .all(agentId) as TaskRow[];
-    return rows.map(mapTask);
-  }
-
-  addTask(input: TaskInput): Task {
-    const id = crypto.randomUUID();
-    const createdAt = new Date().toISOString();
-    this.db
-      .prepare("INSERT INTO tasks (id, agent_id, title, due_at, done, created_at) VALUES (?, ?, ?, ?, 0, ?)")
-      .run(id, input.agentId, input.title.trim(), emptyToNull(input.dueAt), createdAt);
-    return { id, agentId: input.agentId, title: input.title.trim(), dueAt: emptyToNull(input.dueAt), done: false, createdAt };
-  }
-
-  setTaskDone(id: string, done: boolean): void {
-    const result = this.db.prepare("UPDATE tasks SET done = ? WHERE id = ?").run(done ? 1 : 0, id);
-    if (result.changes === 0) throw new Error("Task not found");
-  }
-
-  deleteTask(id: string): void {
-    this.db.prepare("DELETE FROM tasks WHERE id = ?").run(id);
-  }
-
-  getTaskAgentId(id: string): string | null {
-    const row = this.db.prepare("SELECT agent_id FROM tasks WHERE id = ?").get(id) as { agent_id: string } | undefined;
-    return row?.agent_id ?? null;
-  }
-
   getSetting(key: string): string | null {
     const row = this.db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value: string } | undefined;
     return row?.value ?? null;
@@ -383,17 +351,6 @@ function mapRoutine(row: RoutineRow): Routine {
     lastStatus: row.last_status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  };
-}
-
-function mapTask(row: TaskRow): Task {
-  return {
-    id: row.id,
-    agentId: row.agent_id,
-    title: row.title,
-    dueAt: row.due_at,
-    done: row.done === 1,
-    createdAt: row.created_at,
   };
 }
 

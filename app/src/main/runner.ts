@@ -136,7 +136,6 @@ export class Runner {
       agentId,
       workspaceDir: agent.workspaceDir,
       browser: this.browser,
-      tasks: this.db,
       githubPat: hasSecret(secretKeys.githubPat) ? getSecret(secretKeys.githubPat) : null,
       jiraToken: hasSecret(secretKeys.jira) ? getSecret(secretKeys.jira) : null,
       jiraSite: this.db.getSetting("jira_site_url"),

@@ -23,8 +23,6 @@ export function Sidebar({ agents, selectedId, settingsOpen, copilotPresence, onS
   return (
     <aside className="flex w-64 shrink-0 flex-col bg-zinc-950 text-zinc-100">
       <div className="px-4 py-4">
-        <div className="text-sm font-semibold tracking-wide">Fid Coder</div>
-        <div className="mt-1 text-xs text-zinc-400">Local agents</div>
       </div>
       <div className="px-3">
         <button type="button" className="w-full rounded-md bg-white px-3 py-2 text-sm font-medium text-zinc-950" onClick={onCreate}>

@@ -131,8 +131,8 @@ export function SettingsView({ settings, checkingSignIn, signInNote, onStartSign
       </section>
 
       <section className="rounded-lg border border-zinc-200 bg-white p-4">
-        <h2 className="font-medium">Jira</h2>
-        <p className="mt-1 text-sm text-zinc-600">The Jira agent signs in through its own browser profile. A site URL and API token are optional.</p>
+        <h2 className="font-medium">JIRA</h2>
+        <p className="mt-1 text-sm text-zinc-600">The JIRA agent signs in through its own browser profile. A site URL and API token are optional.</p>
         <label className="mt-3 block text-sm">
           <span className="mb-1 block font-medium">Site URL</span>
           <input
@@ -145,7 +145,7 @@ export function SettingsView({ settings, checkingSignIn, signInNote, onStartSign
             placeholder="https://your-site.atlassian.net"
           />
         </label>
-        <button type="button" className="mt-2 rounded-md border border-zinc-300 px-3 py-2 text-sm" onClick={() => void run(() => fid().settings.saveJiraSite(jiraSite), "Jira site saved")}>
+        <button type="button" className="mt-2 rounded-md border border-zinc-300 px-3 py-2 text-sm" onClick={() => void run(() => fid().settings.saveJiraSite(jiraSite), "JIRA site saved")}>
           Save site
         </button>
         <input
@@ -153,14 +153,14 @@ export function SettingsView({ settings, checkingSignIn, signInNote, onStartSign
           className="mt-3 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
           value={jiraToken}
           autoComplete="off"
-          placeholder={settings?.hasJiraToken ? "Token saved — paste to replace" : "Jira API token"}
+          placeholder={settings?.hasJiraToken ? "Token saved — paste to replace" : "JIRA API token"}
           onChange={(event) => setJiraToken(event.target.value)}
         />
         <div className="mt-2 flex gap-2">
           <button type="button" className="rounded-md border border-zinc-300 px-3 py-2 text-sm" onClick={() => void run(async () => { await fid().settings.saveJiraToken(jiraToken); setJiraToken(""); }, "Jira token saved")}>
             Save token
           </button>
-          <button type="button" className="rounded-md border border-zinc-300 px-3 py-2 text-sm" onClick={() => void run(() => fid().settings.clearJiraToken(), "Jira token removed")}>
+          <button type="button" className="rounded-md border border-zinc-300 px-3 py-2 text-sm" onClick={() => void run(() => fid().settings.clearJiraToken(), "JIRA token removed")}>
             Clear token
           </button>
         </div>

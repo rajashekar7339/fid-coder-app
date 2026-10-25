@@ -83,7 +83,6 @@ app.whenReady().then(async () => {
       agentId: agent.id,
       workspaceDir: workspace,
       browser,
-      tasks: db,
       githubPat: "fid-github-marker",
       jiraToken: null,
       jiraSite: null,
@@ -119,16 +118,6 @@ app.whenReady().then(async () => {
     }
     if (!fileEscaped) throw new Error("file jail did not reject ..");
     record("PASS", "files", "write, read, and path jail");
-
-    const added = await tools.task_add.handler({ title: "Verify task" }, ctx);
-    const listed = await tools.task_list.handler({}, ctx);
-    const taskId = added.split(":")[0].replace("added ", "").trim();
-    await tools.task_complete.handler({ id: taskId, done: true }, ctx);
-    const after = await tools.task_list.handler({}, ctx);
-    if (!listed.includes("Verify task") || !after.includes(`[x] ${taskId}`)) {
-      throw new Error("task list did not show the completed task");
-    }
-    record("PASS", "tasks", "add, list, complete");
 
     const formUrl = `http://127.0.0.1:${port}/form`;
     const nav = await tools.browser_navigate.handler({ url: formUrl }, ctx);
@@ -170,7 +159,7 @@ app.whenReady().then(async () => {
 
     const seeded = db.listAgents();
     const names = seeded.map((item) => item.name).sort();
-    if (!names.includes("To Do List") || !names.includes("Jira Agent") || !names.includes("Git PR Review")) {
+    if (!names.includes("To Do List") || !names.includes("JIRA Agent") || !names.includes("Git PR Review")) {
       throw new Error(`seeded agents missing: ${names.join(", ")}`);
     }
     record("PASS", "seed", names.join(", "));

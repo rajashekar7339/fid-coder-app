@@ -32,15 +32,6 @@ export type Routine = {
   updatedAt: string;
 };
 
-export type Task = {
-  id: string;
-  agentId: string;
-  title: string;
-  dueAt: string | null;
-  done: boolean;
-  createdAt: string;
-};
-
 export type ChatEvent =
   | { agentId: string; type: "text"; text: string }
   | { agentId: string; type: "tool-start"; toolName: string; text?: string }
@@ -81,10 +72,4 @@ export type RoutinePatch = {
   cron?: string;
   enabled?: boolean;
   notify?: boolean;
-};
-
-export type TaskInput = {
-  agentId: string;
-  title: string;
-  dueAt: string | null;
 };

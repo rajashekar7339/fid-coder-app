@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import type { Agent, ChatEvent, Message } from "../../shared/types";
 import { errorText, fid } from "../fid";
 import { RoutineDrawer } from "./RoutineDrawer";
-import { TaskPanel } from "./TaskPanel";
 
 type Props = {
   agent: Agent;
@@ -21,7 +20,6 @@ export function ChatView({ agent, signedIn, checkingSignIn, onEdit, onOpenSettin
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showRoutines, setShowRoutines] = useState(false);
-  const [showTasks, setShowTasks] = useState(true);
   const scroller = useRef<HTMLDivElement>(null);
 
   async function load() {
@@ -80,14 +78,8 @@ export function ChatView({ agent, signedIn, checkingSignIn, onEdit, onOpenSettin
           <h1 className="truncate text-lg font-semibold">{agent.name}</h1>
           <p className="truncate text-xs text-zinc-500">{agent.workspaceDir || "No workspace folder"}</p>
         </div>
-        <button type="button" className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm" onClick={() => setShowTasks((value) => !value)}>
-          Tasks
-        </button>
         <button type="button" className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm" onClick={() => setShowRoutines(true)}>
           Routines
-        </button>
-        <button type="button" className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm" onClick={() => void fid().browser.close(agent.id)}>
-          Close browser
         </button>
         <button type="button" className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm" onClick={onEdit}>
           Edit
@@ -96,7 +88,7 @@ export function ChatView({ agent, signedIn, checkingSignIn, onEdit, onOpenSettin
           type="button"
           className="rounded-md border border-red-200 px-3 py-1.5 text-sm text-red-700"
           onClick={() => {
-            if (!window.confirm(`Delete ${agent.name}? This removes its chat, routines, tasks, and browser profile.`)) return;
+            if (!window.confirm(`Delete ${agent.name}? This removes its chat, routines, and browser profile.`)) return;
             void fid()
               .agents.delete(agent.id)
               .then(onDeleted)
@@ -124,7 +116,6 @@ export function ChatView({ agent, signedIn, checkingSignIn, onEdit, onOpenSettin
         {toolLine ? <p className="font-mono text-xs text-zinc-500">{toolLine}</p> : null}
       </div>
 
-      {showTasks ? <TaskPanel agentId={agent.id} /> : null}
       {error ? <p className="bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p> : null}
 
       <form

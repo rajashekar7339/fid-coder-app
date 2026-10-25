@@ -4,7 +4,4 @@ dist/
 .DS_Store
 
 # Local study checkouts. They stay on disk and are not part of this app.
-browser-use/
-WebPilot/
-promptwright/
-rakazo/
+reference_projects/
