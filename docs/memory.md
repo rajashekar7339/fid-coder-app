@@ -2,7 +2,7 @@
 
 Each agent remembers through its chat transcript in local SQLite. That transcript is what GitHub Copilot sees on the next turn. The app does not keep a separate facts store, a running summary, or an embedding index.
 
-The code lives in `app/src/main/db.ts` (storage) and `app/src/main/runner.ts` (what gets sent to Copilot).
+The code lives in `src/main/db.ts` (storage) and `src/main/runner.ts` (what gets sent to Copilot).
 
 ## What is stored
 
@@ -46,6 +46,6 @@ During a live turn, tool results go back to Copilot as the tool handler's return
 
 ## What is not model memory
 
-`remember` in `app/src/renderer/components/ChatView.tsx` keeps the in-progress turn on screen when you switch agents. That map stays in the renderer. It is not sent to Copilot.
+`remember` in `src/renderer/components/ChatView.tsx` keeps the in-progress turn on screen when you switch agents. That map stays in the renderer. It is not sent to Copilot.
 
 Browser profiles under `%APPDATA%\fid-coder\browser-profiles\<agent-id>` keep logins and cookies for that agent. That is browser state. The system message tells the model the profile exists. The profile contents are not copied into the chat transcript.
