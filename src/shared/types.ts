@@ -1,3 +1,7 @@
+export const DELETE_CONFIRM_MARKER = "DELETE_CONFIRM_REQUIRED:";
+
+export type AgentToolProfile = "all" | "browser" | "developer";
+
 export type Agent = {
   id: string;
   name: string;
@@ -5,6 +9,7 @@ export type Agent = {
   systemPrompt: string;
   workspaceDir: string | null;
   model: string;
+  toolProfile: AgentToolProfile;
   lastActivityAt: string | null;
   nextRoutineAt: string | null;
   createdAt: string;
@@ -67,6 +72,7 @@ export type AgentInput = {
   systemPrompt: string;
   workspaceDir: string | null;
   model: string;
+  toolProfile: AgentToolProfile;
 };
 
 export type BrowserPreview = {

@@ -35,11 +35,18 @@ export function AgentDesk({
   const [preview, setPreview] = useState<BrowserPreview | null>(null);
   const [busyRoutine, setBusyRoutine] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const shellEnabled = agent.toolProfile !== "browser";
+  const workspaceNote = !shellEnabled
+    ? "Browser tools only"
+    : agent.workspaceDir
+      ? "Shell + files enabled"
+      : "Shell + files unavailable";
 
   useEffect(() => {
     let stopped = false;
     let timer = 0;
     setPreview(null);
+    if (agent.toolProfile === "developer") return;
     async function poll() {
       if (document.visibilityState === "visible") {
         try {
@@ -56,7 +63,7 @@ export function AgentDesk({
       stopped = true;
       window.clearTimeout(timer);
     };
-  }, [agent.id]);
+  }, [agent.id, agent.toolProfile]);
 
   async function openBrowser() {
     setError(null);
@@ -130,7 +137,11 @@ export function AgentDesk({
             ) : (
               <div className="browser-idle">
                 <Monitor size={19} aria-hidden="true" />
-                <p>Appears here when this agent opens its local browser.</p>
+                <p>
+                  {agent.toolProfile === "developer"
+                    ? "This agent has no browser tools."
+                    : "Appears here when this agent opens its local browser."}
+                </p>
               </div>
             )}
           </section>
@@ -189,9 +200,7 @@ export function AgentDesk({
               </span>
               <div className="workspace-copy">
                 <span className="workspace-path">{agent.workspaceDir || "No workspace"}</span>
-                <span className="workspace-note">
-                  {agent.workspaceDir ? "Shell + files enabled" : "Shell + files unavailable"}
-                </span>
+                <span className="workspace-note">{workspaceNote}</span>
               </div>
               <button type="button" className="desk-icon-button" aria-label="Edit workspace" onClick={onEdit}>
                 <Pencil size={11} />

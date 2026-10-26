@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { DatabaseSync } from "node:sqlite";
 import { AUTO_MODEL_ID, normalizeModelId } from "../shared/model";
+import { normalizeToolProfile } from "../shared/tool-profile";
 import type {
   Agent,
   AgentInput,
@@ -19,6 +20,7 @@ type AgentRow = {
   system_prompt: string;
   workspace_dir: string | null;
   model: string | null;
+  tool_profile: string | null;
   last_activity_at: string | null;
   next_routine_at: string | null;
   created_at: string;
@@ -105,6 +107,7 @@ export class AppDatabase {
         system_prompt TEXT NOT NULL,
         workspace_dir TEXT,
         model TEXT NOT NULL DEFAULT 'auto',
+        tool_profile TEXT NOT NULL DEFAULT 'all',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -149,9 +152,14 @@ export class AppDatabase {
     `);
     this.ensureAgentModelColumn();
     this.ensureAgentDescriptionColumn();
+    const addedToolProfile = this.ensureAgentToolProfileColumn();
     const now = new Date().toISOString();
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(JIRA_NAME, now, OLD_JIRA_NAME);
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(GIT_NAME, now, OLD_GIT_NAME);
+    if (addedToolProfile) {
+      this.db.prepare("UPDATE agents SET tool_profile = ? WHERE name = ? AND tool_profile = ?").run("browser", JIRA_NAME, "all");
+      this.db.prepare("UPDATE agents SET tool_profile = ? WHERE name = ? AND tool_profile = ?").run("developer", GIT_NAME, "all");
+    }
     this.db.prepare("UPDATE agents SET system_prompt = ?, updated_at = ? WHERE system_prompt = ?").run(JIRA_PROMPT, now, OLD_JIRA_PROMPT);
     this.db.prepare("UPDATE agents SET description = ? WHERE name = ? AND description = ''").run(JIRA_DESCRIPTION, JIRA_NAME);
     this.db.prepare("UPDATE agents SET description = ? WHERE name = ? AND description = ''").run(GIT_DESCRIPTION, GIT_NAME);
@@ -168,6 +176,13 @@ export class AppDatabase {
     const columns = this.db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
     if (columns.some((column) => column.name === "description")) return;
     this.db.exec("ALTER TABLE agents ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+  }
+
+  private ensureAgentToolProfileColumn(): boolean {
+    const columns = this.db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+    if (columns.some((column) => column.name === "tool_profile")) return false;
+    this.db.exec("ALTER TABLE agents ADD COLUMN tool_profile TEXT NOT NULL DEFAULT 'all'");
+    return true;
   }
 
   private removeSeededTodo(): void {
@@ -189,13 +204,13 @@ export class AppDatabase {
 
     const now = new Date().toISOString();
     const insertAgent = this.db.prepare(
-      `INSERT INTO agents (id, name, description, system_prompt, workspace_dir, model, created_at, updated_at)
-       VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
+      `INSERT INTO agents (id, name, description, system_prompt, workspace_dir, model, tool_profile, created_at, updated_at)
+       VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
     );
     this.db.exec("BEGIN");
     try {
-      insertAgent.run(crypto.randomUUID(), JIRA_NAME, JIRA_DESCRIPTION, JIRA_PROMPT, AUTO_MODEL_ID, now, now);
-      insertAgent.run(crypto.randomUUID(), GIT_NAME, GIT_DESCRIPTION, GIT_PROMPT, AUTO_MODEL_ID, now, now);
+      insertAgent.run(crypto.randomUUID(), JIRA_NAME, JIRA_DESCRIPTION, JIRA_PROMPT, AUTO_MODEL_ID, "browser", now, now);
+      insertAgent.run(crypto.randomUUID(), GIT_NAME, GIT_DESCRIPTION, GIT_PROMPT, AUTO_MODEL_ID, "developer", now, now);
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");
@@ -220,8 +235,8 @@ export class AppDatabase {
     const id = crypto.randomUUID();
     this.db
       .prepare(
-        `INSERT INTO agents (id, name, description, system_prompt, workspace_dir, model, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO agents (id, name, description, system_prompt, workspace_dir, model, tool_profile, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -230,6 +245,7 @@ export class AppDatabase {
         input.systemPrompt,
         emptyToNull(input.workspaceDir),
         normalizeModelId(input.model),
+        normalizeToolProfile(input.toolProfile),
         now,
         now,
       );
@@ -241,7 +257,7 @@ export class AppDatabase {
     const result = this.db
       .prepare(
         `UPDATE agents
-         SET name = ?, description = ?, system_prompt = ?, workspace_dir = ?, model = ?, updated_at = ?
+         SET name = ?, description = ?, system_prompt = ?, workspace_dir = ?, model = ?, tool_profile = ?, updated_at = ?
          WHERE id = ?`,
       )
       .run(
@@ -250,6 +266,7 @@ export class AppDatabase {
         input.systemPrompt,
         emptyToNull(input.workspaceDir),
         normalizeModelId(input.model),
+        normalizeToolProfile(input.toolProfile),
         now,
         id,
       );
@@ -384,6 +401,7 @@ function mapAgent(row: AgentRow): Agent {
     systemPrompt: row.system_prompt,
     workspaceDir: row.workspace_dir,
     model: readModel(row.model),
+    toolProfile: normalizeToolProfile(row.tool_profile),
     lastActivityAt: row.last_activity_at,
     nextRoutineAt: row.next_routine_at,
     createdAt: row.created_at,

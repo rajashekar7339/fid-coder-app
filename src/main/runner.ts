@@ -1,5 +1,5 @@
 import type { Agent, ChatEvent, Message } from "../shared/types";
-import { allTools } from "../tools/registry";
+import { toolsForAgent } from "../tools/registry";
 import type { ToolContext } from "../tools/types";
 import type { BrowserManager } from "./browser-manager";
 import { detach, getCopilotStatus, openSession, readAssistantText, type LiveSession } from "./copilot";
@@ -73,7 +73,7 @@ export class Runner {
 
     try {
       const systemMessage = this.systemMessage(agent);
-      const opened = await this.sessionFor(agent.id, agent.model, systemMessage);
+      const opened = await this.sessionFor(agent, systemMessage);
       const prior = this.db
         .listMessages(agent.id)
         .filter((message) => message.id !== userMessage.id)
@@ -97,26 +97,26 @@ export class Runner {
     }
   }
 
-  private async sessionFor(agentId: string, model: string, systemMessage: string): Promise<{ live: LiveSession; fresh: boolean }> {
-    const signature = JSON.stringify([model, systemMessage]);
-    const existing = this.sessions.get(agentId);
+  private async sessionFor(agent: Agent, systemMessage: string): Promise<{ live: LiveSession; fresh: boolean }> {
+    const signature = JSON.stringify([agent.model, systemMessage, agent.toolProfile]);
+    const existing = this.sessions.get(agent.id);
     if (existing && existing.signature === signature) {
       return { live: existing.live, fresh: false };
     }
-    if (existing) await this.dropSession(agentId);
+    if (existing) await this.dropSession(agent.id);
 
     const live = await openSession({
-      model,
+      model: agent.model,
       systemMessage,
-      tools: allTools(),
-      getContext: () => this.context(agentId),
+      tools: toolsForAgent(agent.toolProfile),
+      getContext: () => this.context(agent.id),
       onToolStart: (toolName, preview) => {
-        this.sink({ agentId, type: "tool-start", toolName, text: preview });
+        this.sink({ agentId: agent.id, type: "tool-start", toolName, text: preview });
       },
       onToolEnd: (toolName, ok, text) => {
         const clipped = text.length > 2000 ? `${text.slice(0, 2000)}…` : text;
-        this.db.addMessage(agentId, "tool", `${toolName}: ${clipped}`);
-        this.sink({ agentId, type: "tool-end", toolName, ok, text: clipped });
+        this.db.addMessage(agent.id, "tool", `${toolName}: ${clipped}`);
+        this.sink({ agentId: agent.id, type: "tool-end", toolName, ok, text: clipped });
       },
     });
 
@@ -124,11 +124,11 @@ export class Runner {
       if (event.type !== "assistant.message_delta") return;
       const delta = typeof event.data?.deltaContent === "string" ? event.data.deltaContent : "";
       if (!delta) return;
-      deltaHolders.get(agentId)?.(delta);
-      this.sink({ agentId, type: "text", text: delta });
+      deltaHolders.get(agent.id)?.(delta);
+      this.sink({ agentId: agent.id, type: "text", text: delta });
     });
 
-    this.sessions.set(agentId, {
+    this.sessions.set(agent.id, {
       signature,
       live,
       unsubscribe: () => detach(subscription),
@@ -139,30 +139,40 @@ export class Runner {
   private context(agentId: string): ToolContext {
     const agent = this.db.getAgent(agentId);
     if (!agent) throw new Error("Agent not found");
+    const shellEnabled = agent.toolProfile !== "browser";
     return {
       agentId,
       workspaceDir: agent.workspaceDir,
       browser: this.browser,
-      githubPat: hasSecret(secretKeys.githubPat) ? getSecret(secretKeys.githubPat) : null,
-      jiraToken: hasSecret(secretKeys.jira) ? getSecret(secretKeys.jira) : null,
+      githubPat: shellEnabled && hasSecret(secretKeys.githubPat) ? getSecret(secretKeys.githubPat) : null,
+      jiraToken: shellEnabled && hasSecret(secretKeys.jira) ? getSecret(secretKeys.jira) : null,
       jiraSite: this.db.getSetting("jira_site_url"),
     };
   }
 
   private systemMessage(agent: Agent): string {
+    const shellEnabled = agent.toolProfile !== "browser";
+    const browserEnabled = agent.toolProfile !== "developer";
     const lines = [agent.systemPrompt];
-    if (agent.workspaceDir) lines.push(`Workspace folder: ${agent.workspaceDir}`);
+    if (shellEnabled && agent.workspaceDir) lines.push(`Workspace folder: ${agent.workspaceDir}`);
     const jiraSite = this.db.getSetting("jira_site_url");
     if (jiraSite) lines.push(`Jira site URL: ${jiraSite}`);
-    if (hasSecret(secretKeys.jira)) {
+    if (shellEnabled && hasSecret(secretKeys.jira)) {
       lines.push("A Jira API token is available to shell_run as JIRA_API_TOKEN. Do not print it or ask the user to paste it.");
     }
-    if (hasSecret(secretKeys.githubPat)) {
+    if (shellEnabled && hasSecret(secretKeys.githubPat)) {
       lines.push("A GitHub token is available to shell_run as GH_TOKEN. Do not print it.");
     }
-    lines.push(
-      "Browser tools control a headed browser on this Windows machine. This agent has its own persistent profile. Call browser_snapshot before browser_click or browser_type.",
-    );
+    if (shellEnabled) {
+      lines.push(
+        "Delete commands need the user's approval. For a delete request, call shell_run first; it returns DELETE_CONFIRM_REQUIRED. Then ask the user in chat. Only after their latest message explicitly approves, call shell_run again with confirmed: true.",
+      );
+    }
+    if (browserEnabled) {
+      lines.push(
+        "Browser tools control a headed browser on this Windows machine. This agent has its own persistent profile. Call browser_snapshot before browser_click or browser_type.",
+      );
+    }
     return lines.join("\n\n");
   }
 }

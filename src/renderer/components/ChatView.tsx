@@ -20,6 +20,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { groupToolCalls, liveTurnSettled, projectThread, userTurnAccepted, type LiveTurn } from "../../shared/chat-thread";
+import { DELETE_CONFIRM_MARKER } from "../../shared/types";
 import type { Agent, ChatEvent, CopilotModel, Message } from "../../shared/types";
 import { agentSubtitle } from "../agent-display";
 import { errorText, fid } from "../fid";
@@ -96,6 +97,7 @@ export function ChatView({
   const [draft, setDraft] = useState("");
   const [running, setRunning] = useState(() => liveByAgent.has(agent.id));
   const [error, setError] = useState<string | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<string | null>(null);
   const [savingModel, setSavingModel] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
@@ -123,6 +125,7 @@ export function ChatView({
     const gen = ++generation.current;
     let cancelled = false;
     setError(null);
+    setPendingConfirm(null);
     const loadId = ++messageLoad.current;
     void fid()
       .messages.list(agent.id)
@@ -171,12 +174,17 @@ export function ChatView({
         });
       }
       if (event.type === "tool-start") {
+        if (event.toolName === "shell_run") setPendingConfirm(null);
         updateLive((current) => {
           const base = current ?? { userText: "", assistant: "", toolLine: null, startedAt: Date.now() };
           return { ...base, toolLine: event.toolName };
         });
       }
       if (event.type === "tool-end") {
+        if (!event.ok && event.text?.startsWith(DELETE_CONFIRM_MARKER)) {
+          const command = event.text.slice(DELETE_CONFIRM_MARKER.length).split("\n")[0].trim();
+          setPendingConfirm(command.length > 200 ? `${command.slice(0, 200)}…` : command);
+        }
         updateLive((current) => (current ? { ...current, toolLine: null } : current));
       }
       if (event.type === "done" || event.type === "error") {
@@ -251,7 +259,11 @@ export function ChatView({
   }
 
   function send() {
-    const text = draft.trim();
+    sendText(draft);
+  }
+
+  function sendText(raw: string) {
+    const text = raw.trim();
     if (!text || running || sendLock.current) return;
     sendLock.current = true;
     queueMicrotask(() => {
@@ -263,6 +275,7 @@ export function ChatView({
     setShowJump(false);
     setDraft("");
     setError(null);
+    setPendingConfirm(null);
     setRunning(true);
     updateLive(() => ({ userText: text, assistant: "", toolLine: null, startedAt }));
     void fid()
@@ -303,6 +316,7 @@ export function ChatView({
         systemPrompt: agent.systemPrompt,
         workspaceDir: agent.workspaceDir,
         model,
+        toolProfile: agent.toolProfile,
       });
       onUpdated(saved);
     } catch (caught) {
@@ -459,6 +473,22 @@ export function ChatView({
         <p className="chat-error" role="alert">
           {error}
         </p>
+      ) : null}
+
+      {pendingConfirm && !running ? (
+        <div className="confirm-bar" role="group" aria-label="Delete confirmation">
+          <span>
+            Allow this delete? <code>{pendingConfirm}</code>
+          </span>
+          <div className="confirm-actions">
+            <button type="button" className="btn btn-quiet" onClick={() => sendText("No, do not delete it.")}>
+              Reject
+            </button>
+            <button type="button" className="btn btn-destructive" onClick={() => sendText("Yes, I approve. Delete it.")}>
+              Approve
+            </button>
+          </div>
+        </div>
       ) : null}
 
       <form

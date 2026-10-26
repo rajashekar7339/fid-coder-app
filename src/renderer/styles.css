@@ -1244,6 +1244,37 @@ kbd {
   text-underline-offset: 2px;
 }
 
+.confirm-bar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 12px;
+  padding: 8px 20px;
+  border-top: 1px solid rgba(242, 146, 134, 0.14);
+  background: rgba(242, 146, 134, 0.06);
+  color: #e0b0a8;
+  font-size: 11px;
+}
+
+.confirm-bar code {
+  color: #f0c5be;
+  word-break: break-all;
+}
+
+.confirm-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+.confirm-actions .btn {
+  height: 28px;
+  padding: 0 11px;
+  font-size: 10.5px;
+}
+
 .chat-scroll {
   position: relative;
   z-index: 1;
