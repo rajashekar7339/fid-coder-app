@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, ipcMain } from "electron";
 import { channels } from "../shared/channels";
 import { normalizeModelId } from "../shared/model";
+import { normalizeToolProfile } from "../shared/tool-profile";
 import type { AgentInput, RoutineInput, RoutinePatch } from "../shared/types";
 import type { BrowserManager } from "./browser-manager";
 import { assertCron, nextRunIso } from "./cron";
@@ -142,6 +143,7 @@ function cleanAgent(input: AgentInput): AgentInput {
     systemPrompt,
     workspaceDir: input.workspaceDir?.trim() || null,
     model: normalizeModelId(input?.model),
+    toolProfile: normalizeToolProfile(input?.toolProfile),
   };
 }
 

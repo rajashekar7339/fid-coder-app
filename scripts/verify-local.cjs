@@ -47,7 +47,7 @@ app.whenReady().then(async () => {
   const { databasePath, profileDir } = require("../dist/main/paths.js");
   const { notify } = require("../dist/main/notify.js");
   const { stopClient } = require("../dist/main/copilot.js");
-  const { allTools } = require("../dist/tools/registry.js");
+  const { allTools, toolsForAgent } = require("../dist/tools/registry.js");
 
   const db = new AppDatabase(databasePath());
   const browser = new BrowserManager();
@@ -88,6 +88,23 @@ app.whenReady().then(async () => {
       jiraSite: null,
     };
 
+    const browserNames = toolsForAgent("browser").map((tool) => tool.name);
+    const developerNames = toolsForAgent("developer").map((tool) => tool.name);
+    if (browserNames.some((name) => name === "shell_run" || name.startsWith("file_"))) {
+      throw new Error("browser profile includes shell or file tools");
+    }
+    if (developerNames.some((name) => name.startsWith("browser_"))) {
+      throw new Error("developer profile includes browser tools");
+    }
+    if (
+      !browserNames.includes("browser_navigate") ||
+      !developerNames.includes("shell_run") ||
+      !developerNames.includes("file_read")
+    ) {
+      throw new Error("tool profiles are missing their tools");
+    }
+    record("PASS", "tool-scopes", `${browserNames.length} browser, ${developerNames.length} developer`);
+
     const shellOk = await tools.shell_run.handler({ command: "echo hello-fid" }, ctx);
     if (!shellOk.includes("hello-fid")) throw new Error(`shell stdout missing hello-fid: ${shellOk}`);
     let escaped = false;
@@ -118,6 +135,21 @@ app.whenReady().then(async () => {
     }
     if (!fileEscaped) throw new Error("file jail did not reject ..");
     record("PASS", "files", "write, read, and path jail");
+
+    const deleteFile = path.join(workspace, "notes", "delete-me.txt");
+    fs.writeFileSync(deleteFile, "delete me");
+    let needsConfirm = false;
+    try {
+      await tools.shell_run.handler({ command: "del notes\\delete-me.txt" }, ctx);
+    } catch (error) {
+      needsConfirm = /DELETE_CONFIRM_REQUIRED/.test(error.message);
+    }
+    if (!needsConfirm || !fs.existsSync(deleteFile)) {
+      throw new Error("delete guard did not require confirmation");
+    }
+    await tools.shell_run.handler({ command: "del notes\\delete-me.txt", confirmed: true }, ctx);
+    if (fs.existsSync(deleteFile)) throw new Error("delete guard did not delete after approval");
+    record("PASS", "delete-guard", "requires confirmed:true, then deletes");
 
     const formUrl = `http://127.0.0.1:${port}/form`;
     const nav = await tools.browser_navigate.handler({ url: formUrl }, ctx);
@@ -162,7 +194,12 @@ app.whenReady().then(async () => {
     if (names.includes("To Do List") || !names.includes("JIRA Agent") || !names.includes("GIT PR Review")) {
       throw new Error(`seeded agents missing: ${names.join(", ")}`);
     }
-    record("PASS", "seed", names.join(", "));
+    const jiraSeed = seeded.find((item) => item.name === "JIRA Agent");
+    const gitSeed = seeded.find((item) => item.name === "GIT PR Review");
+    if (jiraSeed?.toolProfile !== "browser" || gitSeed?.toolProfile !== "developer") {
+      throw new Error(`seed tool profiles wrong: ${jiraSeed?.toolProfile}, ${gitSeed?.toolProfile}`);
+    }
+    record("PASS", "seed", `${names.join(", ")}; ${jiraSeed.toolProfile}/${gitSeed.toolProfile}`);
 
     const todo = seeded.find((item) => item.name === "JIRA Agent");
     if (process.env.FID_CODER_SKIP_COPILOT === "1") {

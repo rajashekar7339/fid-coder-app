@@ -9,6 +9,7 @@
     "build:node": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json",
     "dev": "npm run build:node && concurrently -k -n vite,main,preload,electron -c blue,green,yellow,magenta \"vite\" \"tsc -p tsconfig.main.json --watch --preserveWatchOutput\" \"tsc -p tsconfig.preload.json --watch --preserveWatchOutput\" \"wait-on tcp:127.0.0.1:5173 dist/main/index.js dist/preload/index.js && electron .\"",
     "build": "npm run build:node && vite build",
+    "dist:win": "npm run build && electron-builder --win portable --x64",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.preload.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
     "start": "electron ."
   },
@@ -41,5 +42,23 @@
     "better-sqlite3@13.0.3": true,
     "electron-winstaller@5.4.0": true,
     "koffi@3.2.1": true
+  },
+  "overrides": {
+    "node-abi": "4.39.0"
+  },
+  "build": {
+    "appId": "com.fidcoder.desktop",
+    "productName": "Fid Coder",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": ["portable"]
+    }
   }
 }

@@ -70,6 +70,7 @@ test("existing agents default to Auto and keep a chosen model", () => {
   const db = new AppDatabase(file);
   try {
     assert.equal(db.getAgent("11111111-1111-4111-8111-111111111111").model, AUTO_MODEL_ID);
+    assert.equal(db.getAgent("11111111-1111-4111-8111-111111111111").toolProfile, "all");
     const created = db.createAgent({
       name: "Picker",
       systemPrompt: "Reply briefly.",
@@ -77,13 +78,16 @@ test("existing agents default to Auto and keep a chosen model", () => {
       model: "gpt-5",
     });
     assert.equal(created.model, "gpt-5");
+    assert.equal(created.toolProfile, "all");
     const updated = db.updateAgent(created.id, {
       name: created.name,
       systemPrompt: created.systemPrompt,
       workspaceDir: created.workspaceDir,
       model: "auto",
+      toolProfile: "developer",
     });
     assert.equal(updated.model, AUTO_MODEL_ID);
+    assert.equal(updated.toolProfile, "developer");
     assert.throws(
       () =>
         db.createAgent({
@@ -100,6 +104,55 @@ test("existing agents default to Auto and keep a chosen model", () => {
   }
 });
 
+test("tool profiles migrate once and keep later changes", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-profile-"));
+  const file = path.join(dir, "app.sqlite");
+  const raw = new DatabaseSync(file);
+  raw.exec(`
+    CREATE TABLE agents (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      system_prompt TEXT NOT NULL,
+      workspace_dir TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  const now = "2026-01-01T00:00:00.000Z";
+  raw
+    .prepare("INSERT INTO agents (id, name, system_prompt, workspace_dir, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?)")
+    .run("11111111-1111-4111-8111-111111111111", "JIRA Agent", "Prompt", now, now);
+  raw
+    .prepare("INSERT INTO agents (id, name, system_prompt, workspace_dir, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?)")
+    .run("22222222-2222-4222-8222-222222222222", "GIT PR Review", "Prompt", now, now);
+  raw.close();
+
+  let db = new AppDatabase(file);
+  try {
+    const jira = db.getAgent("11111111-1111-4111-8111-111111111111");
+    assert.equal(jira.toolProfile, "browser");
+    assert.equal(db.getAgent("22222222-2222-4222-8222-222222222222").toolProfile, "developer");
+    db.updateAgent(jira.id, {
+      name: jira.name,
+      systemPrompt: jira.systemPrompt,
+      workspaceDir: null,
+      model: jira.model,
+      toolProfile: "all",
+    });
+    assert.equal(db.getAgent(jira.id).toolProfile, "all");
+  } finally {
+    db.close();
+  }
+
+  db = new AppDatabase(file);
+  try {
+    assert.equal(db.getAgent("11111111-1111-4111-8111-111111111111").toolProfile, "all");
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("new databases seed agents on Auto", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-model-seed-"));
   const db = new AppDatabase(path.join(dir, "app.sqlite"));
@@ -108,6 +161,8 @@ test("new databases seed agents on Auto", () => {
     assert.ok(agents.length >= 2);
     assert.ok(agents.every((agent) => agent.model === AUTO_MODEL_ID));
     assert.equal(agents.find((agent) => agent.name === "JIRA Agent")?.description, "Jira teammate");
+    assert.equal(agents.find((agent) => agent.name === "JIRA Agent")?.toolProfile, "browser");
+    assert.equal(agents.find((agent) => agent.name === "GIT PR Review")?.toolProfile, "developer");
     assert.ok(agents.every((agent) => agent.lastActivityAt === null));
   } finally {
     db.close();

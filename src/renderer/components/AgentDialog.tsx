@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { FolderOpen, X } from "lucide-react";
 import { AUTO_MODEL_ID } from "../../shared/model";
-import type { Agent, CopilotModel } from "../../shared/types";
+import { DEFAULT_TOOL_PROFILE } from "../../shared/tool-profile";
+import type { Agent, AgentToolProfile, CopilotModel } from "../../shared/types";
 import { errorText, fid } from "../fid";
 import { AgentAvatar } from "./AgentAvatar";
 import { Modal } from "./Modal";
@@ -33,6 +34,7 @@ export function AgentDialog({
   const [systemPrompt, setSystemPrompt] = useState(agent?.systemPrompt ?? DEFAULT_INSTRUCTIONS);
   const [workspaceDir, setWorkspaceDir] = useState(agent?.workspaceDir ?? "");
   const [model, setModel] = useState(agent?.model ?? AUTO_MODEL_ID);
+  const [toolProfile, setToolProfile] = useState<AgentToolProfile>(agent?.toolProfile ?? DEFAULT_TOOL_PROFILE);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -53,6 +55,7 @@ export function AgentDialog({
         systemPrompt: systemPrompt.trim() || DEFAULT_INSTRUCTIONS,
         workspaceDir: workspaceDir.trim() || null,
         model,
+        toolProfile,
       };
       const saved = agent ? await fid().agents.update(agent.id, input) : await fid().agents.create(input);
       onSaved(saved);
@@ -147,6 +150,26 @@ export function AgentDialog({
           </div>
 
           <div className="field">
+            <label className="field-label" htmlFor="agent-tools">
+              Tools
+            </label>
+            <select
+              id="agent-tools"
+              className="select"
+              value={toolProfile}
+              disabled={saving}
+              onChange={(event) => setToolProfile(event.target.value as AgentToolProfile)}
+            >
+              <option value="all">All tools — browser, shell, and files</option>
+              <option value="browser">Browser only</option>
+              <option value="developer">Shell + files only</option>
+            </select>
+            <span className="field-note">
+              Browser-only agents cannot run commands or touch files. Shell + files agents cannot control a browser.
+            </span>
+          </div>
+
+          <div className="field">
             <label className="field-label" htmlFor="agent-workspace">
               Workspace
             </label>
@@ -174,7 +197,11 @@ export function AgentDialog({
                 Browse
               </button>
             </span>
-            <span className="field-note">Without a folder, this agent cannot use shell or file tools.</span>
+            <span className="field-note">
+              {toolProfile === "browser"
+                ? "Browser-only agents do not use a workspace folder."
+                : "Without a folder, this agent cannot use shell or file tools."}
+            </span>
           </div>
 
           {error ? (

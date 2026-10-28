@@ -1,6 +1,8 @@
 import { spawn } from "child_process";
 import path from "path";
+import { DELETE_CONFIRM_MARKER } from "../shared/types";
 import { asRecord, optionalNumber, optionalString, requiredString } from "./args";
+import { needsDeleteConfirmation } from "./shell-policy";
 import type { AppTool } from "./types";
 
 const MAX_OUTPUT = 20000;
@@ -9,13 +11,17 @@ export const shellTools: AppTool[] = [
   {
     name: "shell_run",
     description:
-      "Run a command with cmd.exe inside this agent's workspace folder. Use it for git and gh. Do not print tokens or environment variables.",
+      "Run a command with cmd.exe inside this agent's workspace folder. Use it for git and gh. Deletes need the user's approval; without confirmed: true, a delete returns DELETE_CONFIRM_REQUIRED. Do not print tokens or environment variables.",
     parameters: {
       type: "object",
       properties: {
         command: { type: "string" },
         cwd: { type: "string", description: "Optional directory inside the workspace" },
         timeoutSeconds: { type: "number", description: "1 to 120, default 30" },
+        confirmed: {
+          type: "boolean",
+          description: "Set true only after the user explicitly approves this exact delete in chat.",
+        },
       },
       required: ["command"],
     },
@@ -28,6 +34,11 @@ export const shellTools: AppTool[] = [
       if (command.length > 4000) throw new Error("Command is too long");
       const cwd = resolveInside(ctx.workspaceDir, optionalString(record, "cwd"));
       const timeoutSeconds = Math.max(1, Math.min(120, Math.floor(optionalNumber(record, "timeoutSeconds", 30))));
+      if (needsDeleteConfirmation(command) && record.confirmed !== true) {
+        throw new Error(
+          `${DELETE_CONFIRM_MARKER}${command}\nThis delete did not run. Ask the user to approve it in chat, then call shell_run again with confirmed: true.`,
+        );
+      }
       const env: NodeJS.ProcessEnv = { ...process.env };
       delete env.COPILOT_GITHUB_TOKEN;
       if (ctx.githubPat) {
