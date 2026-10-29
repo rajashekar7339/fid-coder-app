@@ -1,9 +1,9 @@
 import { spawn } from "child_process";
-import path from "path";
 import { DELETE_CONFIRM_MARKER } from "../shared/types";
 import { asRecord, optionalNumber, optionalString, requiredString } from "./args";
 import { needsDeleteConfirmation } from "./shell-policy";
 import type { AppTool } from "./types";
+import { resolveInside } from "./workspace";
 
 const MAX_OUTPUT = 20000;
 
@@ -11,7 +11,7 @@ export const shellTools: AppTool[] = [
   {
     name: "shell_run",
     description:
-      "Run a command with cmd.exe inside this agent's workspace folder. Use it for git and gh. Deletes need the user's approval; without confirmed: true, a delete returns DELETE_CONFIRM_REQUIRED. Do not print tokens or environment variables.",
+      "Run a command with cmd.exe inside this agent's workspace folder. Use it for builds, tests, and other commands. Prefer git_status, git_diff, git_log, gh_pr_view, and gh_pr_diff for git and pull requests. Do not use it to list folders, search file contents, or read files; use list_dir, glob_files, search_text, file_read, and read_many for those. Deletes need the user's approval; without confirmed: true, a delete returns DELETE_CONFIRM_REQUIRED. Do not print tokens or environment variables.",
     parameters: {
       type: "object",
       properties: {
@@ -58,15 +58,6 @@ export const shellTools: AppTool[] = [
     },
   },
 ];
-
-function resolveInside(root: string, child: string | null): string {
-  const target = child ? path.resolve(root, child) : path.resolve(root);
-  const relative = path.relative(path.resolve(root), target);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw new Error("Path is outside the workspace folder");
-  }
-  return target;
-}
 
 function clip(value: string): string {
   return value.length > MAX_OUTPUT ? `${value.slice(0, MAX_OUTPUT)}\n…truncated` : value;

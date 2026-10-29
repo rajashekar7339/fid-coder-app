@@ -160,12 +160,12 @@ export function AgentDialog({
               disabled={saving}
               onChange={(event) => setToolProfile(event.target.value as AgentToolProfile)}
             >
-              <option value="all">All tools — browser, shell, and files</option>
+              <option value="all">All tools — browser, shell, search, git, and files</option>
               <option value="browser">Browser only</option>
-              <option value="developer">Shell + files only</option>
+              <option value="developer">Shell, search, git, and files</option>
             </select>
             <span className="field-note">
-              Browser-only agents cannot run commands or touch files. Shell + files agents cannot control a browser.
+              Browser-only agents cannot run commands or touch files. Shell, search, git, and files agents cannot control a browser.
             </span>
           </div>
 
@@ -178,7 +178,7 @@ export function AgentDialog({
                 id="agent-workspace"
                 className="input"
                 value={workspaceDir}
-                placeholder="Optional folder for shell and files"
+                placeholder="Optional folder for shell, search, git, and files"
                 onChange={(event) => setWorkspaceDir(event.target.value)}
               />
               <button
@@ -200,7 +200,7 @@ export function AgentDialog({
             <span className="field-note">
               {toolProfile === "browser"
                 ? "Browser-only agents do not use a workspace folder."
-                : "Without a folder, this agent cannot use shell or file tools."}
+                : "Without a folder, this agent cannot use shell, search, git, or file tools."}
             </span>
           </div>
 

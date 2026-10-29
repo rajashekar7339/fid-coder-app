@@ -13,7 +13,7 @@ function live(partial: Partial<LiveTurn> = {}): LiveTurn {
   return {
     userText: "Hello",
     assistant: "",
-    toolLine: null,
+    tools: [],
     startedAt,
     ...partial,
   };
@@ -85,6 +85,61 @@ test("folds consecutive tool calls into one group", () => {
     items.map((item) => (item.kind === "tools" ? item.calls.map((call) => call.id) : item.message.id)),
     ["u1", ["t1", "t2"], "a1", ["t3"]],
   );
+});
+
+test("shows a tool step as soon as it starts", () => {
+  const saved = [message("u1", "user", "Hello", "2026-10-24T12:00:00.100Z")];
+  const projected = projectThread(
+    saved,
+    live({
+      tools: [
+        { id: "live-tool-1", name: "git_status", content: "git_status: clean", pending: false },
+        { id: "live-tool-2", name: "gh_pr_view", content: "gh_pr_view", pending: true },
+      ],
+    }),
+    "agent-1",
+  );
+  assert.deepEqual(
+    projected.messages.map((item) => item.id),
+    ["u1", "live-tool-1", "live-tool-2"],
+  );
+  assert.equal(projected.pendingToolId, "live-tool-2");
+  assert.equal(projected.thinking, false);
+});
+
+test("does not repeat tool steps already stored for this turn", () => {
+  const saved = [
+    message("u1", "user", "Hello", "2026-10-24T12:00:00.100Z"),
+    message("t1", "tool", "git_status: clean", "2026-10-24T12:00:01.000Z"),
+  ];
+  const projected = projectThread(
+    saved,
+    live({
+      tools: [
+        { id: "live-tool-1", name: "git_status", content: "git_status: clean", pending: false },
+        { id: "live-tool-2", name: "gh_pr_view", content: "gh_pr_view", pending: true },
+      ],
+    }),
+    "agent-1",
+  );
+  assert.deepEqual(
+    projected.messages.map((item) => item.id),
+    ["u1", "t1", "live-tool-2"],
+  );
+  assert.equal(projected.pendingToolId, "live-tool-2");
+});
+
+test("keeps finished tool steps visible while the model is still thinking", () => {
+  const projected = projectThread(
+    [],
+    live({
+      tools: [{ id: "live-tool-1", name: "git_status", content: "git_status: clean", pending: false }],
+    }),
+    "agent-1",
+  );
+  assert.equal(projected.messages.at(-1)?.id, "live-tool-1");
+  assert.equal(projected.pendingToolId, null);
+  assert.equal(projected.thinking, true);
 });
 
 test("accepts a stored user row from this send", () => {

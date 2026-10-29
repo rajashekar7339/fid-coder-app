@@ -78,7 +78,9 @@ const JIRA_PROMPT = `You are a JIRA agent. Use the local browser tools browser_n
 const OLD_GIT_NAME = "Git PR Review";
 const GIT_NAME = "GIT PR Review";
 
-const GIT_PROMPT = `You are a Git pull request review agent. Work only inside the workspace folder. Use shell_run for git and gh, and file_read to inspect files. Summarize the change, name the risks, and quote file paths. Do not push, force-push, or change git config. If no workspace folder is set, ask the user to pick one in the agent editor.`;
+const OLD_GIT_PROMPT = `You are a Git pull request review agent. Work only inside the workspace folder. Use shell_run for git and gh, and file_read to inspect files. Summarize the change, name the risks, and quote file paths. Do not push, force-push, or change git config. If no workspace folder is set, ask the user to pick one in the agent editor.`;
+
+const GIT_PROMPT = `You are a Git pull request review agent. Work only inside the workspace folder. Use git_status, git_diff, git_log, gh_pr_view, and gh_pr_diff for the review. Use file_read, read_many, and search_text to inspect code. Use explore_code when you need to find where a change lives. Summarize the change, name the risks, and quote file paths. Do not push, force-push, or change git config. If no workspace folder is set, ask the user to pick one in the agent editor.`;
 
 export class AppDatabase {
   private readonly db: DatabaseSync;
@@ -161,6 +163,7 @@ export class AppDatabase {
       this.db.prepare("UPDATE agents SET tool_profile = ? WHERE name = ? AND tool_profile = ?").run("developer", GIT_NAME, "all");
     }
     this.db.prepare("UPDATE agents SET system_prompt = ?, updated_at = ? WHERE system_prompt = ?").run(JIRA_PROMPT, now, OLD_JIRA_PROMPT);
+    this.db.prepare("UPDATE agents SET system_prompt = ?, updated_at = ? WHERE system_prompt = ?").run(GIT_PROMPT, now, OLD_GIT_PROMPT);
     this.db.prepare("UPDATE agents SET description = ? WHERE name = ? AND description = ''").run(JIRA_DESCRIPTION, JIRA_NAME);
     this.db.prepare("UPDATE agents SET description = ? WHERE name = ? AND description = ''").run(GIT_DESCRIPTION, GIT_NAME);
     this.removeSeededTodo();

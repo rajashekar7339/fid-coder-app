@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  CircleHelp,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -27,6 +28,7 @@ type Props = {
   onEdit: (agent: Agent) => void;
   onDelete: (agent: Agent) => void;
   onSettings: () => void;
+  onHelp: () => void;
 };
 
 type AgentMenu = { agent: Agent; x: number; y: number };
@@ -63,6 +65,7 @@ export function Sidebar({
   onEdit,
   onDelete,
   onSettings,
+  onHelp,
 }: Props) {
   const [query, setQuery] = useState("");
   const [menu, setMenu] = useState<AgentMenu | null>(null);
@@ -244,6 +247,11 @@ export function Sidebar({
           </div>
           <p>Agents use this PC for browser, files, and shell.</p>
         </div>
+        <button type="button" className="help-row" aria-label="Open help and guide" onClick={onHelp}>
+          <CircleHelp size={15} aria-hidden="true" />
+          <span>Help &amp; guide</span>
+          <kbd>F1</kbd>
+        </button>
         <button type="button" className="account-row" aria-label="Open settings" onClick={onSettings}>
           <span className="user-avatar" aria-hidden="true">
             {initial(loginName)}

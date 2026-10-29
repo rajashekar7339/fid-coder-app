@@ -6,6 +6,7 @@ import { AgentDialog } from "./components/AgentDialog";
 import { BrandMark } from "./components/BrandMark";
 import { ChatView } from "./components/ChatView";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { HelpDialog } from "./components/HelpDialog";
 import { RoutinesDialog } from "./components/RoutinesDialog";
 import { SettingsDialog, type SettingsSection, type SignInNote } from "./components/SettingsDialog";
 import { Sidebar, type CopilotPresence } from "./components/Sidebar";
@@ -14,6 +15,7 @@ import { errorText, fid, hasFid } from "./fid";
 type Dialog =
   | { kind: "create" }
   | { kind: "edit"; agentId: string }
+  | { kind: "help" }
   | { kind: "routines" }
   | { kind: "settings"; section: SettingsSection };
 
@@ -231,6 +233,19 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    function onHelpKey(event: KeyboardEvent) {
+      if (event.key !== "F1") return;
+      event.preventDefault();
+      setDialog((current) => {
+        if (current?.kind === "help") return null;
+        return current ?? { kind: "help" };
+      });
+    }
+    window.addEventListener("keydown", onHelpKey);
+    return () => window.removeEventListener("keydown", onHelpKey);
+  }, []);
+
+  useEffect(() => {
     if (!agentId || agents.length === 0) return;
     if (!agents.some((agent) => agent.id === agentId)) setAgentId(agents[0]?.id ?? null);
   }, [agents, agentId]);
@@ -249,6 +264,10 @@ export function App() {
 
   function openRoutines() {
     if (agentId) setDialog({ kind: "routines" });
+  }
+
+  function openHelp() {
+    setDialog({ kind: "help" });
   }
 
   function startSignInFromChat() {
@@ -297,6 +316,7 @@ export function App() {
           onEdit={openEdit}
           onDelete={setPendingDelete}
           onSettings={() => openSettings("copilot")}
+          onHelp={openHelp}
         />
 
         <div className="center-column">
@@ -387,6 +407,8 @@ export function App() {
           onRefresh={refreshRoutinesForDialog}
         />
       ) : null}
+
+      {dialog?.kind === "help" ? <HelpDialog onClose={() => setDialog(null)} /> : null}
 
       {dialog?.kind === "settings" ? (
         <SettingsDialog

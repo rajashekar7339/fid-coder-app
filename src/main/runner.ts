@@ -1,10 +1,16 @@
 import type { Agent, ChatEvent, Message } from "../shared/types";
 import { toolsForAgent } from "../tools/registry";
+import { summarizeTool } from "../shared/summary";
 import type { ToolContext } from "../tools/types";
 import type { BrowserManager } from "./browser-manager";
 import { detach, getCopilotStatus, openSession, readAssistantText, type LiveSession } from "./copilot";
 import type { AppDatabase } from "./db";
+import { runCodeExplore } from "./explore-session";
 import { getSecret, hasSecret, secretKeys } from "./secrets";
+import { workspaceBrief } from "./workspace-brief";
+
+const WORKSPACE_HINT =
+  "A workspace brief is included below. Use it before searching. Explore with list_dir, glob_files, search_text, file_read, and read_many. For an unfamiliar area, call explore_code with a specific question. It returns a short brief and does not edit. Edit an existing file with apply_patch. Use file_write only to create a file. Use git_status, git_diff, and git_log for git. Use gh_pr_view and gh_pr_diff for a pull request. Use shell_run for builds, tests, and other commands. Do not use shell_run to list folders, search files, or read files.";
 
 type Sink = (event: ChatEvent) => void;
 
@@ -72,7 +78,7 @@ export class Runner {
     this.sink({ agentId: agent.id, type: "user", text: visible });
 
     try {
-      const systemMessage = this.systemMessage(agent);
+      const systemMessage = await this.systemMessage(agent);
       const opened = await this.sessionFor(agent, systemMessage);
       const prior = this.db
         .listMessages(agent.id)
@@ -114,9 +120,9 @@ export class Runner {
         this.sink({ agentId: agent.id, type: "tool-start", toolName, text: preview });
       },
       onToolEnd: (toolName, ok, text) => {
-        const clipped = text.length > 2000 ? `${text.slice(0, 2000)}…` : text;
-        this.db.addMessage(agent.id, "tool", `${toolName}: ${clipped}`);
-        this.sink({ agentId: agent.id, type: "tool-end", toolName, ok, text: clipped });
+        const live = text.length > 2000 ? `${text.slice(0, 2000)}…` : text;
+        this.db.addMessage(agent.id, "tool", summarizeTool(toolName, ok, live));
+        this.sink({ agentId: agent.id, type: "tool-end", toolName, ok, text: live });
       },
     });
 
@@ -140,21 +146,32 @@ export class Runner {
     const agent = this.db.getAgent(agentId);
     if (!agent) throw new Error("Agent not found");
     const shellEnabled = agent.toolProfile !== "browser";
+    const workspaceDir = agent.workspaceDir;
     return {
       agentId,
-      workspaceDir: agent.workspaceDir,
+      workspaceDir,
+      model: agent.model,
       browser: this.browser,
       githubPat: shellEnabled && hasSecret(secretKeys.githubPat) ? getSecret(secretKeys.githubPat) : null,
       jiraToken: shellEnabled && hasSecret(secretKeys.jira) ? getSecret(secretKeys.jira) : null,
       jiraSite: this.db.getSetting("jira_site_url"),
+      explore:
+        shellEnabled && workspaceDir
+          ? (question) => runCodeExplore(this.context(agentId), question)
+          : undefined,
     };
   }
 
-  private systemMessage(agent: Agent): string {
+  private async systemMessage(agent: Agent): Promise<string> {
     const shellEnabled = agent.toolProfile !== "browser";
     const browserEnabled = agent.toolProfile !== "developer";
     const lines = [agent.systemPrompt];
-    if (shellEnabled && agent.workspaceDir) lines.push(`Workspace folder: ${agent.workspaceDir}`);
+    if (shellEnabled && agent.workspaceDir) {
+      lines.push(`Workspace folder: ${agent.workspaceDir}`);
+      lines.push(WORKSPACE_HINT);
+      const brief = await workspaceBrief(agent.workspaceDir);
+      if (brief) lines.push(brief);
+    }
     const jiraSite = this.db.getSetting("jira_site_url");
     if (jiraSite) lines.push(`Jira site URL: ${jiraSite}`);
     if (shellEnabled && hasSecret(secretKeys.jira)) {

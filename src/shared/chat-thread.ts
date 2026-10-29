@@ -1,17 +1,24 @@
 import type { Message } from "./types";
 
+export type LiveTool = {
+  id: string;
+  name: string;
+  content: string;
+  pending: boolean;
+};
+
 export type LiveTurn = {
   userText: string;
   assistant: string;
-  toolLine: string | null;
+  tools: LiveTool[];
   startedAt: number;
 };
 
 export type ProjectedThread = {
   messages: Message[];
   thinking: boolean;
-  toolLine: string | null;
   streaming: boolean;
+  pendingToolId: string | null;
 };
 
 export type ThreadItem =
@@ -42,7 +49,7 @@ export function groupToolCalls(messages: Message[]): ThreadItem[] {
 const MATCH_SKEW_MS = 2000;
 
 function idle(messages: Message[]): ProjectedThread {
-  return { messages, thinking: false, toolLine: null, streaming: false };
+  return { messages, thinking: false, streaming: false, pendingToolId: null };
 }
 
 function matchingUserIndex(saved: Message[], live: LiveTurn): number {
@@ -64,10 +71,10 @@ export function liveTurnSettled(saved: Message[], live: LiveTurn): boolean {
 }
 
 export function userTurnAccepted(saved: Message[], text: string, startedAt: number): boolean {
-  return liveTurnSettled(saved, { userText: text, assistant: "", toolLine: null, startedAt }) || matchingUserIndex(saved, {
+  return liveTurnSettled(saved, { userText: text, assistant: "", tools: [], startedAt }) || matchingUserIndex(saved, {
     userText: text,
     assistant: "",
-    toolLine: null,
+    tools: [],
     startedAt,
   }) >= 0;
 }
@@ -88,6 +95,20 @@ export function projectThread(saved: Message[], live: LiveTurn | null, agentId: 
     });
   }
 
+  const userIndex = live.userText ? matchingUserIndex(messages, live) : -1;
+  const turnStart = userIndex >= 0 ? userIndex + 1 : messages.length;
+  const storedTools = messages.slice(turnStart).filter((message) => message.role === "tool").length;
+  const liveTools = (live.tools ?? []).slice(storedTools);
+  for (const tool of liveTools) {
+    messages.push({
+      id: tool.id,
+      agentId,
+      role: "tool",
+      content: tool.content,
+      createdAt: "",
+    });
+  }
+
   const streaming = live.assistant.length > 0;
   if (streaming) {
     messages.push({
@@ -99,12 +120,13 @@ export function projectThread(saved: Message[], live: LiveTurn | null, agentId: 
     });
   }
 
+  const pending = liveTools.find((tool) => tool.pending) ?? null;
   const last = messages[messages.length - 1];
   const open = !last || last.role !== "assistant";
   return {
     messages,
-    thinking: open && !streaming,
-    toolLine: live.toolLine,
+    thinking: open && !streaming && !pending,
     streaming,
+    pendingToolId: pending?.id ?? null,
   };
 }

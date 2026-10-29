@@ -213,9 +213,7 @@ async function readSessionCatalog(copilot: ClientLike): Promise<{ sessionModels:
   } catch {
     return { sessionModels: [], priceCategories: [] };
   } finally {
-    const sessionId = session?.sessionId;
-    await Promise.resolve(session?.disconnect?.()).catch(() => undefined);
-    if (sessionId) await copilot.deleteSession?.(sessionId).catch(() => undefined);
+    await closeSession(copilot, session);
   }
 }
 
@@ -240,6 +238,10 @@ export async function openSession(input: {
       name: tool.name,
       description: tool.description,
       parameters: tool.parameters,
+      // Copilot CLI ships apply_patch. Session setup fails unless this flag
+      // replaces that built-in. Keep the object schema so the model still
+      // sends path, old_string, and new_string.
+      ...(tool.name === "apply_patch" ? { overridesBuiltInTool: true } : {}),
       skipPermission: true,
       defer: "never",
       handler: async (args: unknown) => {
@@ -262,7 +264,7 @@ export async function openSession(input: {
     try {
       await session.rpc?.model?.switchTo?.({ modelId: input.model });
     } catch (error) {
-      await Promise.resolve(session.disconnect?.()).catch(() => undefined);
+      await closeSession(copilot, session);
       throw new Error(modelSwitchError(error, input.model));
     }
   }
@@ -322,6 +324,18 @@ export function readAssistantText(response: unknown, fallback: string): string {
 export function detach(subscription: (() => void) | { unsubscribe?: () => void }): void {
   if (typeof subscription === "function") subscription();
   else subscription.unsubscribe?.();
+}
+
+export async function closeLiveSession(live: LiveSession): Promise<void> {
+  if (client) await closeSession(client, live.session);
+  else await Promise.resolve(live.session.disconnect?.()).catch(() => undefined);
+}
+
+async function closeSession(copilot: ClientLike, session: SessionLike | null): Promise<void> {
+  if (!session) return;
+  const sessionId = session.sessionId;
+  await Promise.resolve(session.disconnect?.()).catch(() => undefined);
+  if (sessionId) await copilot.deleteSession?.(sessionId).catch(() => undefined);
 }
 
 export async function getCopilotStatus(): Promise<SettingsView> {

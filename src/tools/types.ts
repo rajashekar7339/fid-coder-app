@@ -8,10 +8,12 @@ export interface BrowserControl {
 export type ToolContext = {
   agentId: string;
   workspaceDir: string | null;
+  model?: string;
   browser: BrowserControl;
   githubPat: string | null;
   jiraToken: string | null;
   jiraSite: string | null;
+  explore?: (question: string) => Promise<string>;
 };
 
 export type AppTool = {
