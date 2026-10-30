@@ -11,7 +11,7 @@ export const shellTools: AppTool[] = [
   {
     name: "shell_run",
     description:
-      "Run a command with cmd.exe inside this agent's workspace folder. Use it for builds, tests, and other commands. Prefer git_status, git_diff, git_log, gh_pr_view, and gh_pr_diff for git and pull requests. Do not use it to list folders, search file contents, or read files; use list_dir, glob_files, search_text, file_read, and read_many for those. Deletes need the user's approval; without confirmed: true, a delete returns DELETE_CONFIRM_REQUIRED. Do not print tokens or environment variables.",
+      "Run a command with cmd.exe inside this agent's workspace folder. Use it for builds, tests, and other commands. Prefer git_status, git_diff, git_log, gh_pr_view, and gh_pr_diff for git and pull requests. Do not use it to list folders, search file contents, or read files; use list_dir, glob_files, search_text, file_read, and read_many for those. Deletes, git pushes, and downloads need the user's approval; without confirmed: true, those commands return DELETE_CONFIRM_REQUIRED. Do not print tokens or environment variables.",
     parameters: {
       type: "object",
       properties: {
@@ -20,7 +20,7 @@ export const shellTools: AppTool[] = [
         timeoutSeconds: { type: "number", description: "1 to 120, default 30" },
         confirmed: {
           type: "boolean",
-          description: "Set true only after the user explicitly approves this exact delete in chat.",
+          description: "Set true only after the user explicitly approves this exact command in chat.",
         },
       },
       required: ["command"],
@@ -36,7 +36,7 @@ export const shellTools: AppTool[] = [
       const timeoutSeconds = Math.max(1, Math.min(120, Math.floor(optionalNumber(record, "timeoutSeconds", 30))));
       if (needsDeleteConfirmation(command) && record.confirmed !== true) {
         throw new Error(
-          `${DELETE_CONFIRM_MARKER}${command}\nThis delete did not run. Ask the user to approve it in chat, then call shell_run again with confirmed: true.`,
+          `${DELETE_CONFIRM_MARKER}${command}\nThis command did not run. Ask the user to approve it in chat, then call shell_run again with confirmed: true.`,
         );
       }
       const env: NodeJS.ProcessEnv = { ...process.env };

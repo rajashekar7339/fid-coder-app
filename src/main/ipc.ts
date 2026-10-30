@@ -37,6 +37,11 @@ export function registerIpc(services: AppServices): void {
     await runner.dropSession(id);
     return agent;
   });
+  ipcMain.handle(channels.agentsClearMemory, async (_event, id: string) => {
+    const agent = db.clearMemorySummary(String(id ?? ""));
+    await runner.dropSession(agent.id);
+    return agent;
+  });
   ipcMain.handle(channels.agentsDelete, async (_event, id: string) => {
     await runner.dropSession(id);
     try {
@@ -163,6 +168,7 @@ function cleanAgent(input: AgentInput): AgentInput {
     workspaceDir: input.workspaceDir?.trim() || null,
     model: normalizeModelId(input?.model),
     toolProfile: normalizeToolProfile(input?.toolProfile),
+    memoryEnabled: input.memoryEnabled !== false,
   };
 }
 

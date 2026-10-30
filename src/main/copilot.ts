@@ -403,6 +403,40 @@ export async function getCopilotStatus(): Promise<SettingsView> {
   };
 }
 
+const MEMORY_TIMEOUT_MS = 45_000;
+
+export async function completeOnce(model: string, systemMessage: string, prompt: string): Promise<string> {
+  let token: string | null = null;
+  try {
+    token = hasSecret(secretKeys.copilot) ? getSecret(secretKeys.copilot) : null;
+  } catch {
+    token = null;
+  }
+  const copilot = await ensureClient(token);
+  const session = await copilot.createSession({
+    streaming: false,
+    model,
+    clientName: "fid-coder",
+    systemMessage: { mode: "replace", content: systemMessage },
+    availableTools: [],
+    tools: [],
+    onPermissionRequest: () => ({ kind: "reject", feedback: "No tools" }),
+  });
+  try {
+    if (model !== AUTO_MODEL_ID) await session.rpc?.model?.switchTo?.({ modelId: model });
+    const response = await session.sendAndWait({ prompt }, MEMORY_TIMEOUT_MS);
+    return readAssistantText(response, "").trim();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.trim() || /ghp_|github_pat_|gho_|ghu_|eyJ|Bearer\s+\S+|Basic\s+\S+/i.test(message)) {
+      throw new Error("Copilot could not update agent memory.");
+    }
+    throw error instanceof Error ? error : new Error(message);
+  } finally {
+    await closeSession(copilot, session);
+  }
+}
+
 export function stopUsageWatch(): void {
   usageEpoch += 1;
   usageCache = null;

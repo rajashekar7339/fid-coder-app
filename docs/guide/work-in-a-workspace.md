@@ -12,9 +12,9 @@ The workspace is required for file, search, git, and shell tools. Without one, t
 
 ## Choose the tool profile
 
-- **All tools** combines the local browser with files, search, git, and shell.
-- **Browser only** cannot run commands or touch files. Use it for Jira, web research, or other browser work.
-- **Shell, search, git, and files** cannot control a browser. Use it for code work.
+- **All tools** combines the local browser and Jira with files, search, git, and shell.
+- **Browser and Jira** cannot run commands or touch files. Use it for a saved Jira site, web research, or other browser work.
+- **Shell, search, git, and files** cannot control a browser or read Jira. Use it for code work.
 
 ## What the agent can use
 

@@ -440,6 +440,9 @@ export function App() {
             setDialog(null);
             setAgents((current) => current.map((item) => (item.id === agent.id ? agent : item)));
           }}
+          onMemoryCleared={(agent) => {
+            setAgents((current) => current.map((item) => (item.id === agent.id ? agent : item)));
+          }}
         />
       ) : null}
 

@@ -24,8 +24,8 @@ The model picker sits in the composer. **Auto** lets Copilot choose the model fo
 
 Press the square stop button while the agent is working. Any partial reply is kept in the conversation with a note that the turn stopped.
 
-## Approve a delete
+## Approve a command
 
-The shell tool pauses before destructive commands. When that happens, a confirmation bar appears above the composer. Choose **Reject** or **Approve**. Nothing is deleted until you approve.
+The shell tool pauses before a delete, a git push, or a download. When that happens, a confirmation bar appears above the composer and names the command. Choose **Reject** or **Approve**. The command does not run until you approve.
 
 > **Tip:** Hover a reply and choose **Copy**, or use the copy button on a code block or diagram.

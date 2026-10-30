@@ -7,6 +7,7 @@ import { errorText, fid } from "../fid";
 import { AgentAvatar } from "./AgentAvatar";
 import { Modal } from "./Modal";
 import { ModelSelect } from "./ModelSelect";
+import { Switch } from "./Switch";
 
 type Props = {
   agent: Agent | null;
@@ -16,9 +17,21 @@ type Props = {
   onRetryModels: () => void;
   onClose: () => void;
   onSaved: (agent: Agent) => void;
+  onMemoryCleared?: (agent: Agent) => void;
 };
 
 const DEFAULT_INSTRUCTIONS = "You are a helpful local assistant. Use tools when they help the user.";
+const MEMORY_PREVIEW_CHARS = 320;
+const MEMORY_PREVIEW_LINES = 4;
+
+function memoryPreview(text: string): string {
+  const first = text.split(/\r?\n/).slice(0, MEMORY_PREVIEW_LINES).join("\n");
+  if (first.length <= MEMORY_PREVIEW_CHARS) return `${first.trimEnd()}…`;
+  const cut = text.slice(0, MEMORY_PREVIEW_CHARS);
+  const line = cut.lastIndexOf("\n");
+  const body = (line > MEMORY_PREVIEW_CHARS / 2 ? cut.slice(0, line) : cut).trimEnd();
+  return `${body}…`;
+}
 
 export function AgentDialog({
   agent,
@@ -28,6 +41,7 @@ export function AgentDialog({
   onRetryModels,
   onClose,
   onSaved,
+  onMemoryCleared,
 }: Props) {
   const [name, setName] = useState(agent?.name ?? "");
   const [description, setDescription] = useState(agent?.description ?? "");
@@ -35,8 +49,27 @@ export function AgentDialog({
   const [workspaceDir, setWorkspaceDir] = useState(agent?.workspaceDir ?? "");
   const [model, setModel] = useState(agent?.model ?? AUTO_MODEL_ID);
   const [toolProfile, setToolProfile] = useState<AgentToolProfile>(agent?.toolProfile ?? DEFAULT_TOOL_PROFILE);
+  const [memorySummary, setMemorySummary] = useState(agent?.memorySummary ?? "");
+  const [memoryEnabled, setMemoryEnabled] = useState(agent?.memoryEnabled ?? true);
+  const [memoryOpen, setMemoryOpen] = useState(false);
+  const [clearingMemory, setClearingMemory] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  async function clearMemory() {
+    if (!agent || clearingMemory || saving) return;
+    setClearingMemory(true);
+    setError(null);
+    try {
+      const cleared = await fid().agents.clearMemory(agent.id);
+      setMemorySummary("");
+      onMemoryCleared?.(cleared);
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      setClearingMemory(false);
+    }
+  }
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -56,6 +89,7 @@ export function AgentDialog({
         workspaceDir: workspaceDir.trim() || null,
         model,
         toolProfile,
+        memoryEnabled,
       };
       const saved = agent ? await fid().agents.update(agent.id, input) : await fid().agents.create(input);
       onSaved(saved);
@@ -71,6 +105,10 @@ export function AgentDialog({
     description,
     systemPrompt,
   };
+  const memoryTruncated =
+    memorySummary.length > MEMORY_PREVIEW_CHARS || memorySummary.split(/\r?\n/).length > MEMORY_PREVIEW_LINES;
+  const memoryShown = memoryOpen || !memoryTruncated ? memorySummary : memoryPreview(memorySummary);
+  const memoryId = agent ? `agent-memory-${agent.id}` : undefined;
 
   return (
     <Modal label={agent ? "Edit agent" : "New agent"} className="agent-modal" onClose={onClose}>
@@ -160,12 +198,12 @@ export function AgentDialog({
               disabled={saving}
               onChange={(event) => setToolProfile(event.target.value as AgentToolProfile)}
             >
-              <option value="all">All tools — browser, shell, search, git, and files</option>
-              <option value="browser">Browser only</option>
+              <option value="all">All tools — browser, Jira, shell, search, git, and files</option>
+              <option value="browser">Browser and Jira</option>
               <option value="developer">Shell, search, git, and files</option>
             </select>
             <span className="field-note">
-              Browser-only agents cannot run commands or touch files. Shell, search, git, and files agents cannot control a browser.
+              Browser and Jira agents cannot run commands or touch files. Shell, search, git, and files agents cannot control a browser or read Jira.
             </span>
           </div>
 
@@ -199,10 +237,59 @@ export function AgentDialog({
             </span>
             <span className="field-note">
               {toolProfile === "browser"
-                ? "Browser-only agents do not use a workspace folder."
+                ? "Browser and Jira agents do not use a workspace folder."
                 : "Without a folder, this agent cannot use shell, search, git, or file tools."}
             </span>
           </div>
+
+          {agent ? (
+            <div className="field">
+              <span className="field-label">Memory</span>
+              <div className="memory-toggle">
+                <Switch
+                  checked={memoryEnabled}
+                  disabled={saving}
+                  label="Automatic memory"
+                  onChange={setMemoryEnabled}
+                />
+                <span>Automatic memory</span>
+              </div>
+              <span className="field-note">
+                {memoryEnabled
+                  ? "Updates at most once every ten turns with Auto. Turn off to save Copilot usage."
+                  : "Automatic updates are off. Turn on to keep memory current."}
+              </span>
+              {memorySummary.trim() ? (
+                <>
+                  <pre id={memoryId} className={`memory-summary ${memoryOpen ? "is-open" : ""}`}>{memoryShown}</pre>
+                  <span className="field-note">Used when this agent starts a fresh Copilot session.</span>
+                  <div className="field-actions">
+                    {memoryTruncated ? (
+                      <button
+                        type="button"
+                        className="text-button"
+                        aria-expanded={memoryOpen}
+                        aria-controls={memoryId}
+                        onClick={() => setMemoryOpen((open) => !open)}
+                      >
+                        {memoryOpen ? "Show less" : "Show all"}
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="text-button"
+                      disabled={clearingMemory || saving}
+                      onClick={() => void clearMemory()}
+                    >
+                      {clearingMemory ? "Clearing…" : "Clear memory"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <span className="field-note">Nothing saved yet. A summary appears after 30 messages and ten turns.</span>
+              )}
+            </div>
+          ) : null}
 
           {error ? (
             <p className="form-error" role="alert">

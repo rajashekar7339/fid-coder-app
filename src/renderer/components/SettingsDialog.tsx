@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import {
   Check,
   Gauge,
@@ -62,7 +62,7 @@ const SECTIONS: Array<{
     id: "jira",
     label: "Jira",
     title: "Jira",
-    subtitle: "The site and API token used by Jira agents.",
+    subtitle: "The site and personal access token used to read Jira. Without a token, agents use the browser.",
     Icon: Ticket,
   },
 ];
@@ -169,7 +169,7 @@ export function SettingsDialog({
                   ? Boolean(settings?.signedIn)
                   : item.id === "github"
                     ? Boolean(settings?.hasGithubPat)
-                    : Boolean(settings?.hasJiraToken || settings?.jiraSiteUrl);
+                    : Boolean(settings?.hasJiraToken && settings?.jiraSiteUrl);
               return (
                 <button
                   key={item.id}
@@ -204,7 +204,6 @@ export function SettingsDialog({
                 onStartSignIn={onStartSignIn}
                 onSignOut={() => void signOut()}
                 onRecheck={() => void recheck()}
-                onSectionChange={onSectionChange}
               />
             ) : null}
 
@@ -289,7 +288,6 @@ function CopilotSection({
   onStartSignIn,
   onSignOut,
   onRecheck,
-  onSectionChange,
 }: {
   settings: SettingsView | null;
   usage: CopilotUsageView | null;
@@ -301,7 +299,6 @@ function CopilotSection({
   onStartSignIn: () => void;
   onSignOut: () => void;
   onRecheck: () => void;
-  onSectionChange: (section: SettingsSection) => void;
 }) {
   const signedIn = Boolean(settings?.signedIn);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
@@ -411,26 +408,6 @@ function CopilotSection({
       {signedIn ? (
         <UsageCard usage={usage} message={usageMessage} loading={usageLoading} onRefresh={onRefreshUsage} />
       ) : null}
-
-      <div className="settings-section-title">
-        Agent connections <span />
-      </div>
-      <div className="integration-grid">
-        <IntegrationCard
-          connected={Boolean(settings?.hasGithubPat)}
-          icon={<GitBranch size={13} aria-hidden="true" />}
-          name="GitHub"
-          description="Token for pull requests and repository access."
-          onManage={() => onSectionChange("github")}
-        />
-        <IntegrationCard
-          connected={Boolean(settings?.hasJiraToken || settings?.jiraSiteUrl)}
-          icon={<Ticket size={13} aria-hidden="true" />}
-          name="Jira"
-          description="Site URL and API token for Jira agents."
-          onManage={() => onSectionChange("jira")}
-        />
-      </div>
     </>
   );
 }
@@ -529,38 +506,6 @@ function UsageCard({
   );
 }
 
-function IntegrationCard({
-  connected,
-  icon,
-  name,
-  description,
-  onManage,
-}: {
-  connected: boolean;
-  icon: ReactNode;
-  name: string;
-  description: string;
-  onManage: () => void;
-}) {
-  return (
-    <div className="integration-card">
-      <div className="integration-head">
-        <span className={`integration-icon ${name === "GitHub" ? "is-git" : ""}`}>{icon}</span>
-        <span className="integration-name">{name}</span>
-        <span className={`integration-state ${connected ? "is-on" : ""}`}>
-          {connected ? "Connected" : "Not connected"}
-        </span>
-      </div>
-      <p>{description}</p>
-      <div className="integration-foot">
-        <button type="button" className="text-button" onClick={onManage}>
-          Manage
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function GitHubSection({
   hasToken,
   value,
@@ -649,10 +594,10 @@ function JiraSection({
         </div>
         <div className="connection-copy">
           <div className="connection-name">Jira access</div>
-          <div className="connection-note">Site URL and API token for Jira agents.</div>
+          <div className="connection-note">Site and personal access token. Without a token, agents use the browser.</div>
         </div>
-        <span className={`connection-badge ${hasToken || site ? "is-on" : ""}`}>
-          {hasToken || site ? "Configured" : "Not configured"}
+        <span className={`connection-badge ${hasToken && site ? "is-on" : ""}`}>
+          {hasToken && site ? "Configured" : "Not configured"}
         </span>
       </div>
       <div className="settings-form">
@@ -674,15 +619,16 @@ function JiraSection({
           </span>
         </div>
         <label className="field">
-          <span className="field-label">API token</span>
+          <span className="field-label">Personal access token</span>
           <input
             className="input"
             type="password"
             autoComplete="new-password"
             value={token}
-            placeholder={hasToken ? "Token saved — paste a new one to replace" : "Atlassian API token"}
+            placeholder={hasToken ? "Token saved — paste a new one to replace" : "Jira personal access token"}
             onChange={(event) => onToken(event.target.value)}
           />
+          <span className="field-note">Sent as a Bearer token. Create a PAT in your Jira profile.</span>
         </label>
         <div className="field-actions">
           <button type="button" className="btn btn-secondary" disabled={busy || !token.trim()} onClick={onSaveToken}>

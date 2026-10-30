@@ -8,6 +8,7 @@ const channels = {
   agentsList: "agents:list",
   agentsCreate: "agents:create",
   agentsUpdate: "agents:update",
+  agentsClearMemory: "agents:clear-memory",
   agentsDelete: "agents:delete",
   messagesList: "messages:list",
   chatSend: "chat:send",
@@ -42,6 +43,7 @@ const api: FidApi = {
     list: () => ipcRenderer.invoke(channels.agentsList),
     create: (input: AgentInput) => ipcRenderer.invoke(channels.agentsCreate, input),
     update: (id: string, input: AgentInput) => ipcRenderer.invoke(channels.agentsUpdate, id, input),
+    clearMemory: (id: string) => ipcRenderer.invoke(channels.agentsClearMemory, id),
     delete: (id: string) => ipcRenderer.invoke(channels.agentsDelete, id),
   },
   messages: {

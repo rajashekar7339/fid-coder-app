@@ -2,6 +2,7 @@ export const channels = {
   agentsList: "agents:list",
   agentsCreate: "agents:create",
   agentsUpdate: "agents:update",
+  agentsClearMemory: "agents:clear-memory",
   agentsDelete: "agents:delete",
   messagesList: "messages:list",
   chatSend: "chat:send",

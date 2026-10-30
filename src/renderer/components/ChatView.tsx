@@ -365,6 +365,7 @@ export function ChatView({
         workspaceDir: agent.workspaceDir,
         model,
         toolProfile: agent.toolProfile,
+        memoryEnabled: agent.memoryEnabled,
       });
       onUpdated(saved);
     } catch (caught) {
@@ -520,15 +521,15 @@ export function ChatView({
       ) : null}
 
       {pendingConfirm && !running ? (
-        <div className="confirm-bar" role="group" aria-label="Delete confirmation">
+        <div className="confirm-bar" role="group" aria-label="Command confirmation">
           <span>
-            Allow this delete? <code>{pendingConfirm}</code>
+            Allow this command? <code>{pendingConfirm}</code>
           </span>
           <div className="confirm-actions">
-            <button type="button" className="btn btn-quiet" onClick={() => sendText("No, do not delete it.")}>
+            <button type="button" className="btn btn-quiet" onClick={() => sendText("No, do not run it.")}>
               Reject
             </button>
-            <button type="button" className="btn btn-destructive" onClick={() => sendText("Yes, I approve. Delete it.")}>
+            <button type="button" className="btn btn-destructive" onClick={() => sendText("Yes, I approve. Run it.")}>
               Approve
             </button>
           </div>

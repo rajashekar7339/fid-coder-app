@@ -1,9 +1,19 @@
-import type { Agent, ChatEvent, Message } from "../shared/types";
+import {
+  MEMORY_MESSAGE_WINDOW,
+  buildSessionPrompt,
+  clipMemorySummary,
+  memoryTurns,
+  pendingMemoryTurns,
+  summaryUpdatePrompt,
+} from "../shared/memory-summary";
+import { AUTO_MODEL_ID } from "../shared/model";
+import type { Agent, ChatEvent } from "../shared/types";
+import { jiraToolsReady } from "../tools/jira-format";
 import { toolsForAgent } from "../tools/registry";
 import { summarizeTool } from "../shared/summary";
 import type { ToolContext } from "../tools/types";
 import type { BrowserManager } from "./browser-manager";
-import { detach, getCopilotStatus, openSession, readAssistantText, type LiveSession } from "./copilot";
+import { completeOnce, detach, getCopilotStatus, openSession, readAssistantText, type LiveSession } from "./copilot";
 import type { AppDatabase } from "./db";
 import { runCodeExplore } from "./explore-session";
 import { getSecret, hasSecret, secretKeys } from "./secrets";
@@ -83,12 +93,21 @@ export class Runner {
       const prior = this.db
         .listMessages(agent.id)
         .filter((message) => message.id !== userMessage.id)
-        .slice(-30);
-      const prompt = buildPrompt(prior, text, input.source === "routine", opened.fresh);
+        .slice(-MEMORY_MESSAGE_WINDOW);
+      const prompt = buildSessionPrompt({
+        summary: agent.memorySummary,
+        prior,
+        latest: text,
+        routine: input.source === "routine",
+        freshSession: opened.fresh,
+      });
       const response = await opened.live.session.sendAndWait({ prompt }, TURN_TIMEOUT_MS);
       const finalText = readAssistantText(response, streamed).trim() || streamed.trim() || "No response.";
       this.db.addMessage(agent.id, "assistant", finalText);
       this.sink({ agentId: agent.id, type: "done", text: finalText });
+      void this.refreshMemory(agent.id).catch((error: unknown) => {
+        console.error("Failed to update agent memory", error);
+      });
       return finalText;
     } catch (error) {
       const message = explainCopilotError(error instanceof Error ? error.message : String(error));
@@ -114,7 +133,7 @@ export class Runner {
     const live = await openSession({
       model: agent.model,
       systemMessage,
-      tools: toolsForAgent(agent.toolProfile),
+      tools: this.toolsFor(agent),
       getContext: () => this.context(agent.id),
       onToolStart: (toolName, preview) => {
         this.sink({ agentId: agent.id, type: "tool-start", toolName, text: preview });
@@ -153,7 +172,7 @@ export class Runner {
       model: agent.model,
       browser: this.browser,
       githubPat: shellEnabled && hasSecret(secretKeys.githubPat) ? getSecret(secretKeys.githubPat) : null,
-      jiraToken: shellEnabled && hasSecret(secretKeys.jira) ? getSecret(secretKeys.jira) : null,
+      jiraToken: hasSecret(secretKeys.jira) ? getSecret(secretKeys.jira) : null,
       jiraSite: this.db.getSetting("jira_site_url"),
       explore:
         shellEnabled && workspaceDir
@@ -174,6 +193,13 @@ export class Runner {
     }
     const jiraSite = this.db.getSetting("jira_site_url");
     if (jiraSite) lines.push(`Jira site URL: ${jiraSite}`);
+    if (browserEnabled) {
+      lines.push(
+        jiraToolsReady(jiraSite, hasSecret(secretKeys.jira))
+          ? "Jira tools are available. Use them unless the user asks for the browser or a Jira tool fails. Do not print the token."
+          : "Jira tools are not configured. Use the browser for Jira, or save the site and token in Settings → Jira.",
+      );
+    }
     if (shellEnabled && hasSecret(secretKeys.jira)) {
       lines.push("A Jira API token is available to shell_run as JIRA_API_TOKEN. Do not print it or ask the user to paste it.");
     }
@@ -182,7 +208,7 @@ export class Runner {
     }
     if (shellEnabled) {
       lines.push(
-        "Delete commands need the user's approval. For a delete request, call shell_run first; it returns DELETE_CONFIRM_REQUIRED. Then ask the user in chat. Only after their latest message explicitly approves, call shell_run again with confirmed: true.",
+        "Deletes, git pushes, and downloads need the user's approval. Call shell_run first; it returns DELETE_CONFIRM_REQUIRED. Then ask the user in chat. Only after their latest message explicitly approves, call shell_run again with confirmed: true.",
       );
     }
     if (browserEnabled) {
@@ -191,6 +217,33 @@ export class Runner {
       );
     }
     return lines.join("\n\n");
+  }
+
+  private toolsFor(agent: Agent) {
+    const tools = toolsForAgent(agent.toolProfile);
+    if (jiraToolsReady(this.db.getSetting("jira_site_url"), hasSecret(secretKeys.jira))) return tools;
+    return tools.filter((tool) => !tool.name.startsWith("jira_"));
+  }
+
+  private async refreshMemory(agentId: string): Promise<void> {
+    const agent = this.db.getAgent(agentId);
+    if (!agent || !agent.memoryEnabled) return;
+    const messages = this.db.listMessages(agent.id);
+    if (messages.length <= MEMORY_MESSAGE_WINDOW) return;
+    const turns = memoryTurns(messages);
+    const pending = pendingMemoryTurns(turns, this.db.getMemoryTurnCount(agent.id));
+    if (!pending) return;
+    const startSummary = agent.memorySummary;
+    const text = await completeOnce(
+      AUTO_MODEL_ID,
+      "You keep a short memory of an agent conversation. Reply with the memory only.",
+      summaryUpdatePrompt(startSummary, pending),
+    );
+    const summary = clipMemorySummary(text);
+    if (!summary) return;
+    const current = this.db.getAgent(agent.id);
+    if (!current || current.memorySummary !== startSummary) return;
+    this.db.setMemorySummary(agent.id, summary, turns.length);
   }
 }
 
@@ -207,12 +260,4 @@ function explainCopilotError(message: string): string {
   return message;
 }
 
-function buildPrompt(prior: Message[], latest: string, routine: boolean, freshSession: boolean): string {
-  const lead = routine ? "This turn was started by a schedule.\n\n" : "";
-  if (!freshSession || prior.length === 0) return `${lead}${latest}`;
-  const transcript = prior
-    .map((message) => `${message.role}: ${message.content}`)
-    .join("\n\n")
-    .slice(-12000);
-  return `${lead}Previous conversation:\n${transcript}\n\nUser: ${latest}`;
-}
+

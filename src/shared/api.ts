@@ -17,6 +17,7 @@ export interface FidApi {
     list: () => Promise<Agent[]>;
     create: (input: AgentInput) => Promise<Agent>;
     update: (id: string, input: AgentInput) => Promise<Agent>;
+    clearMemory: (id: string) => Promise<Agent>;
     delete: (id: string) => Promise<void>;
   };
   messages: {

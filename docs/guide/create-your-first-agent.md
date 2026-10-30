@@ -29,9 +29,9 @@ Keep the first version short. You can edit the agent later from the menu on its 
 
 ## Choose tools and a workspace
 
-- **All tools** gives the agent the browser, files, search, git, and shell.
-- **Browser only** is for web work such as Jira. It cannot run commands or touch files.
-- **Shell, search, git, and files** is for code work. It cannot control a browser.
+- **All tools** gives the agent the browser, Jira, files, search, git, and shell.
+- **Browser and Jira** is for web work and a saved Jira site. It cannot run commands or touch files.
+- **Shell, search, git, and files** is for code work. It cannot control a browser or read Jira.
 
 For this release assistant, choose **Shell, search, git, and files** and pick the repository folder. The file and search tools stay inside that folder. The shell starts in that folder too, but it is not a full sandbox. Without a workspace folder, the local tools stay unavailable.
 

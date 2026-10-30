@@ -16,12 +16,12 @@ Open **Settings → GitHub** and paste a personal access token. Agents with shel
 
 ## Add Jira access
 
-Open **Settings → Jira** and save the site URL and an API token. Agents with shell tools receive `JIRA_API_TOKEN` and `JIRA_SITE`, and the site URL is added to the system message.
+Open **Settings → Jira** and save the site URL and a personal access token (PAT). When both are saved, browser agents read the site with `jira_search`, `jira_issue`, and `jira_myself`. Without a PAT, or when you ask the agent to use the browser, it uses the browser instead. If a Jira tool fails, the app logs the failure and the agent uses the browser. Agents with shell tools also receive `JIRA_API_TOKEN` and `JIRA_SITE`.
 
 ## Where the credentials live
 
-Tokens are encrypted with Windows `safeStorage` and stored in `secrets.bin.json` under `%APPDATA%\fid-coder`. The app does not send them to Copilot or print them in chat. A local tool such as `gh` can use its token to call its own service.
+Tokens are encrypted with Windows `safeStorage` and stored in `secrets.bin.json` under `%APPDATA%\fid-coder`. The app does not send tokens to Copilot or print them in chat. A local tool such as `gh` can use its token to call its own service.
 
-Changing a token drops every live Copilot session. The saved conversations stay; the next message rebuilds context from the transcript.
+Saving or clearing a token or the Jira site drops every live Copilot session. The saved conversations stay; the next message rebuilds context from the transcript.
 
-> **Tip:** Copilot is required. GitHub and Jira are optional, and browser-only agents do not need their tokens.
+> **Tip:** Copilot is required. GitHub and Jira are optional. A browser agent reads Jira with a saved site and PAT, or through the browser when no PAT is saved.
