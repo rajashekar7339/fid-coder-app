@@ -11,6 +11,7 @@
     "build": "npm run build:node && vite build",
     "dist:win": "npm run build && electron-builder --win portable --x64",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.preload.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "test:features": "npm run build:node && node scripts/features-smoke.mjs",
     "start": "electron ."
   },
   "dependencies": {

@@ -126,6 +126,24 @@ export function AgentDesk({
   }, [agent.id, agent.workspaceDir]);
 
   useEffect(() => {
+    if (!agent.workspaceDir) return;
+    let cancelled = false;
+    fid()
+      .changes.latest(agent.id)
+      .then((next) => {
+        if (cancelled) return;
+        setChanges(next);
+        setChangesError(null);
+      })
+      .catch((caught: unknown) => {
+        if (!cancelled) setChangesError(errorText(caught));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [agent.id, agent.workspaceDir, agent.lastActivityAt]);
+
+  useEffect(() => {
     let cancelled = false;
     setRules([]);
     setRulesError(null);
