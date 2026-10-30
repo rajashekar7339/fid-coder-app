@@ -2,6 +2,13 @@ import { createHash } from "crypto";
 import { spawn, spawnSync } from "child_process";
 import fs from "fs";
 import path from "path";
+import {
+  COPILOT_USAGE_REFRESH_MS,
+  COPILOT_USAGE_UNAVAILABLE,
+  normalizeCopilotUsage,
+  usageFailureMessage,
+  type CopilotUsageResult,
+} from "../shared/copilot-usage";
 import { AUTO_MODEL_ID, catalogModels, type CatalogModel, type CatalogPrice } from "../shared/model";
 import type { CopilotModel, SettingsView } from "../shared/types";
 import type { AppTool, ToolContext } from "../tools/types";
@@ -109,7 +116,18 @@ export async function stopClient(): Promise<void> {
 type AccountApi = {
   getAllUsers?: () => Promise<unknown>;
   logout?: (params: { selectionId?: string }) => Promise<unknown>;
+  getQuota?: (params: { selectionId?: string }) => Promise<unknown>;
 };
+
+type UsageCacheEntry = {
+  at: number;
+  result: CopilotUsageResult;
+};
+
+let usageCache: UsageCacheEntry | null = null;
+let usageInFlight: Promise<CopilotUsageResult> | null = null;
+let usageEpoch = 0;
+let usageTimer: ReturnType<typeof setInterval> | null = null;
 
 export async function signOutCopilot(): Promise<void> {
   let token: string | null = null;
@@ -124,6 +142,7 @@ export async function signOutCopilot(): Promise<void> {
   } finally {
     clearSecret(secretKeys.copilot);
     await stopClient();
+    stopUsageWatch();
   }
   const status = await getCopilotStatus();
   if (status.signedIn) {
@@ -382,6 +401,90 @@ export async function getCopilotStatus(): Promise<SettingsView> {
     hasJiraToken: hasSecret(secretKeys.jira),
     jiraSiteUrl: "",
   };
+}
+
+export function stopUsageWatch(): void {
+  usageEpoch += 1;
+  usageCache = null;
+  usageInFlight = null;
+  if (usageTimer) {
+    clearInterval(usageTimer);
+    usageTimer = null;
+  }
+}
+
+export function watchCopilotUsage(signedIn: boolean): void {
+  if (!signedIn) {
+    stopUsageWatch();
+    return;
+  }
+  if (usageTimer) return;
+  const timer = setInterval(() => {
+    void getCopilotUsage(true);
+  }, COPILOT_USAGE_REFRESH_MS);
+  timer.unref();
+  usageTimer = timer;
+  void getCopilotUsage(true);
+}
+
+export function getCopilotUsage(force = false): Promise<CopilotUsageResult> {
+  if (!force && usageCache && Date.now() - usageCache.at < COPILOT_USAGE_REFRESH_MS) {
+    return Promise.resolve(usageCache.result);
+  }
+  if (usageInFlight) return usageInFlight;
+  const epoch = usageEpoch;
+  const pending = loadCopilotUsage(epoch).finally(() => {
+    if (usageInFlight === pending) usageInFlight = null;
+  });
+  usageInFlight = pending;
+  return pending;
+}
+
+async function loadCopilotUsage(epoch: number): Promise<CopilotUsageResult> {
+  if (epoch !== usageEpoch) return { usage: null, message: null };
+  let token: string | null = null;
+  try {
+    token = hasSecret(secretKeys.copilot) ? getSecret(secretKeys.copilot) : null;
+  } catch {
+    token = null;
+  }
+  try {
+    const copilot = await ensureClient(token);
+    if (epoch !== usageEpoch) return { usage: null, message: null };
+    const auth = (await copilot.getAuthStatus?.()) ?? null;
+    if (auth?.isAuthenticated !== true) {
+      if (epoch === usageEpoch) stopUsageWatch();
+      return { usage: null, message: null };
+    }
+    const account = (copilot as unknown as { rpc?: { account?: AccountApi } }).rpc?.account;
+    if (!account?.getQuota) {
+      return rememberUsage(epoch, { usage: null, message: COPILOT_USAGE_UNAVAILABLE });
+    }
+    const raw = await account.getQuota({});
+    if (epoch !== usageEpoch) return { usage: null, message: null };
+    const usage = normalizeCopilotUsage(readQuotaSnapshots(raw));
+    return rememberUsage(epoch, {
+      usage,
+      message: usage ? null : COPILOT_USAGE_UNAVAILABLE,
+    });
+  } catch (error) {
+    if (epoch !== usageEpoch) return { usage: null, message: null };
+    return rememberUsage(epoch, { usage: null, message: usageFailureMessage(error) });
+  }
+}
+
+function rememberUsage(epoch: number, result: CopilotUsageResult): CopilotUsageResult {
+  if (epoch !== usageEpoch) return { usage: null, message: null };
+  usageCache = { at: Date.now(), result };
+  return result;
+}
+
+function readQuotaSnapshots(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const record = raw as Record<string, unknown>;
+  if ("quotaSnapshots" in record) return record.quotaSnapshots;
+  if ("quota_snapshots" in record) return record.quota_snapshots;
+  return record;
 }
 
 export async function startCopilotLogin(): Promise<{ ok: boolean; message: string }> {

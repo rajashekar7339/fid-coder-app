@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
+import { COPILOT_USAGE_REFRESH_MS, type CopilotUsageView } from "../shared/copilot-usage";
 import type { Agent, CopilotModel, Routine, SettingsView } from "../shared/types";
 import { AgentDesk } from "./components/AgentDesk";
 import { AgentDialog } from "./components/AgentDialog";
@@ -31,6 +32,9 @@ export function App() {
   const [agentId, setAgentId] = useState<string | null>(null);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [settings, setSettings] = useState<SettingsView | null>(null);
+  const [usage, setUsage] = useState<CopilotUsageView | null>(null);
+  const [usageMessage, setUsageMessage] = useState<string | null>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Agent | null>(null);
   const [deskOpen, setDeskOpen] = useState(() => window.innerWidth >= 1181);
@@ -40,6 +44,7 @@ export function App() {
 
   const modelsRequest = useRef(0);
   const routinesRequest = useRef(0);
+  const usageRequest = useRef(0);
   const signInWatch = useRef(0);
   const signInTimer = useRef<number | null>(null);
 
@@ -69,6 +74,23 @@ export function App() {
     const next = await fid().settings.get(refreshAuth ? { refreshAuth: true } : undefined);
     setSettings(next);
     return next;
+  }, []);
+
+  const refreshUsage = useCallback(async (force = false): Promise<void> => {
+    const request = ++usageRequest.current;
+    setUsageLoading(true);
+    try {
+      const result = await fid().settings.usage(force ? { force: true } : undefined);
+      if (usageRequest.current !== request) return;
+      setUsage(result.usage);
+      setUsageMessage(result.message);
+    } catch (caught) {
+      if (usageRequest.current !== request) return;
+      setUsage(null);
+      setUsageMessage(errorText(caught));
+    } finally {
+      if (usageRequest.current === request) setUsageLoading(false);
+    }
   }, []);
 
   const refreshRoutines = useCallback(async (): Promise<Routine[]> => {
@@ -210,19 +232,40 @@ export function App() {
   }, [settings?.signedIn, refreshModels]);
 
   useEffect(() => {
+    if (!settings?.signedIn) {
+      usageRequest.current += 1;
+      setUsage(null);
+      setUsageMessage(null);
+      setUsageLoading(false);
+      return;
+    }
+    void refreshUsage();
+  }, [settings?.signedIn, refreshUsage]);
+
+  useEffect(() => {
+    if (!settings?.signedIn) return;
+    const timer = window.setInterval(() => {
+      void refreshUsage();
+    }, COPILOT_USAGE_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [settings?.signedIn, refreshUsage]);
+
+  useEffect(() => {
     if (dialog?.kind !== "settings") return;
     void refreshSettings().catch((error: unknown) => setLoadError(errorText(error)));
-  }, [dialog, refreshSettings]);
+    void refreshUsage();
+  }, [dialog, refreshSettings, refreshUsage]);
 
   useEffect(() => {
     function onFocus() {
       void refreshSettings().catch(() => undefined);
       void refreshAgents().catch(() => undefined);
       if (agentId) void refreshRoutines().catch(() => undefined);
+      if (settings?.signedIn) void refreshUsage();
     }
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [agentId, refreshAgents, refreshRoutines, refreshSettings]);
+  }, [agentId, settings?.signedIn, refreshAgents, refreshRoutines, refreshSettings, refreshUsage]);
 
   useEffect(() => {
     const query = window.matchMedia(DESK_BREAKPOINT);
@@ -311,6 +354,7 @@ export function App() {
           copilotPresence={copilotPresence}
           loginName={settings?.loginName ?? null}
           signedIn={settings?.signedIn ?? false}
+          usage={usage}
           onSelect={setAgentId}
           onCreate={openCreate}
           onEdit={openEdit}
@@ -413,6 +457,10 @@ export function App() {
       {dialog?.kind === "settings" ? (
         <SettingsDialog
           settings={settings}
+          usage={usage}
+          usageMessage={usageMessage}
+          usageLoading={usageLoading}
+          onRefreshUsage={refreshUsage}
           section={dialog.section}
           checkingSignIn={checkingSignIn}
           signInNote={signInNote}

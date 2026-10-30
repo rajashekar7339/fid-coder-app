@@ -1119,6 +1119,10 @@ kbd {
   color: var(--warning);
 }
 
+.account-copy .usage-bar {
+  margin-top: 1px;
+}
+
 .account-settings {
   flex: none;
   color: var(--faint);
@@ -3452,6 +3456,132 @@ kbd {
 
 .inline-check {
   color: var(--success);
+}
+
+/* ---------- Usage ---------- */
+
+.usage-bar {
+  display: block;
+  overflow: hidden;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--panel-strong);
+}
+
+.usage-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--success);
+  transition: width 240ms ease;
+}
+
+.usage-bar.is-low .usage-fill {
+  background: var(--warning);
+}
+
+.usage-bar.is-critical .usage-fill {
+  background: var(--danger);
+}
+
+.usage-bar.is-compact {
+  height: 3px;
+}
+
+.usage-card .connection-head {
+  padding-bottom: 12px;
+}
+
+.usage-icon {
+  color: var(--lime);
+}
+
+.usage-body {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--line);
+}
+
+.usage-figures {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.usage-figures > strong {
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 560;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-figures > span {
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+.usage-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.usage-bar-row .usage-bar {
+  flex: 1;
+  height: 5px;
+}
+
+.usage-percent {
+  flex: none;
+  min-width: 34px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.usage-percent.is-low {
+  color: var(--warning);
+}
+
+.usage-percent.is-critical {
+  color: var(--danger);
+}
+
+.usage-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.usage-meta strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.usage-overage {
+  color: var(--warning);
+}
+
+.usage-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10.2px;
+  line-height: 1.45;
+}
+
+.usage-note.is-muted {
+  color: var(--faint);
+}
+
+.usage-note.is-danger {
+  color: var(--danger);
 }
 
 .connection-actions {

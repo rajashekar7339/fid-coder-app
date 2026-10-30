@@ -22,6 +22,7 @@ const channels = {
   routinesDelete: "routines:delete",
   routinesRun: "routines:run",
   settingsGet: "settings:get",
+  settingsUsage: "settings:usage",
   settingsSignOut: "settings:sign-out",
   settingsLogin: "settings:login",
   settingsSaveGithubPat: "settings:save-github-pat",
@@ -77,6 +78,7 @@ const api: FidApi = {
   },
   settings: {
     get: (options?: { refreshAuth?: boolean }) => ipcRenderer.invoke(channels.settingsGet, options),
+    usage: (options?: { force?: boolean }) => ipcRenderer.invoke(channels.settingsUsage, options),
     signOut: () => ipcRenderer.invoke(channels.settingsSignOut),
     startCopilotLogin: () => ipcRenderer.invoke(channels.settingsLogin),
     saveGithubPat: (token: string) => ipcRenderer.invoke(channels.settingsSaveGithubPat, token),

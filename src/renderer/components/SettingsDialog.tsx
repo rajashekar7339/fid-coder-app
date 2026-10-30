@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Check,
+  Gauge,
   GitBranch,
   KeyRound,
   Lock,
@@ -10,15 +11,21 @@ import {
   Ticket,
   X,
 } from "lucide-react";
+import { formatUsageCount, formatUsageReset, type CopilotUsageView } from "../../shared/copilot-usage";
 import type { SettingsView } from "../../shared/types";
 import { errorText, fid } from "../fid";
 import { Modal } from "./Modal";
+import { UsageBar, usageLevel } from "./UsageBar";
 
 export type SignInNote = { tone: "progress" | "ok" | "error"; text: string };
 export type SettingsSection = "copilot" | "github" | "jira";
 
 type Props = {
   settings: SettingsView | null;
+  usage: CopilotUsageView | null;
+  usageMessage: string | null;
+  usageLoading: boolean;
+  onRefreshUsage: (force?: boolean) => Promise<void>;
   section: SettingsSection;
   checkingSignIn: boolean;
   signInNote: SignInNote | null;
@@ -62,6 +69,10 @@ const SECTIONS: Array<{
 
 export function SettingsDialog({
   settings,
+  usage,
+  usageMessage,
+  usageLoading,
+  onRefreshUsage,
   section,
   checkingSignIn,
   signInNote,
@@ -126,6 +137,7 @@ export function SettingsDialog({
     setMessage(null);
     try {
       await onRefresh();
+      await onRefreshUsage(true);
       setMessage("Connection refreshed.");
     } catch (caught) {
       setError(errorText(caught));
@@ -183,6 +195,10 @@ export function SettingsDialog({
             {section === "copilot" ? (
               <CopilotSection
                 settings={settings}
+                usage={usage}
+                usageMessage={usageMessage}
+                usageLoading={usageLoading}
+                onRefreshUsage={onRefreshUsage}
                 checkingSignIn={checkingSignIn}
                 busy={busy}
                 onStartSignIn={onStartSignIn}
@@ -264,6 +280,10 @@ export function SettingsDialog({
 
 function CopilotSection({
   settings,
+  usage,
+  usageMessage,
+  usageLoading,
+  onRefreshUsage,
   checkingSignIn,
   busy,
   onStartSignIn,
@@ -272,6 +292,10 @@ function CopilotSection({
   onSectionChange,
 }: {
   settings: SettingsView | null;
+  usage: CopilotUsageView | null;
+  usageMessage: string | null;
+  usageLoading: boolean;
+  onRefreshUsage: (force?: boolean) => Promise<void>;
   checkingSignIn: boolean;
   busy: boolean;
   onStartSignIn: () => void;
@@ -384,6 +408,10 @@ function CopilotSection({
       </div>
       {!signedIn && settings ? <p className="settings-inline-note">{settings.authStatus}</p> : null}
 
+      {signedIn ? (
+        <UsageCard usage={usage} message={usageMessage} loading={usageLoading} onRefresh={onRefreshUsage} />
+      ) : null}
+
       <div className="settings-section-title">
         Agent connections <span />
       </div>
@@ -404,6 +432,100 @@ function CopilotSection({
         />
       </div>
     </>
+  );
+}
+
+function UsageCard({
+  usage,
+  message,
+  loading,
+  onRefresh,
+}: {
+  usage: CopilotUsageView | null;
+  message: string | null;
+  loading: boolean;
+  onRefresh: (force?: boolean) => Promise<void>;
+}) {
+  const percent = usage?.remainingPercent ?? null;
+  const level = usageLevel(percent, usage?.blocked ?? false);
+  const reset = formatUsageReset(usage?.resetsAt);
+  const note = usage?.blocked
+    ? reset
+      ? `No ${usage.label.toLowerCase()} left. Chats will fail until ${reset}.`
+      : `No ${usage.label.toLowerCase()} left.`
+    : null;
+
+  return (
+    <div className="connection-card usage-card">
+      <div className="connection-head">
+        <div className="connection-icon usage-icon">
+          <Gauge size={16} aria-hidden="true" />
+        </div>
+        <div className="connection-copy">
+          <div className="connection-name">Copilot usage</div>
+          <div className="connection-note">{usage ? usage.label : "Included with this account"}</div>
+        </div>
+        <button type="button" className="text-button" disabled={loading} onClick={() => void onRefresh(true)}>
+          <RefreshCw size={11} className={loading ? "spin" : undefined} aria-hidden="true" />
+          Refresh
+        </button>
+      </div>
+      <div className="usage-body">
+        {usage === null ? (
+          <p className="usage-note is-muted">{message ?? "Reading usage…"}</p>
+        ) : usage.unlimited ? (
+          <div className="usage-figures">
+            <strong>Unlimited</strong>
+            <span>
+              {formatUsageCount(usage.used)} {usage.label.toLowerCase()} used
+            </span>
+          </div>
+        ) : (
+          <>
+            <div className="usage-figures">
+              {usage.included !== null ? (
+                <>
+                  <strong>{formatUsageCount(usage.used)}</strong>
+                  <span>of {formatUsageCount(usage.included)} used</span>
+                </>
+              ) : (
+                <>
+                  <strong>{formatUsageCount(usage.used)}</strong>
+                  <span>{usage.label.toLowerCase()} used</span>
+                </>
+              )}
+            </div>
+            {percent !== null ? (
+              <div className="usage-bar-row">
+                <UsageBar
+                  percent={percent}
+                  blocked={usage.blocked}
+                  label={`${usage.label}: ${formatUsageCount(percent)}% remaining`}
+                />
+                <span className={`usage-percent is-${level}`}>{formatUsageCount(percent)}%</span>
+              </div>
+            ) : null}
+            <div className="usage-meta">
+              {usage.remaining !== null ? (
+                <span>
+                  <strong>{formatUsageCount(usage.remaining)}</strong> left
+                </span>
+              ) : null}
+              {reset ? (
+                <span>
+                  Resets <strong>{reset}</strong>
+                </span>
+              ) : null}
+              {usage.overage > 0 ? (
+                <span className="usage-overage">+{formatUsageCount(usage.overage)} over</span>
+              ) : null}
+            </div>
+            {note ? <p className="usage-note is-danger">{note}</p> : null}
+            {message && !note ? <p className="usage-note is-muted">{message}</p> : null}
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 

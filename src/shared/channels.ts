@@ -16,6 +16,7 @@ export const channels = {
   routinesDelete: "routines:delete",
   routinesRun: "routines:run",
   settingsGet: "settings:get",
+  settingsUsage: "settings:usage",
   settingsSignOut: "settings:sign-out",
   settingsLogin: "settings:login",
   settingsSaveGithubPat: "settings:save-github-pat",
