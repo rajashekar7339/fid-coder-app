@@ -10,6 +10,8 @@ export type Agent = {
   workspaceDir: string | null;
   model: string;
   toolProfile: AgentToolProfile;
+  memorySummary: string;
+  memoryEnabled: boolean;
   lastActivityAt: string | null;
   nextRoutineAt: string | null;
   createdAt: string;
@@ -73,6 +75,7 @@ export type AgentInput = {
   workspaceDir: string | null;
   model: string;
   toolProfile: AgentToolProfile;
+  memoryEnabled: boolean;
 };
 
 export type BrowserPreview = {

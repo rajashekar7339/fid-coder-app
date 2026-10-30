@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  CircleHelp,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -8,11 +9,14 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import type { CopilotUsageView } from "../../shared/copilot-usage";
+import { formatUsageCount, formatUsageReset } from "../../shared/copilot-usage";
 import type { Agent } from "../../shared/types";
 import { agentSubtitle, isRecentlyActive } from "../agent-display";
 import { formatRelativeTime } from "../format";
 import { AgentAvatar } from "./AgentAvatar";
 import { BrandMark } from "./BrandMark";
+import { UsageBar } from "./UsageBar";
 
 export type CopilotPresence = "unknown" | "checking" | "ready" | "out";
 
@@ -22,11 +26,13 @@ type Props = {
   copilotPresence: CopilotPresence;
   loginName: string | null;
   signedIn: boolean;
+  usage: CopilotUsageView | null;
   onSelect: (agentId: string) => void;
   onCreate: () => void;
   onEdit: (agent: Agent) => void;
   onDelete: (agent: Agent) => void;
   onSettings: () => void;
+  onHelp: () => void;
 };
 
 type AgentMenu = { agent: Agent; x: number; y: number };
@@ -45,6 +51,20 @@ function initial(value: string | null): string {
   return value?.trim().charAt(0).toUpperCase() || "C";
 }
 
+function usageTitle(usage: CopilotUsageView): string {
+  const label = usage.label.toLowerCase();
+  const parts = [
+    usage.included === null
+      ? `${formatUsageCount(usage.used)} ${label} used`
+      : `${formatUsageCount(usage.used)} of ${formatUsageCount(usage.included)} ${label} used`,
+  ];
+  if (usage.remaining !== null) parts.push(`${formatUsageCount(usage.remaining)} left`);
+  if (usage.overage > 0) parts.push(`${formatUsageCount(usage.overage)} over`);
+  const reset = formatUsageReset(usage.resetsAt);
+  if (reset) parts.push(`resets ${reset}`);
+  return parts.join(" · ");
+}
+
 function placeMenu(x: number, y: number): { x: number; y: number } {
   return {
     x: Math.max(8, Math.min(x, window.innerWidth - MENU_WIDTH - 8)),
@@ -58,11 +78,13 @@ export function Sidebar({
   copilotPresence,
   loginName,
   signedIn,
+  usage,
   onSelect,
   onCreate,
   onEdit,
   onDelete,
   onSettings,
+  onHelp,
 }: Props) {
   const [query, setQuery] = useState("");
   const [menu, setMenu] = useState<AgentMenu | null>(null);
@@ -244,6 +266,11 @@ export function Sidebar({
           </div>
           <p>Agents use this PC for browser, files, and shell.</p>
         </div>
+        <button type="button" className="help-row" aria-label="Open help and guide" onClick={onHelp}>
+          <CircleHelp size={15} aria-hidden="true" />
+          <span>Help &amp; guide</span>
+          <kbd>F1</kbd>
+        </button>
         <button type="button" className="account-row" aria-label="Open settings" onClick={onSettings}>
           <span className="user-avatar" aria-hidden="true">
             {initial(loginName)}
@@ -254,6 +281,15 @@ export function Sidebar({
               <span className={`presence-dot ${signedIn ? "is-ready" : "is-off"}`} />
               {copilotLabel(copilotPresence)}
             </span>
+            {usage && !usage.unlimited && usage.remainingPercent !== null ? (
+              <UsageBar
+                percent={usage.remainingPercent}
+                blocked={usage.blocked}
+                label={`Copilot ${usage.label.toLowerCase()}: ${formatUsageCount(usage.remainingPercent)}% remaining`}
+                title={usageTitle(usage)}
+                className="is-compact"
+              />
+            ) : null}
           </span>
           <Settings size={14} aria-hidden="true" className="account-settings" />
         </button>

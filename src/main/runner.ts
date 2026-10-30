@@ -1,10 +1,26 @@
-import type { Agent, ChatEvent, Message } from "../shared/types";
+import {
+  MEMORY_MESSAGE_WINDOW,
+  buildSessionPrompt,
+  clipMemorySummary,
+  memoryTurns,
+  pendingMemoryTurns,
+  summaryUpdatePrompt,
+} from "../shared/memory-summary";
+import { AUTO_MODEL_ID } from "../shared/model";
+import type { Agent, ChatEvent } from "../shared/types";
+import { jiraToolsReady } from "../tools/jira-format";
 import { toolsForAgent } from "../tools/registry";
+import { summarizeTool } from "../shared/summary";
 import type { ToolContext } from "../tools/types";
 import type { BrowserManager } from "./browser-manager";
-import { detach, getCopilotStatus, openSession, readAssistantText, type LiveSession } from "./copilot";
+import { completeOnce, detach, getCopilotStatus, openSession, readAssistantText, type LiveSession } from "./copilot";
 import type { AppDatabase } from "./db";
+import { runCodeExplore } from "./explore-session";
 import { getSecret, hasSecret, secretKeys } from "./secrets";
+import { workspaceBrief } from "./workspace-brief";
+
+const WORKSPACE_HINT =
+  "A workspace brief is included below. Use it before searching. Explore with list_dir, glob_files, search_text, file_read, and read_many. For an unfamiliar area, call explore_code with a specific question. It returns a short brief and does not edit. Edit an existing file with apply_patch. Use file_write only to create a file. Use git_status, git_diff, and git_log for git. Use gh_pr_view and gh_pr_diff for a pull request. Use shell_run for builds, tests, and other commands. Do not use shell_run to list folders, search files, or read files.";
 
 type Sink = (event: ChatEvent) => void;
 
@@ -72,17 +88,26 @@ export class Runner {
     this.sink({ agentId: agent.id, type: "user", text: visible });
 
     try {
-      const systemMessage = this.systemMessage(agent);
+      const systemMessage = await this.systemMessage(agent);
       const opened = await this.sessionFor(agent, systemMessage);
       const prior = this.db
         .listMessages(agent.id)
         .filter((message) => message.id !== userMessage.id)
-        .slice(-30);
-      const prompt = buildPrompt(prior, text, input.source === "routine", opened.fresh);
+        .slice(-MEMORY_MESSAGE_WINDOW);
+      const prompt = buildSessionPrompt({
+        summary: agent.memorySummary,
+        prior,
+        latest: text,
+        routine: input.source === "routine",
+        freshSession: opened.fresh,
+      });
       const response = await opened.live.session.sendAndWait({ prompt }, TURN_TIMEOUT_MS);
       const finalText = readAssistantText(response, streamed).trim() || streamed.trim() || "No response.";
       this.db.addMessage(agent.id, "assistant", finalText);
       this.sink({ agentId: agent.id, type: "done", text: finalText });
+      void this.refreshMemory(agent.id).catch((error: unknown) => {
+        console.error("Failed to update agent memory", error);
+      });
       return finalText;
     } catch (error) {
       const message = explainCopilotError(error instanceof Error ? error.message : String(error));
@@ -108,15 +133,15 @@ export class Runner {
     const live = await openSession({
       model: agent.model,
       systemMessage,
-      tools: toolsForAgent(agent.toolProfile),
+      tools: this.toolsFor(agent),
       getContext: () => this.context(agent.id),
       onToolStart: (toolName, preview) => {
         this.sink({ agentId: agent.id, type: "tool-start", toolName, text: preview });
       },
       onToolEnd: (toolName, ok, text) => {
-        const clipped = text.length > 2000 ? `${text.slice(0, 2000)}…` : text;
-        this.db.addMessage(agent.id, "tool", `${toolName}: ${clipped}`);
-        this.sink({ agentId: agent.id, type: "tool-end", toolName, ok, text: clipped });
+        const live = text.length > 2000 ? `${text.slice(0, 2000)}…` : text;
+        this.db.addMessage(agent.id, "tool", summarizeTool(toolName, ok, live));
+        this.sink({ agentId: agent.id, type: "tool-end", toolName, ok, text: live });
       },
     });
 
@@ -140,23 +165,41 @@ export class Runner {
     const agent = this.db.getAgent(agentId);
     if (!agent) throw new Error("Agent not found");
     const shellEnabled = agent.toolProfile !== "browser";
+    const workspaceDir = agent.workspaceDir;
     return {
       agentId,
-      workspaceDir: agent.workspaceDir,
+      workspaceDir,
+      model: agent.model,
       browser: this.browser,
       githubPat: shellEnabled && hasSecret(secretKeys.githubPat) ? getSecret(secretKeys.githubPat) : null,
-      jiraToken: shellEnabled && hasSecret(secretKeys.jira) ? getSecret(secretKeys.jira) : null,
+      jiraToken: hasSecret(secretKeys.jira) ? getSecret(secretKeys.jira) : null,
       jiraSite: this.db.getSetting("jira_site_url"),
+      explore:
+        shellEnabled && workspaceDir
+          ? (question) => runCodeExplore(this.context(agentId), question)
+          : undefined,
     };
   }
 
-  private systemMessage(agent: Agent): string {
+  private async systemMessage(agent: Agent): Promise<string> {
     const shellEnabled = agent.toolProfile !== "browser";
     const browserEnabled = agent.toolProfile !== "developer";
     const lines = [agent.systemPrompt];
-    if (shellEnabled && agent.workspaceDir) lines.push(`Workspace folder: ${agent.workspaceDir}`);
+    if (shellEnabled && agent.workspaceDir) {
+      lines.push(`Workspace folder: ${agent.workspaceDir}`);
+      lines.push(WORKSPACE_HINT);
+      const brief = await workspaceBrief(agent.workspaceDir);
+      if (brief) lines.push(brief);
+    }
     const jiraSite = this.db.getSetting("jira_site_url");
     if (jiraSite) lines.push(`Jira site URL: ${jiraSite}`);
+    if (browserEnabled) {
+      lines.push(
+        jiraToolsReady(jiraSite, hasSecret(secretKeys.jira))
+          ? "Jira tools are available. Use them unless the user asks for the browser or a Jira tool fails. Do not print the token."
+          : "Jira tools are not configured. Use the browser for Jira, or save the site and token in Settings → Jira.",
+      );
+    }
     if (shellEnabled && hasSecret(secretKeys.jira)) {
       lines.push("A Jira API token is available to shell_run as JIRA_API_TOKEN. Do not print it or ask the user to paste it.");
     }
@@ -165,7 +208,7 @@ export class Runner {
     }
     if (shellEnabled) {
       lines.push(
-        "Delete commands need the user's approval. For a delete request, call shell_run first; it returns DELETE_CONFIRM_REQUIRED. Then ask the user in chat. Only after their latest message explicitly approves, call shell_run again with confirmed: true.",
+        "Deletes, git pushes, and downloads need the user's approval. Call shell_run first; it returns DELETE_CONFIRM_REQUIRED. Then ask the user in chat. Only after their latest message explicitly approves, call shell_run again with confirmed: true.",
       );
     }
     if (browserEnabled) {
@@ -174,6 +217,33 @@ export class Runner {
       );
     }
     return lines.join("\n\n");
+  }
+
+  private toolsFor(agent: Agent) {
+    const tools = toolsForAgent(agent.toolProfile);
+    if (jiraToolsReady(this.db.getSetting("jira_site_url"), hasSecret(secretKeys.jira))) return tools;
+    return tools.filter((tool) => !tool.name.startsWith("jira_"));
+  }
+
+  private async refreshMemory(agentId: string): Promise<void> {
+    const agent = this.db.getAgent(agentId);
+    if (!agent || !agent.memoryEnabled) return;
+    const messages = this.db.listMessages(agent.id);
+    if (messages.length <= MEMORY_MESSAGE_WINDOW) return;
+    const turns = memoryTurns(messages);
+    const pending = pendingMemoryTurns(turns, this.db.getMemoryTurnCount(agent.id));
+    if (!pending) return;
+    const startSummary = agent.memorySummary;
+    const text = await completeOnce(
+      AUTO_MODEL_ID,
+      "You keep a short memory of an agent conversation. Reply with the memory only.",
+      summaryUpdatePrompt(startSummary, pending),
+    );
+    const summary = clipMemorySummary(text);
+    if (!summary) return;
+    const current = this.db.getAgent(agent.id);
+    if (!current || current.memorySummary !== startSummary) return;
+    this.db.setMemorySummary(agent.id, summary, turns.length);
   }
 }
 
@@ -190,12 +260,4 @@ function explainCopilotError(message: string): string {
   return message;
 }
 
-function buildPrompt(prior: Message[], latest: string, routine: boolean, freshSession: boolean): string {
-  const lead = routine ? "This turn was started by a schedule.\n\n" : "";
-  if (!freshSession || prior.length === 0) return `${lead}${latest}`;
-  const transcript = prior
-    .map((message) => `${message.role}: ${message.content}`)
-    .join("\n\n")
-    .slice(-12000);
-  return `${lead}Previous conversation:\n${transcript}\n\nUser: ${latest}`;
-}
+

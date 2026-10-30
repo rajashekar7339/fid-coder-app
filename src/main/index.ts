@@ -82,7 +82,7 @@ function createWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 640,
     title: "Fid Coder",
-    backgroundColor: "#0a0b09",
+    backgroundColor: "#1e1f22",
     autoHideMenuBar: true,
     show: false,
     webPreferences: {

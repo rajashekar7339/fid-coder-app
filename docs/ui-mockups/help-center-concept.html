@@ -1,0 +1,2434 @@
+<title>Fid Coder Help Center</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap">
+<style>
+  /* Layout: a product proposal page wrapped around one large, interactive cockpit window. */
+  :root {
+    --canvas: #151619;
+    --page: #1e1f22;
+    --panel: #2b2d30;
+    --panel-soft: #26282c;
+    --panel-raised: #313338;
+    --code: #1c1d21;
+    --ink: #e3e5e8;
+    --text: #c8cbd1;
+    --muted: #a0a4ac;
+    --faint: #858992;
+    --line: rgba(223, 225, 229, 0.09);
+    --line-strong: rgba(223, 225, 229, 0.16);
+    --lime: #d8f878;
+    --lime-soft: rgba(216, 248, 120, 0.055);
+    --success: #9bd885;
+    --warning: #eab867;
+    --danger: #f29286;
+    --font-sans: "Geist", "Segoe UI", sans-serif;
+    --font-mono: "Geist Mono", "Cascadia Mono", Consolas, monospace;
+    --radius-sm: 6px;
+    --radius-md: 9px;
+    --radius-lg: 14px;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    padding-left: max(20px, env(safe-area-inset-left, 0px));
+    padding-right: max(20px, env(safe-area-inset-right, 0px));
+  }
+
+  button, input { font: inherit; }
+  button { cursor: pointer; }
+  svg { display: block; }
+  [hidden] { display: none !important; }
+
+  :focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
+
+  .page {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 34px 0 74px;
+  }
+
+  .masthead { animation: rise 420ms ease-out both; }
+
+  .brandline {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: 0.01em;
+  }
+
+  .brand-mark {
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border-radius: 7px;
+    background: var(--lime);
+    color: #14180b;
+    font-weight: 760;
+    font-size: 14px;
+    line-height: 1;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  }
+
+  .brand-word { color: var(--ink); font-weight: 600; letter-spacing: -0.01em; }
+  .brand-slash { color: #4c5057; }
+  .brand-section { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .version-pill {
+    margin-left: auto;
+    padding: 3px 7px;
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    color: var(--faint);
+    font-family: var(--font-mono);
+    font-size: 8px;
+    letter-spacing: 0.06em;
+  }
+
+  .hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.55fr);
+    gap: 40px;
+    align-items: end;
+    margin-top: 42px;
+  }
+
+  .eyebrow {
+    margin: 0 0 12px;
+    color: var(--lime);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  h1 {
+    margin: 0;
+    color: var(--ink);
+    font-size: clamp(42px, 6vw, 72px);
+    font-weight: 560;
+    letter-spacing: -0.045em;
+    line-height: 0.95;
+    text-wrap: balance;
+  }
+
+  .lede {
+    max-width: 62ch;
+    margin: 20px 0 0;
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.62;
+    text-wrap: pretty;
+  }
+
+  .hero-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--line);
+  }
+
+  .hero-meta div {
+    padding: 15px 16px 14px;
+    background: var(--page);
+  }
+
+  .hero-meta strong {
+    display: block;
+    color: var(--ink);
+    font-size: 25px;
+    font-weight: 520;
+    letter-spacing: -0.035em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .hero-meta span {
+    display: block;
+    margin-top: 6px;
+    color: var(--faint);
+    font-family: var(--font-mono);
+    font-size: 8px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+  }
+
+  .hero-note {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .hero-note .pulse {
+    width: 6px;
+    height: 6px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--lime);
+    box-shadow: 0 0 0 4px rgba(216, 248, 120, 0.1);
+  }
+
+  .section {
+    margin-top: 70px;
+    animation: rise 520ms ease-out both;
+  }
+
+  .section-head {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 28px;
+    margin-bottom: 20px;
+  }
+
+  .section-head h2 {
+    margin: 0;
+    color: var(--ink);
+    font-size: 22px;
+    font-weight: 540;
+    letter-spacing: -0.025em;
+  }
+
+  .section-head p {
+    max-width: 46ch;
+    margin: 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.55;
+    text-align: right;
+  }
+
+  .section-index {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--faint);
+    font-family: var(--font-mono);
+    font-size: 8px;
+    letter-spacing: 0.12em;
+  }
+
+  /* ---------- The interactive cockpit ---------- */
+
+  .device-scroll {
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-color: #4a4e56 var(--code);
+  }
+
+  .device {
+    min-width: 1050px;
+    border: 1px solid #3b3e44;
+    border-radius: 15px;
+    background: var(--page);
+    box-shadow: 0 40px 120px rgba(0, 0, 0, 0.48), 0 3px 18px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+  }
+
+  .device-bar {
+    height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 0 12px;
+    border-bottom: 1px solid #34373c;
+    background: #26282c;
+  }
+
+  .win-dots { display: flex; gap: 5px; }
+  .win-dots i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #4c5057;
+  }
+
+  .device-title {
+    margin-left: 7px;
+    color: var(--faint);
+    font-family: var(--font-mono);
+    font-size: 8px;
+    letter-spacing: 0.06em;
+  }
+
+  .device-state {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--faint);
+    font-family: var(--font-mono);
+    font-size: 7.5px;
+    letter-spacing: 0.08em;
+  }
+
+  .device-state .dot,
+  .green-dot,
+  .live-dot {
+    width: 5px;
+    height: 5px;
+    flex: none;
+    display: inline-block;
+    border-radius: 50%;
+    background: var(--success);
+  }
+
+  .device-screen {
+    position: relative;
+    height: 690px;
+    background: var(--page);
+    overflow: hidden;
+  }
+
+  /* ---------- Base app behind the reader ---------- */
+
+  .app {
+    height: 100%;
+    display: grid;
+    grid-template-columns: 206px minmax(0, 1fr) 264px;
+    background: var(--page);
+    color: var(--text);
+    font-size: 10px;
+  }
+
+  .app-side {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding: 10px;
+    border-right: 1px solid var(--line);
+    background: var(--panel);
+  }
+
+  .app-brand { display: flex; align-items: center; gap: 7px; height: 26px; }
+  .app-brand .brand-mark { width: 21px; height: 21px; border-radius: 6px; font-size: 12px; }
+  .app-brand b { color: var(--ink); font-size: 11px; font-weight: 620; letter-spacing: -0.02em; }
+  .app-brand b span { color: var(--faint); font-weight: 400; }
+  .brand-plus {
+    width: 22px;
+    height: 22px;
+    margin-left: auto;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    color: var(--muted);
+  }
+
+  .app-search {
+    height: 27px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 7px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--faint);
+    font-size: 8.5px;
+    background: rgba(0, 0, 0, 0.12);
+  }
+
+  .app-search kbd {
+    margin-left: auto;
+    padding: 2px 4px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 6.5px;
+    color: var(--faint);
+  }
+
+  .app-label {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 2px 0;
+    color: var(--faint);
+    font-family: var(--font-mono);
+    font-size: 7px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+  }
+
+  .app-agent {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 6px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+  }
+
+  .app-agent.is-active {
+    border-color: var(--line);
+    background: rgba(255, 255, 255, 0.042);
+    box-shadow: inset 2px 0 0 var(--lime);
+  }
+
+  .app-agent .agent-avatar { width: 25px; height: 25px; border-radius: 6px; font-size: 10px; }
+  .app-agent > div { min-width: 0; }
+  .app-agent b { display: block; color: var(--ink); font-size: 9px; font-weight: 570; }
+  .app-agent span { display: block; color: var(--faint); font-size: 7.5px; }
+  .app-agent .when { margin-left: auto; color: var(--faint); font-size: 7px; }
+
+  .app-new {
+    height: 26px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 7px;
+    border: 1px dashed var(--line-strong);
+    border-radius: 6px;
+    color: var(--muted);
+    font-size: 8.5px;
+    background: transparent;
+    text-align: left;
+  }
+
+  .app-side-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 7px; }
+
+  .local-note {
+    padding: 7px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.014);
+    color: var(--text);
+    font-size: 8px;
+  }
+
+  .local-note b { display: flex; align-items: center; gap: 5px; color: var(--text); font-weight: 500; }
+  .local-note p { margin: 4px 0 0; color: var(--faint); font-size: 7.5px; line-height: 1.45; }
+
+  .help-entry {
+    height: 29px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 7px;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    background: var(--panel-raised);
+    color: var(--ink);
+    font-size: 8.5px;
+    text-align: left;
+  }
+
+  .help-entry > svg { color: var(--lime); }
+  .help-entry kbd {
+    margin-left: auto;
+    padding: 2px 4px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    color: var(--faint);
+    font-family: var(--font-mono);
+    font-size: 6.5px;
+  }
+
+  .account { display: flex; align-items: center; gap: 6px; padding: 0 2px; font-size: 8px; }
+  .user-avatar {
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: #e3e5e8;
+    color: #1b1c1f;
+    font-size: 9px;
+    font-weight: 600;
+  }
+  .account b { display: block; color: var(--text); font-size: 8px; font-weight: 550; }
+  .account span { color: var(--faint); font-size: 7px; }
+  .account .account-gear { margin-left: auto; color: var(--faint); }
+
+  .app-chat { min-width: 0; display: flex; flex-direction: column; background: var(--page); }
+
+  .app-chat-head {
+    height: 47px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .app-chat-head .agent-avatar { width: 23px; height: 23px; border-radius: 6px; font-size: 9px; }
+  .app-chat-head b { color: var(--ink); font-size: 10px; font-weight: 580; }
+  .ready-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 2px;
+    padding: 2px 5px;
+    border: 1px solid rgba(155, 216, 133, 0.22);
+    border-radius: 99px;
+    color: var(--success);
+    font-family: var(--font-mono);
+    font-size: 6px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .app-chat-head .chat-actions { margin-left: auto; display: flex; gap: 4px; color: var(--faint); }
+  .chat-icon {
+    width: 22px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+  }
+
+  .app-thread {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 17px;
+    overflow: hidden;
+  }
+
+  .day-sep {
+    align-self: center;
+    color: var(--faint);
+    font-family: var(--font-mono);
+    font-size: 6.5px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+  }
+
+  .mini-tool-card {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel-soft);
+    color: var(--faint);
+    font-size: 7.5px;
+  }
+  .mini-tool-card b { color: var(--text); font-weight: 550; }
+  .tool-check {
+    width: 14px;
+    height: 14px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: rgba(155, 216, 133, 0.13);
+    color: var(--success);
+  }
+
+  .msg { color: var(--text); font-size: 9px; line-height: 1.55; }
+  .msg-head { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; color: var(--faint); font-size: 7px; }
+  .msg-head .agent-avatar { width: 16px; height: 16px; border-radius: 4px; font-size: 7px; }
+  .msg-head b { color: var(--ink); font-size: 8.5px; font-weight: 560; }
+  .msg p { margin: 0; }
+  .msg ul { margin: 5px 0 0; padding-left: 13px; }
+  .msg li { margin: 3px 0; }
+  .msg li b { color: var(--ink); font-weight: 570; }
+
+  .user-msg {
+    align-self: flex-end;
+    max-width: 66%;
+    padding: 7px 9px;
+    border-radius: 9px 9px 3px 9px;
+    background: #e3e5e8;
+    color: #1b1c1f;
+    font-size: 8.5px;
+    line-height: 1.45;
+  }
+
+  .app-composer {
+    flex: none;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 14px 14px;
+    padding: 0 8px 0 10px;
+    border: 1px solid var(--line-strong);
+    border-radius: 9px;
+    background: var(--panel-soft);
+    color: var(--faint);
+    font-size: 8.5px;
+  }
+  .composer-model {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--muted);
+    font-size: 7.5px;
+  }
+  .composer-send {
+    width: 23px;
+    height: 23px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--lime);
+    color: #14180b;
+  }
+
+  .app-desk {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding: 10px;
+    border-left: 1px solid var(--line);
+    background: var(--panel);
+  }
+
+  .desk-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 7px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .desk-title .desk-close { margin-left: auto; color: var(--faint); }
+
+  .desk-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--faint);
+    font-family: var(--font-mono);
+    font-size: 6.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .desk-label .live { color: var(--success); letter-spacing: 0.04em; }
+
+  .browser-mini {
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--code);
+  }
+  .browser-mini-bar {
+    height: 17px;
+    display: flex;
+    align-items: center;
+    padding: 0 6px;
+    background: var(--panel-raised);
+    color: var(--faint);
+    font-size: 6.5px;
+  }
+  .browser-mini-body {
+    height: 78px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 3px;
+    padding: 5px;
+    background: #efede5;
+  }
+  .kanban-col { display: flex; flex-direction: column; gap: 3px; }
+  .kanban-col > span {
+    height: 3px;
+    width: 55%;
+    border-radius: 2px;
+    background: #c8c4b7;
+  }
+  .kanban-card {
+    height: 13px;
+    border: 1px solid #ddd8cc;
+    border-radius: 2px;
+    background: #faf8f2;
+    box-shadow: 0 1px 0 rgba(80, 70, 40, 0.05);
+  }
+
+  .routine-mini {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(223, 225, 229, 0.05);
+  }
+  .routine-mini:last-child { border-bottom: 0; }
+  .routine-mini .routine-icon { color: var(--faint); }
+  .routine-mini b { display: block; color: var(--text); font-size: 7.5px; font-weight: 540; }
+  .routine-mini span { display: block; color: var(--faint); font-size: 6.5px; }
+  .routine-mini .switch { margin-left: auto; }
+
+  .switch {
+    width: 22px;
+    height: 12px;
+    flex: none;
+    position: relative;
+    border-radius: 99px;
+    background: #4a4e56;
+  }
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #d9dbdd;
+    transition: transform 120ms ease;
+  }
+  .switch.on { background: var(--lime); }
+  .switch.on::after { transform: translateX(10px); background: #1b1e13; }
+
+  .workspace-mini {
+    display: flex;
+    gap: 6px;
+    padding: 7px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.014);
+    color: var(--text);
+    font-size: 7px;
+    word-break: break-all;
+  }
+  .workspace-mini > svg { flex: none; color: var(--faint); margin-top: 1px; }
+  .workspace-mini span { display: block; color: var(--faint); font-size: 6.5px; margin-top: 2px; word-break: normal; }
+
+  .agent-avatar {
+    display: grid;
+    place-items: center;
+    flex: none;
+    border-radius: 6px;
+    background: rgba(216, 248, 120, 0.12);
+    color: var(--lime);
+    font-weight: 620;
+  }
+  .agent-avatar.alt { background: rgba(143, 200, 239, 0.12); color: #8fc8ef; }
+  .agent-avatar.warm { background: rgba(233, 185, 116, 0.13); color: #e9b974; }
+
+  /* ---------- Help center overlay ---------- */
+
+  .help-layer { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; }
+  .help-scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.54);
+    backdrop-filter: blur(4px) saturate(0.8);
+  }
+
+  .help {
+    position: relative;
+    width: calc(100% - 34px);
+    height: calc(100% - 34px);
+    max-width: 1040px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-lg);
+    background: var(--panel);
+    box-shadow: 0 30px 90px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.035);
+    animation: help-in 180ms ease-out both;
+  }
+
+  .help-head {
+    height: 58px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 12px 0 15px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.012);
+  }
+
+  .help-brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .help-logo {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    background: var(--lime);
+    color: #14180b;
+    font-size: 15px;
+    font-weight: 680;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  }
+  .help-brand strong { display: block; color: var(--ink); font-size: 11px; font-weight: 590; letter-spacing: -0.01em; }
+  .help-brand span { display: block; color: var(--faint); font-family: var(--font-mono); font-size: 6.5px; letter-spacing: 0.09em; text-transform: uppercase; margin-top: 1px; }
+
+  .help-search {
+    width: min(320px, 37%);
+    height: 30px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 16px;
+    padding: 0 8px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--panel-soft);
+    color: var(--faint);
+    transition: border-color 120ms ease, background 120ms ease;
+  }
+  .help-search:focus-within { border-color: rgba(216, 248, 120, 0.38); background: var(--code); }
+  .help-search input {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--ink);
+    font-size: 9.5px;
+  }
+  .help-search input::placeholder { color: var(--faint); }
+  .help-search kbd {
+    padding: 2px 4px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    color: var(--faint);
+    font-family: var(--font-mono);
+    font-size: 6.5px;
+  }
+
+  .ghost-button {
+    height: 27px;
+    flex: none;
+    margin-left: auto;
+    padding: 0 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 8px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .ghost-button:hover { color: var(--ink); border-color: var(--line-strong); background: rgba(255, 255, 255, 0.03); }
+
+  .help-close {
+    width: 27px;
+    height: 27px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--muted);
+  }
+  .help-close:hover { border-color: var(--line); background: rgba(255, 255, 255, 0.04); color: var(--ink); }
+
+  .help-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 214px minmax(0, 1fr); }
+
+  .help-nav {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 11px 8px 8px;
+    border-right: 1px solid var(--line);
+    background: rgba(0, 0, 0, 0.135);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #45484e transparent;
+  }
+
+  .nav-group-label {
+    padding: 9px 8px 4px;
+    color: var(--faint);
+    font-family: var(--font-mono);
+    font-size: 6.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .nav-item {
+    width: 100%;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 8px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: #9a9ea6;
+    font-size: 9px;
+    text-align: left;
+  }
+  .nav-item:hover { background: rgba(255, 255, 255, 0.03); color: var(--text); }
+  .nav-item.is-active {
+    border-color: var(--line);
+    background: rgba(255, 255, 255, 0.046);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+    color: var(--ink);
+  }
+  .nav-mark {
+    width: 4px;
+    height: 4px;
+    flex: none;
+    border-radius: 50%;
+    background: transparent;
+  }
+  .nav-item.is-active .nav-mark { background: var(--lime); }
+  .nav-item .nav-count { margin-left: auto; color: var(--faint); font-family: var(--font-mono); font-size: 6.5px; }
+
+  .help-nav-foot {
+    margin-top: auto;
+    padding: 10px 8px 2px;
+    border-top: 1px solid var(--line);
+    color: var(--faint);
+    font-size: 7.2px;
+    line-height: 1.5;
+  }
+  .help-nav-foot b { color: var(--text); font-weight: 520; }
+
+  .help-article {
+    min-width: 0;
+    overflow-y: auto;
+    padding: 22px 31px 30px;
+    scrollbar-width: thin;
+    scrollbar-color: #45484e transparent;
+  }
+
+  .article-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--faint);
+    font-family: var(--font-mono);
+    font-size: 6.8px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .article-top .crumb-current { color: var(--muted); }
+  .article-top .read-time { margin-left: auto; letter-spacing: 0.04em; text-transform: none; }
+
+  .help-article h2 {
+    margin: 7px 0 7px;
+    color: var(--ink);
+    font-size: 25px;
+    font-weight: 550;
+    letter-spacing: -0.035em;
+    line-height: 1.08;
+    text-wrap: balance;
+  }
+  .article-intro {
+    max-width: 74ch;
+    margin: 0;
+    color: var(--text);
+    font-size: 10.5px;
+    line-height: 1.58;
+  }
+
+  .steps { list-style: none; display: flex; flex-direction: column; gap: 7px; margin: 14px 0 0; padding: 0; }
+  .step {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 8px;
+    color: var(--text);
+    font-size: 9.2px;
+    line-height: 1.48;
+  }
+  .step-num {
+    width: 17px;
+    height: 17px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--line-strong);
+    border-radius: 50%;
+    background: rgba(216, 248, 120, 0.045);
+    color: var(--lime);
+    font-family: var(--font-mono);
+    font-size: 7px;
+  }
+  .step b { color: var(--ink); font-weight: 590; }
+
+  .tip {
+    margin-top: 13px;
+    padding: 7px 9px;
+    border-left: 2px solid var(--lime);
+    border-radius: 0 5px 5px 0;
+    background: var(--lime-soft);
+    color: var(--text);
+    font-size: 8.6px;
+    line-height: 1.5;
+  }
+  .tip b { color: var(--ink); font-weight: 570; }
+
+  .related { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 13px; color: var(--faint); font-size: 7px; }
+  .related button {
+    padding: 3px 7px;
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    background: transparent;
+    color: var(--text);
+    font-size: 7.5px;
+  }
+  .related button:hover { border-color: var(--line-strong); background: rgba(255, 255, 255, 0.03); color: var(--ink); }
+
+  .figure { margin: 13px 0 0; overflow: hidden; border: 1px solid var(--line); border-radius: 7px; background: var(--code); }
+  .figure-bar {
+    height: 21px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--line);
+    background: #202226;
+    color: var(--faint);
+    font-family: var(--font-mono);
+    font-size: 6.4px;
+    letter-spacing: 0.04em;
+  }
+  .figure-bar .win-dots i { width: 5px; height: 5px; }
+  .figure-tag { margin-left: auto; letter-spacing: 0.1em; text-transform: uppercase; }
+  .figure-body { position: relative; padding: 12px; background: var(--code); overflow: hidden; }
+  .figure figcaption {
+    padding: 7px 9px;
+    border-top: 1px solid var(--line);
+    background: var(--panel-soft);
+    color: var(--muted);
+    font-size: 7.3px;
+    line-height: 1.45;
+  }
+  .figure figcaption b { color: var(--text); font-weight: 550; }
+
+  .co {
+    position: absolute;
+    z-index: 3;
+    width: 17px;
+    height: 17px;
+    display: grid;
+    place-items: center;
+    border: 1px solid #1a1d12;
+    border-radius: 50%;
+    background: var(--lime);
+    color: #14180b;
+    font-family: var(--font-mono);
+    font-size: 7px;
+    font-weight: 600;
+    box-shadow: 0 0 0 3px rgba(216, 248, 120, 0.15), 0 2px 6px rgba(0, 0, 0, 0.35);
+  }
+
+  /* ---------- Mini screens used inside article figures ---------- */
+
+  .mini-modal {
+    width: 88%;
+    margin: 0 auto;
+    overflow: hidden;
+    border: 1px solid var(--line-strong);
+    border-radius: 9px;
+    background: var(--panel);
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.3);
+    font-size: 7.5px;
+  }
+  .mini-modal-head {
+    height: 28px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 10px;
+    border-bottom: 1px solid var(--line);
+    color: var(--faint);
+    font-family: var(--font-mono);
+    font-size: 6px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .mini-modal-head b { color: var(--ink); font-family: var(--font-sans); font-size: 8.5px; font-weight: 560; letter-spacing: 0; text-transform: none; }
+  .mini-modal-head .mini-x { margin-left: auto; color: var(--faint); }
+  .mini-modal-body { padding: 10px 12px; }
+  .mini-avatar-row { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; }
+  .mini-avatar-row .agent-avatar { width: 26px; height: 26px; border-radius: 7px; font-size: 10px; }
+  .mini-avatar-row b { display: block; color: var(--ink); font-size: 8.5px; font-weight: 570; }
+  .mini-avatar-row span { display: block; color: var(--faint); font-size: 6.8px; margin-top: 1px; }
+
+  .mini-field { display: block; margin-top: 7px; }
+  .mini-field > span.label { display: block; margin-bottom: 3px; color: var(--muted); font-size: 7px; }
+  .mini-input, .mini-textarea {
+    display: block;
+    width: 100%;
+    padding: 4px 6px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--panel-soft);
+    color: var(--text);
+    font-size: 7.2px;
+    line-height: 1.35;
+  }
+  .mini-textarea { min-height: 28px; }
+  .mini-input.muted { color: var(--faint); }
+  .mini-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  .mini-footer {
+    height: 30px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 10px;
+    border-top: 1px solid var(--line);
+    background: rgba(0, 0, 0, 0.12);
+  }
+  .mini-footer .spacer { margin-left: auto; }
+  .mini-btn {
+    padding: 3px 7px;
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.02);
+    color: var(--text);
+    font-size: 6.8px;
+  }
+  .mini-btn.primary { border-color: var(--lime); background: var(--lime); color: #14180b; font-weight: 580; }
+  .mini-btn.danger { border-color: rgba(242, 146, 134, 0.25); background: rgba(242, 146, 134, 0.05); color: #e2a098; }
+  .mini-btn.quiet { border-color: transparent; background: transparent; color: var(--muted); }
+
+  .mini-chat { width: 92%; margin: 0 auto; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--page); }
+  .mini-chat-head {
+    height: 27px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 9px;
+    border-bottom: 1px solid var(--line);
+    font-size: 7.5px;
+  }
+  .mini-chat-head .agent-avatar { width: 17px; height: 17px; border-radius: 4px; font-size: 7px; }
+  .mini-chat-head b { color: var(--ink); font-size: 8px; font-weight: 560; }
+  .mini-chat-head .ready-pill { font-size: 5.4px; padding: 1px 4px; }
+  .mini-chat-head .spacer { margin-left: auto; color: var(--faint); }
+  .mini-thread { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; }
+  .mini-thread .msg { font-size: 7.4px; line-height: 1.5; }
+  .mini-thread .msg ul { margin-top: 3px; }
+  .mini-thread .user-msg { font-size: 7.2px; padding: 5px 7px; }
+  .mini-tool-card { font-size: 6.6px; padding: 5px 6px; }
+  .mini-approve {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 6px;
+    border: 1px solid rgba(242, 146, 134, 0.2);
+    border-radius: 5px;
+    background: rgba(242, 146, 134, 0.045);
+    color: var(--text);
+    font-size: 6.4px;
+  }
+  .mini-approve code { color: #e2a098; font-family: var(--font-mono); font-size: 6px; }
+  .mini-approve .mini-btn { margin-left: auto; }
+  .mini-approve .mini-btn + .mini-btn { margin-left: 0; }
+  .mini-composer {
+    height: 28px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 0 9px 9px;
+    padding: 0 6px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel-soft);
+    color: var(--faint);
+    font-size: 6.6px;
+  }
+  .mini-composer .spacer { margin-left: auto; }
+  .mini-send {
+    width: 16px;
+    height: 16px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--lime);
+    color: #14180b;
+  }
+
+  .mini-desk { width: 46%; margin: 0 auto; display: flex; flex-direction: column; gap: 6px; padding: 9px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); }
+  .mini-desk .browser-mini-body { height: 66px; }
+  .mini-desk .desk-label { font-size: 5.8px; }
+  .mini-desk .routine-mini { padding: 4px 0; }
+  .mini-desk .routine-mini b { font-size: 6.8px; }
+  .mini-desk .routine-mini span { font-size: 5.8px; }
+  .mini-desk .workspace-mini { padding: 5px; font-size: 6.2px; }
+  .mini-desk .workspace-mini span { font-size: 5.8px; }
+
+  .mini-tools { width: 90%; margin: 0 auto; display: flex; flex-direction: column; gap: 7px; }
+  .mini-tools-head { display: flex; align-items: center; gap: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  .mini-tools-head span { color: var(--faint); font-family: var(--font-mono); font-size: 5.8px; letter-spacing: 0.09em; text-transform: uppercase; }
+  .mini-tools-head b { color: var(--ink); font-size: 8px; font-weight: 560; }
+  .mini-tools-head .mini-btn { margin-left: auto; }
+  .tool-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tool-chip {
+    padding: 3px 5px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--panel-soft);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 5.8px;
+  }
+  .tool-chip.is-hot { border-color: rgba(216, 248, 120, 0.25); background: rgba(216, 248, 120, 0.05); color: var(--lime); }
+  .mini-tree { display: flex; flex-direction: column; gap: 2px; padding: 7px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel-soft); color: var(--muted); font-family: var(--font-mono); font-size: 6px; }
+  .mini-tree .indent { padding-left: 9px; }
+  .mini-tree .indent2 { padding-left: 18px; }
+  .mini-tree em { color: var(--faint); font-style: normal; }
+
+  .mini-routines { width: 92%; margin: 0 auto; display: grid; grid-template-columns: 0.44fr 1fr; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--panel); }
+  .mini-routine-nav { padding: 8px 6px; border-right: 1px solid var(--line); background: rgba(0, 0, 0, 0.12); font-size: 6.4px; }
+  .mini-routine-nav > b { display: block; padding: 0 4px 5px; color: var(--faint); font-family: var(--font-mono); font-size: 5.6px; font-weight: 400; letter-spacing: 0.08em; }
+  .mini-routine-item { padding: 5px 4px; border: 1px solid transparent; border-radius: 4px; color: var(--text); }
+  .mini-routine-item.is-active { border-color: var(--line); background: rgba(255, 255, 255, 0.04); }
+  .mini-routine-item b { display: flex; align-items: center; gap: 4px; color: var(--ink); font-size: 6.4px; font-weight: 520; }
+  .mini-routine-item b::before { content: ""; width: 3px; height: 3px; border-radius: 50%; background: var(--lime); }
+  .mini-routine-item span { display: block; margin-top: 2px; color: var(--faint); font-size: 5.6px; }
+  .mini-routine-editor { padding: 9px 10px; }
+  .mini-routine-editor .title { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
+  .mini-routine-editor .title b { color: var(--ink); font-size: 8.5px; font-weight: 560; }
+  .mini-routine-editor .title .play { margin-left: auto; color: var(--muted); }
+  .mini-routine-editor .mini-field { margin-top: 6px; }
+  .mini-toggle-row { display: flex; align-items: center; justify-content: space-between; margin-top: 7px; padding-top: 6px; border-top: 1px solid var(--line); color: var(--text); font-size: 6.6px; }
+  .mini-last { display: flex; gap: 6px; margin-top: 7px; padding: 5px 6px; border: 1px solid var(--line); border-radius: 4px; color: var(--faint); font-size: 6px; }
+  .mini-last strong { margin-left: auto; color: var(--success); font-weight: 500; }
+
+  .mini-settings { width: 92%; margin: 0 auto; display: grid; grid-template-columns: 0.34fr 1fr; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--panel); }
+  .mini-settings-nav { padding: 9px 6px; border-right: 1px solid var(--line); background: rgba(0, 0, 0, 0.12); font-size: 6.4px; }
+  .mini-settings-nav > span { display: block; padding: 0 5px 5px; color: var(--faint); font-family: var(--font-mono); font-size: 5.5px; letter-spacing: 0.09em; }
+  .mini-settings-nav .item { padding: 4px 6px; border-radius: 4px; color: var(--muted); }
+  .mini-settings-nav .item.is-active { background: rgba(255, 255, 255, 0.045); color: var(--ink); }
+  .mini-settings-main { padding: 9px 10px; }
+  .mini-settings-main h4 { margin: 0 0 2px; color: var(--ink); font-size: 9px; font-weight: 570; }
+  .mini-settings-main p { margin: 0; color: var(--faint); font-size: 6px; }
+  .mini-connection { margin-top: 7px; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-soft); }
+  .mini-connection-head { display: flex; align-items: center; gap: 6px; padding: 6px 7px; }
+  .mini-connection-icon { width: 18px; height: 18px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); }
+  .mini-connection-head b { display: block; color: var(--ink); font-size: 7.2px; font-weight: 520; }
+  .mini-connection-head span { display: block; color: var(--faint); font-size: 5.8px; }
+  .mini-connection-head .mini-btn { margin-left: auto; }
+  .mini-connection-grid { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--line); }
+  .mini-connection-grid div { padding: 5px 7px; color: var(--faint); font-size: 5.8px; }
+  .mini-connection-grid div + div { border-left: 1px solid var(--line); }
+  .mini-connection-grid b { display: block; margin-top: 2px; color: var(--text); font-size: 6.4px; font-weight: 500; }
+  .mini-integrations { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 6px; }
+  .mini-integration { padding: 6px; border: 1px solid var(--line); border-radius: 5px; font-size: 5.8px; color: var(--faint); }
+  .mini-integration b { display: block; color: var(--text); font-size: 6.6px; font-weight: 500; margin-bottom: 2px; }
+
+  .mini-data { width: 88%; margin: 0 auto; display: flex; flex-direction: column; gap: 7px; }
+  .path-card { padding: 9px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--panel); }
+  .path-card > b { display: flex; align-items: center; gap: 5px; color: var(--ink); font-size: 7.8px; font-weight: 520; }
+  .path-row { display: flex; gap: 6px; padding: 4px 0 4px 16px; border-top: 1px solid rgba(223, 225, 229, 0.05); color: var(--text); font-family: var(--font-mono); font-size: 6px; }
+  .path-row:first-of-type { margin-top: 6px; }
+  .path-row span { margin-left: auto; color: var(--faint); font-family: var(--font-sans); font-size: 5.8px; }
+  .mini-note { display: flex; align-items: center; gap: 6px; padding: 7px 8px; border-left: 2px solid var(--lime); background: var(--lime-soft); color: var(--text); font-size: 6.4px; }
+
+  .mini-error { width: 88%; margin: 0 auto; display: flex; flex-direction: column; gap: 7px; }
+  .error-banner { display: flex; align-items: center; gap: 6px; padding: 7px 8px; border: 1px solid rgba(234, 184, 103, 0.24); border-radius: 5px; background: rgba(234, 184, 103, 0.06); color: #e7c68f; font-size: 6.6px; }
+  .error-banner .mini-btn { margin-left: auto; color: var(--ink); }
+  .check-list { overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+  .check-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-top: 1px solid rgba(223, 225, 229, 0.05); color: var(--text); font-size: 6.4px; }
+  .check-row:first-child { border-top: 0; }
+  .check-row .check-mark { color: var(--success); }
+  .check-row .open-mark { color: var(--warning); }
+  .check-row span { margin-left: auto; color: var(--faint); font-size: 5.8px; }
+
+  .mini-table { width: 92%; margin: 0 auto; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--panel); }
+  .mini-table-head { display: grid; grid-template-columns: 1.1fr 0.55fr 1.65fr; gap: 7px; padding: 6px 8px; border-bottom: 1px solid var(--line); background: var(--panel-soft); color: var(--faint); font-family: var(--font-mono); font-size: 5.4px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .mini-table-row { display: grid; grid-template-columns: 1.1fr 0.55fr 1.65fr; gap: 7px; align-items: center; padding: 5px 8px; border-top: 1px solid rgba(223, 225, 229, 0.05); color: var(--muted); font-size: 5.9px; }
+  .mini-table-row:first-of-type { border-top: 0; }
+  .mini-table-row code { color: var(--lime); font-family: var(--font-mono); font-size: 5.6px; }
+  .mini-table-row .tag { justify-self: start; padding: 1px 4px; border: 1px solid var(--line); border-radius: 3px; color: var(--faint); font-size: 5.2px; }
+
+  /* ---------- Entry points + alternatives ---------- */
+
+  .stage-caption {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-top: 11px;
+    color: var(--faint);
+    font-size: 10px;
+  }
+  .stage-caption b { color: var(--text); font-weight: 520; }
+  .caption-key {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 8px;
+  }
+  .caption-key kbd {
+    padding: 2px 5px;
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    color: var(--text);
+    background: var(--page);
+  }
+
+  .triad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--line); }
+  .triad article { padding: 18px 18px 19px; background: var(--page); }
+  .triad .card-icon { width: 24px; height: 24px; display: grid; place-items: center; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 6px; color: var(--lime); background: rgba(216, 248, 120, 0.04); }
+  .triad h3 { margin: 0 0 6px; color: var(--ink); font-size: 12px; font-weight: 560; letter-spacing: -0.01em; }
+  .triad p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.58; }
+
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .option-card {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--page);
+  }
+  .option-visual {
+    height: 176px;
+    display: grid;
+    place-items: center;
+    padding: 18px;
+    border-bottom: 1px solid var(--line);
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(216, 248, 120, 0.035), transparent 62%),
+      var(--canvas);
+  }
+  .option-body { padding: 15px 17px 17px; }
+  .option-tag { display: inline-block; margin-bottom: 7px; color: var(--faint); font-family: var(--font-mono); font-size: 7px; letter-spacing: 0.11em; text-transform: uppercase; }
+  .option-body h3 { margin: 0 0 5px; color: var(--ink); font-size: 13px; font-weight: 560; }
+  .option-body p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+  .option-verdict { display: flex; align-items: center; gap: 6px; margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--faint); font-size: 9px; }
+  .option-verdict .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--warning); }
+  .option-card.is-recommended { border-color: rgba(216, 248, 120, 0.2); }
+  .option-card.is-recommended .option-verdict .dot { background: var(--lime); }
+
+  .drawer-demo {
+    width: 300px;
+    height: 136px;
+    display: flex;
+    overflow: hidden;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: var(--panel);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.26);
+  }
+  .drawer-app { flex: 1; padding: 8px; display: flex; flex-direction: column; gap: 5px; background: var(--page); opacity: 0.72; }
+  .drawer-app .bar { height: 5px; width: 52%; border-radius: 2px; background: #3a3d42; }
+  .drawer-app .line { height: 4px; border-radius: 2px; background: #31343a; }
+  .drawer-app .line.short { width: 64%; }
+  .drawer-panel { width: 142px; padding: 9px; border-left: 1px solid var(--line-strong); background: var(--panel); font-size: 6.2px; color: var(--muted); }
+  .drawer-panel .tag { color: var(--faint); font-family: var(--font-mono); font-size: 5.4px; letter-spacing: 0.08em; }
+  .drawer-panel b { display: block; margin: 4px 0 5px; color: var(--ink); font-size: 7.2px; font-weight: 550; }
+  .drawer-panel .line { height: 3px; margin-top: 4px; border-radius: 2px; background: #3a3d42; }
+  .drawer-panel .line.short { width: 70%; }
+  .drawer-panel .open { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); color: var(--lime); font-size: 5.8px; }
+
+  .window-demo { position: relative; width: 300px; height: 136px; }
+  .window-demo .win {
+    position: absolute;
+    overflow: hidden;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: var(--panel);
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.3);
+  }
+  .window-demo .app-win { left: 4px; top: 18px; width: 190px; height: 108px; opacity: 0.6; }
+  .window-demo .doc-win { right: 2px; top: 4px; width: 188px; height: 120px; background: #26282c; }
+  .window-demo .win-bar { height: 13px; display: flex; align-items: center; gap: 4px; padding: 0 5px; border-bottom: 1px solid var(--line); background: #202226; color: var(--faint); font-family: var(--font-mono); font-size: 4.8px; }
+  .window-demo .win-bar i { width: 4px; height: 4px; border-radius: 50%; background: #4c5057; }
+  .window-demo .win-body { padding: 7px; display: flex; flex-direction: column; gap: 4px; }
+  .window-demo .win-body .line { height: 3px; border-radius: 2px; background: #383b41; }
+  .window-demo .win-body .line.title { width: 48%; height: 6px; background: #4e525a; margin-bottom: 2px; }
+  .window-demo .win-body .line.short { width: 62%; }
+  .window-demo .doc-body { display: grid; grid-template-columns: 45px 1fr; gap: 6px; padding: 7px; }
+  .window-demo .doc-nav { display: flex; flex-direction: column; gap: 3px; }
+  .window-demo .doc-nav .line { height: 4px; border-radius: 2px; background: #363940; }
+  .window-demo .doc-nav .line.active { background: rgba(216, 248, 120, 0.4); }
+  .window-demo .doc-main { display: flex; flex-direction: column; gap: 4px; }
+  .window-demo .doc-main .line { height: 3px; border-radius: 2px; background: #3a3d43; }
+  .window-demo .doc-main .line.head { height: 7px; width: 62%; background: #555961; margin-bottom: 2px; }
+  .window-demo .doc-main .line.short { width: 55%; }
+
+  /* ---------- Guide map ---------- */
+
+  .map-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; align-items: start; }
+  .map-group { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--page); }
+  .map-group-head { display: flex; align-items: center; gap: 7px; padding: 12px 14px; border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, 0.012); }
+  .map-group-head .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--lime); }
+  .map-group-head h3 { margin: 0; color: var(--ink); font-size: 10.5px; font-weight: 560; letter-spacing: 0.01em; }
+  .map-group-head span { margin-left: auto; color: var(--faint); font-family: var(--font-mono); font-size: 7px; }
+  .map-list { display: flex; flex-direction: column; }
+  .map-item { padding: 10px 14px 11px; border-top: 1px solid rgba(223, 225, 229, 0.055); }
+  .map-item:first-child { border-top: 0; }
+  .map-item b { display: block; color: var(--text); font-size: 10px; font-weight: 550; }
+  .map-item p { margin: 3px 0 0; color: var(--faint); font-size: 8.6px; line-height: 1.45; }
+  .map-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .map-tag {
+    padding: 2px 5px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    color: var(--faint);
+    font-family: var(--font-mono);
+    font-size: 6.4px;
+    letter-spacing: 0.04em;
+  }
+
+  /* ---------- Plan ---------- */
+
+  .plan-grid { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 32px; }
+  .phases { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+  .phase { display: grid; grid-template-columns: 66px minmax(0, 1fr); gap: 14px; padding: 14px 0; border-top: 1px solid var(--line); }
+  .phase:first-child { border-top: 0; padding-top: 0; }
+  .phase-num { color: var(--lime); font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.1em; padding-top: 2px; }
+  .phase h3 { margin: 0 0 4px; color: var(--ink); font-size: 11.5px; font-weight: 560; }
+  .phase p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+  .phase .phase-meta { display: block; margin-top: 4px; color: var(--faint); font-family: var(--font-mono); font-size: 7px; letter-spacing: 0.06em; }
+
+  .decisions { padding: 16px 17px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--page); }
+  .decisions h3 { margin: 0 0 10px; color: var(--ink); font-size: 11px; font-weight: 560; }
+  .decision { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 8px; padding: 7px 0; border-top: 1px solid rgba(223, 225, 229, 0.055); font-size: 9px; line-height: 1.45; }
+  .decision:first-of-type { border-top: 0; padding-top: 0; }
+  .decision span { color: var(--faint); }
+  .decision b { color: var(--text); font-weight: 500; }
+
+  .next-step {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 38px;
+    padding: 17px 18px;
+    border: 1px solid rgba(216, 248, 120, 0.16);
+    border-radius: var(--radius-md);
+    background: linear-gradient(100deg, rgba(216, 248, 120, 0.05), rgba(216, 248, 120, 0.012));
+  }
+  .next-step .mark { width: 27px; height: 27px; flex: none; display: grid; place-items: center; border-radius: 7px; background: var(--lime); color: #14180b; font-weight: 700; font-size: 12px; }
+  .next-step b { display: block; color: var(--ink); font-size: 11px; font-weight: 560; }
+  .next-step span { display: block; margin-top: 2px; color: var(--muted); font-size: 9.5px; line-height: 1.5; }
+
+  footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 54px;
+    padding-top: 17px;
+    border-top: 1px solid var(--line);
+    color: var(--faint);
+    font-family: var(--font-mono);
+    font-size: 7.5px;
+    letter-spacing: 0.06em;
+  }
+  footer .spacer { margin-left: auto; }
+
+  .icon { width: 13px; height: 13px; stroke: currentColor; stroke-width: 1.7; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .icon.sm { width: 10px; height: 10px; }
+
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes help-in { from { opacity: 0; transform: translateY(6px) scale(0.995); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+  }
+
+  @media (max-width: 960px) {
+    .hero-grid { grid-template-columns: 1fr; gap: 26px; }
+    .hero-meta { max-width: 460px; }
+    .section-head { align-items: start; flex-direction: column; gap: 8px; }
+    .section-head p { text-align: left; }
+    .triad, .map-grid { grid-template-columns: 1fr; }
+    .duo { grid-template-columns: 1fr; }
+    .plan-grid { grid-template-columns: 1fr; gap: 22px; }
+  }
+
+  @media (max-width: 620px) {
+    .page { padding-top: 22px; }
+    .brandline { flex-wrap: wrap; }
+    .version-pill { margin-left: 0; }
+    .hero-grid { margin-top: 28px; }
+    .hero-meta { grid-template-columns: 1fr 1fr; }
+    .stage-caption { gap: 8px; }
+    .device { min-width: 1050px; }
+  }
+</style>
+
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.6 2.6 0 0 1 5.1.7c0 1.7-2.2 2-2.2 3.5"/><path d="M12.5 17h.01"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14 0 18M12 3c-3 3.5-3 14 0 18"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5Z"/><path d="M4 5.5v16"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M21.2 12h-2.4M5.2 12H2.8M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7M18.5 18.5l-1.7-1.7M7.2 7.2 5.5 5.5"/></symbol>
+</svg>
+
+<div class="page">
+  <header class="masthead">
+    <div class="brandline">
+      <span class="brand-mark">F</span>
+      <span class="brand-word">fid coder</span>
+      <span class="brand-slash">/</span>
+      <span class="brand-section">design proposal</span>
+      <span class="version-pill">help v0.1</span>
+    </div>
+
+    <div class="hero-grid">
+      <div>
+        <p class="eyebrow">In-app documentation</p>
+        <h1>Help Center</h1>
+        <p class="lede">
+          A built-in guide for the cockpit. One click opens searchable, screenshot-led documentation without leaving
+          Fid Coder. The docs stay as Markdown in the repo; the app renders them offline.
+        </p>
+      </div>
+      <div class="hero-meta" aria-label="Proposal summary">
+        <div><strong>12</strong><span>guide articles</span></div>
+        <div><strong>18</strong><span>tools covered</span></div>
+        <div><strong>9</strong><span>captured screens</span></div>
+        <div><strong>0</strong><span>network calls</span></div>
+      </div>
+    </div>
+
+    <p class="hero-note">
+      <span class="pulse" aria-hidden="true"></span>
+      Recommended direction: a full-screen reader that opens over the cockpit, with a persistent topic rail and
+      numbered callouts on every screenshot.
+    </p>
+  </header>
+
+  <section class="section" aria-labelledby="reader-title">
+    <div class="section-head">
+      <div>
+        <span class="section-index">01 / Recommended</span>
+        <h2 id="reader-title">A guide inside the app</h2>
+      </div>
+      <p>
+        The mock below starts with the reader open. Close it, reopen it from the sidebar row, or press F1. Navigation
+        and search work.
+      </p>
+    </div>
+
+    <div class="device-scroll">
+      <div class="device">
+        <div class="device-bar">
+          <span class="win-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="device-title">Fid Coder</span>
+          <span class="device-state"><span class="dot"></span> LOCAL AGENTS</span>
+        </div>
+
+        <div class="device-screen">
+          <div class="app" id="baseApp" inert>
+            <aside class="app-side">
+              <div class="app-brand">
+                <span class="brand-mark">F</span>
+                <b>fid <span>coder</span></b>
+                <span class="brand-plus"><svg class="icon sm"><use href="#i-plus"/></svg></span>
+              </div>
+
+              <div class="app-search">
+                <svg class="icon sm"><use href="#i-search"/></svg>
+                Search agents
+                <kbd>Ctrl K</kbd>
+              </div>
+
+              <div class="app-label"><span>Agents</span><span>2</span></div>
+
+              <div class="app-agent is-active">
+                <span class="agent-avatar">J</span>
+                <div><b>JIRA Agent</b><span>Jira teammate</span></div>
+                <span class="when">2m</span>
+              </div>
+              <div class="app-agent">
+                <span class="agent-avatar alt">G</span>
+                <div><b>GIT PR Review</b><span>Code reviewer</span></div>
+                <span class="when">1d</span>
+              </div>
+              <div class="app-new"><svg class="icon sm"><use href="#i-plus"/></svg>New agent</div>
+
+              <div class="app-side-bottom">
+                <div class="local-note">
+                  <b><span class="green-dot"></span> Working locally</b>
+                  <p>Agents use this PC for browser, files, and shell.</p>
+                </div>
+                <button class="help-entry" id="helpEntry" type="button" aria-label="Open Help Center">
+                  <svg class="icon"><use href="#i-help"/></svg>
+                  Help &amp; guide
+                  <kbd>F1</kbd>
+                </button>
+                <div class="account">
+                  <span class="user-avatar">R</span>
+                  <div><b>Raja</b><span><span class="green-dot"></span> Copilot ready</span></div>
+                  <svg class="icon sm account-gear"><use href="#i-settings"/></svg>
+                </div>
+              </div>
+            </aside>
+
+            <main class="app-chat">
+              <div class="app-chat-head">
+                <span class="agent-avatar warm">J</span>
+                <b>JIRA Agent</b>
+                <span class="ready-pill"><span class="green-dot"></span> Ready</span>
+                <div class="chat-actions">
+                  <span class="chat-icon"><svg class="icon sm"><use href="#i-help"/></svg></span>
+                  <span class="chat-icon"><svg class="icon sm"><use href="#i-panel"/></svg></span>
+                </div>
+              </div>
+              <div class="app-thread">
+                <div class="day-sep">Today</div>
+                <div class="mini-tool-card">
+                  <span class="tool-check"><svg class="icon sm"><use href="#i-check"/></svg></span>
+                  <b>3 tool steps</b>
+                  Opened a page · Read the page
+                </div>
+                <div class="msg">
+                  <div class="msg-head"><span class="agent-avatar warm">J</span><b>JIRA Agent</b><span>1:09 PM</span></div>
+                  <p>Morning check is done. Two things need your attention before standup:</p>
+                  <ul>
+                    <li><b>FID-482 · Checkout retry loop</b> — QA flagged a duplicate charge. This is the release blocker.</li>
+                    <li><b>FID-471 · Export job stuck</b> — Code-complete, waiting on a second approval.</li>
+                  </ul>
+                </div>
+                <div class="user-msg">Draft a concise standup update and call out the release risk.</div>
+                <div class="msg">
+                  <div class="msg-head"><span class="agent-avatar warm">J</span><b>JIRA Agent</b><span>1:13 PM</span></div>
+                  <p>Two blockers are open: FID-482 and FID-471. Today: verify the retry fix with QA.</p>
+                </div>
+              </div>
+              <div class="app-composer">
+                Message JIRA Agent…
+                <span class="composer-model"><svg class="icon sm"><use href="#i-settings"/></svg> Auto</span>
+                <span class="composer-send"><svg class="icon sm"><use href="#i-arrow-up"/></svg></span>
+              </div>
+            </main>
+
+            <aside class="app-desk">
+              <div class="desk-title"><span class="live-dot"></span> Agent desk <span class="desk-close"><svg class="icon sm"><use href="#i-panel"/></svg></span></div>
+              <div class="desk-label"><span>Browser</span><span class="live">Live</span></div>
+              <div class="browser-mini">
+                <div class="browser-mini-bar">fid.atlassian.net</div>
+                <div class="browser-mini-body">
+                  <div class="kanban-col"><span></span><div class="kanban-card"></div><div class="kanban-card"></div><div class="kanban-card"></div></div>
+                  <div class="kanban-col"><span></span><div class="kanban-card"></div><div class="kanban-card"></div></div>
+                  <div class="kanban-col"><span></span><div class="kanban-card"></div><div class="kanban-card"></div><div class="kanban-card"></div></div>
+                </div>
+              </div>
+              <div class="desk-label"><span>Routines</span><span><svg class="icon sm"><use href="#i-plus"/></svg></span></div>
+              <div class="routine-mini">
+                <svg class="icon sm routine-icon"><use href="#i-clock"/></svg>
+                <div><b>Morning ticket sweep</b><span>Weekdays at 9:00 AM · Tomorrow</span></div>
+                <span class="switch on"></span>
+              </div>
+              <div class="routine-mini">
+                <svg class="icon sm routine-icon"><use href="#i-clock"/></svg>
+                <div><b>Friday release notes</b><span>Fridays at 4:00 PM · Paused</span></div>
+                <span class="switch"></span>
+              </div>
+              <div class="desk-label"><span>Workspace</span></div>
+              <div class="workspace-mini">
+                <svg class="icon sm"><use href="#i-folder"/></svg>
+                <div>D:\fid-coder-desktop-app<span>Shell + files enabled</span></div>
+              </div>
+            </aside>
+          </div>
+
+          <div class="help-layer" id="helpLayer">
+            <div class="help-scrim" id="helpScrim"></div>
+            <section class="help" role="dialog" aria-modal="true" aria-label="Help Center preview">
+              <header class="help-head">
+                <div class="help-brand">
+                  <span class="help-logo">?</span>
+                  <div><strong>Help Center</strong><span>Fid Coder 0.1</span></div>
+                </div>
+                <label class="help-search">
+                  <svg class="icon sm"><use href="#i-search"/></svg>
+                  <input id="guideSearch" type="search" placeholder="Search the guide" autocomplete="off" spellcheck="false">
+                  <kbd>/</kbd>
+                </label>
+                <button class="ghost-button" type="button" title="Opens docs/guide in Explorer when built">
+                  <svg class="icon sm"><use href="#i-folder"/></svg>
+                  Open docs folder
+                </button>
+                <button class="help-close" id="helpClose" type="button" aria-label="Close Help Center">
+                  <svg class="icon"><use href="#i-x"/></svg>
+                </button>
+              </header>
+
+              <div class="help-body">
+                <nav class="help-nav" id="helpNav" aria-label="Guide topics"></nav>
+                <article class="help-article" id="helpArticle" aria-live="polite"></article>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage-caption">
+      <span class="caption-key"><b>Try it:</b> <kbd>×</kbd> or <kbd>Esc</kbd> closes</span>
+      <span class="caption-key"><kbd>?</kbd> row in the sidebar reopens</span>
+      <span class="caption-key"><kbd>F1</kbd> toggles anywhere</span>
+      <span class="caption-key">Search filters the topic rail</span>
+    </div>
+
+    <div class="triad" style="margin-top: 20px">
+      <article>
+        <span class="card-icon"><svg class="icon"><use href="#i-help"/></svg></span>
+        <h3>Where it opens</h3>
+        <p>A permanent row in the sidebar, a ? button in the chat header, and F1 anywhere. Dialog-level links can open the exact article later.</p>
+      </article>
+      <article>
+        <span class="card-icon"><svg class="icon"><use href="#i-panel"/></svg></span>
+        <h3>How it reads</h3>
+        <p>Same surfaces, type, and lime accent as the cockpit. Screenshots are the real UI, with numbered callouts that match the steps.</p>
+      </article>
+      <article>
+        <span class="card-icon"><svg class="icon"><use href="#i-book"/></svg></span>
+        <h3>Where it lives</h3>
+        <p>Markdown in <code style="font-family:var(--font-mono);font-size:9px;color:var(--text)">docs/guide</code>, images beside it. The renderer imports both at build time, so the guide works with no network.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="alternatives-title">
+    <div class="section-head">
+      <div>
+        <span class="section-index">02 / Also considered</span>
+        <h2 id="alternatives-title">Two other shapes</h2>
+      </div>
+      <p>Both are useful later. Neither replaces the full reader for onboarding, browsing, and search.</p>
+    </div>
+
+    <div class="duo">
+      <article class="option-card">
+        <div class="option-visual">
+          <div class="drawer-demo" aria-hidden="true">
+            <div class="drawer-app">
+              <div class="bar"></div><div class="line"></div><div class="line short"></div><div class="line"></div><div class="line short"></div><div class="line"></div><div class="line"></div>
+            </div>
+            <div class="drawer-panel">
+              <span class="tag">HELP</span>
+              <b>Scheduled routines</b>
+              <div class="line"></div><div class="line short"></div><div class="line"></div><div class="line short"></div>
+              <div class="open">Open full guide ↗</div>
+            </div>
+          </div>
+        </div>
+        <div class="option-body">
+          <span class="option-tag">Option B</span>
+          <h3>Contextual help drawer</h3>
+          <p>A narrow panel that opens the article for the current screen. Good for a quick fix while the chat stays visible; weak for reading, browsing, and first-run onboarding.</p>
+          <div class="option-verdict"><span class="dot"></span>Phase 2. Best as deep links from dialogs, not the main entry.</div>
+        </div>
+      </article>
+
+      <article class="option-card">
+        <div class="option-visual">
+          <div class="window-demo" aria-hidden="true">
+            <div class="win app-win">
+              <div class="win-bar"><i></i><i></i><i></i> Fid Coder</div>
+              <div class="win-body"><div class="line title"></div><div class="line"></div><div class="line short"></div><div class="line"></div><div class="line"></div></div>
+            </div>
+            <div class="win doc-win">
+              <div class="win-bar"><i></i><i></i><i></i> Fid Coder Help</div>
+              <div class="doc-body">
+                <div class="doc-nav"><div class="line active"></div><div class="line"></div><div class="line"></div><div class="line"></div><div class="line"></div></div>
+                <div class="doc-main"><div class="line head"></div><div class="line"></div><div class="line short"></div><div class="line"></div><div class="line short"></div><div class="line"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="option-body">
+          <span class="option-tag">Option C</span>
+          <h3>Separate reader window</h3>
+          <p>Open the guide in a second Electron window or the default browser. Good on a second monitor and for printing; it adds a second window to manage and a parallel UI shell to maintain.</p>
+          <div class="option-verdict"><span class="dot"></span>Useful later for “Open in browser”; not the default.</div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="map-title">
+    <div class="section-head">
+      <div>
+        <span class="section-index">03 / Contents</span>
+        <h2 id="map-title">What the guide covers</h2>
+      </div>
+      <p>The feature inventory, organized the way a user meets it. Every article gets at least one real screen.</p>
+    </div>
+
+    <div class="map-grid">
+      <div class="map-group">
+        <div class="map-group-head"><span class="dot"></span><h3>Start here</h3><span>3 articles</span></div>
+        <div class="map-list">
+          <div class="map-item">
+            <b>Welcome to Fid Coder</b>
+            <p>What runs locally, what Copilot does, and the three working areas.</p>
+            <div class="map-tags"><span class="map-tag">screenshot</span><span class="map-tag">3 min</span></div>
+          </div>
+          <div class="map-item">
+            <b>Quick start</b>
+            <p>Sign in, create an agent, choose tools, send the first message.</p>
+            <div class="map-tags"><span class="map-tag">screenshot</span><span class="map-tag">4 min</span></div>
+          </div>
+          <div class="map-item">
+            <b>The cockpit at a glance</b>
+            <p>Sidebar, chat, Agent Desk, composer, and the shortcuts worth knowing.</p>
+            <div class="map-tags"><span class="map-tag">screenshot</span><span class="map-tag">3 min</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="map-group">
+        <div class="map-group-head"><span class="dot"></span><h3>Using Fid Coder</h3><span>6 articles</span></div>
+        <div class="map-list">
+          <div class="map-item">
+            <b>Create and edit agents</b>
+            <p>Instructions, models, tool profiles, workspace, and deletion.</p>
+            <div class="map-tags"><span class="map-tag">screenshot</span><span class="map-tag">5 min</span></div>
+          </div>
+          <div class="map-item">
+            <b>Chat and tool steps</b>
+            <p>Streaming, Markdown, tool cards, stop, approvals, and history.</p>
+            <div class="map-tags"><span class="map-tag">screenshot</span><span class="map-tag">4 min</span></div>
+          </div>
+          <div class="map-item">
+            <b>The local browser</b>
+            <p>Per-agent profiles, snapshots, clicks, typing, and live preview.</p>
+            <div class="map-tags"><span class="map-tag">screenshot</span><span class="map-tag">4 min</span></div>
+          </div>
+          <div class="map-item">
+            <b>Files, search, and shell</b>
+            <p>Workspace brief, native tools, explore_code, and safety rails.</p>
+            <div class="map-tags"><span class="map-tag">screenshot</span><span class="map-tag">6 min</span></div>
+          </div>
+          <div class="map-item">
+            <b>Scheduled routines</b>
+            <p>Cron schedules, Windows notifications, run now, and skip rules.</p>
+            <div class="map-tags"><span class="map-tag">screenshot</span><span class="map-tag">4 min</span></div>
+          </div>
+          <div class="map-item">
+            <b>Copilot, GitHub, and Jira</b>
+            <p>Sign-in, tokens, encryption, and what each tool receives.</p>
+            <div class="map-tags"><span class="map-tag">screenshot</span><span class="map-tag">4 min</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="map-group">
+        <div class="map-group-head"><span class="dot"></span><h3>Reference</h3><span>3 articles</span></div>
+        <div class="map-list">
+          <div class="map-item">
+            <b>Data and privacy</b>
+            <p>SQLite, browser profiles, secrets, context window, deletion.</p>
+            <div class="map-tags"><span class="map-tag">screenshot</span><span class="map-tag">3 min</span></div>
+          </div>
+          <div class="map-item">
+            <b>Troubleshooting</b>
+            <p>CLI, sign-in, model catalog, browser launch, notifications.</p>
+            <div class="map-tags"><span class="map-tag">screenshot</span><span class="map-tag">3 min</span></div>
+          </div>
+          <div class="map-item">
+            <b>Tool reference</b>
+            <p>All 18 tools with profiles, arguments, limits, and examples.</p>
+            <div class="map-tags"><span class="map-tag">screenshot</span><span class="map-tag">18 tools</span></div>
+          </div>
+          <div class="map-item" style="background: rgba(216, 248, 120, 0.018)">
+            <b>Every article gets</b>
+            <p>A one-sentence summary, numbered steps, a screenshot with callouts, and related links.</p>
+            <div class="map-tags"><span class="map-tag">same template</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="plan-title">
+    <div class="section-head">
+      <div>
+        <span class="section-index">04 / Build plan</span>
+        <h2 id="plan-title">Small enough to ship in one pass</h2>
+      </div>
+      <p>The reader is one component, one IPC-free content import, and a screenshot script. The writing is the real work.</p>
+    </div>
+
+    <div class="plan-grid">
+      <ol class="phases">
+        <li class="phase">
+          <span class="phase-num">Phase 1</span>
+          <div>
+            <h3>Guide and reader</h3>
+            <p>Write 12 articles in <code style="font-family:var(--font-mono);font-size:9px;color:var(--text)">docs/guide</code>, capture 9 screens from demo data, build the Help Center, and wire the sidebar row plus F1.</p>
+            <span class="phase-meta">2–3 days · full-screen reader, search, figures</span>
+          </div>
+        </li>
+        <li class="phase">
+          <span class="phase-num">Phase 2</span>
+          <div>
+            <h3>Contextual links</h3>
+            <p>Add “Read the guide” links to Settings, Routines, and the agent editor. Open the exact article and remember the last topic between launches.</p>
+            <span class="phase-meta">1–2 days · deep links, last-read state</span>
+          </div>
+        </li>
+        <li class="phase">
+          <span class="phase-num">Phase 3</span>
+          <div>
+            <h3>Keep it honest</h3>
+            <p>A Playwright script rebuilds the screenshots from a seeded demo profile. A docs check in verify-local fails when a tool or settings section loses its article.</p>
+            <span class="phase-meta">ongoing · screenshots and coverage checks</span>
+          </div>
+        </li>
+      </ol>
+
+      <aside class="decisions">
+        <h3>Decisions to settle</h3>
+        <div class="decision"><span>Folder</span><b>docs/guide (recommended) or docs/user-guide</b></div>
+        <div class="decision"><span>Screens</span><b>Seeded demo profile, not the current user's data</b></div>
+        <div class="decision"><span>Phase 1 entry</span><b>Sidebar + F1; add chat-header and dialog links later</b></div>
+        <div class="decision"><span>Reader</span><b>Full-screen overlay; separate window stays optional</b></div>
+        <div class="decision"><span>Search</span><b>Title + summary in phase 1; full-text later</b></div>
+      </aside>
+    </div>
+
+    <div class="next-step">
+      <span class="mark">?</span>
+      <div>
+        <b>If this direction works, I'll write the guide and build the reader behind the Help button.</b>
+        <span>Pick the reader shape, the folder name, and whether phase 1 should include dialog links. Everything else can follow the mock above.</span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>FID CODER / HELP CENTER</span>
+    <span>INTERACTIVE DESIGN PROPOSAL</span>
+    <span class="spacer">DOCS STAY IN THE REPO · THE READER SHIPS IN THE APP</span>
+  </footer>
+</div>
+
+<script>
+  const FIGURES = {
+    cockpit: `
+      <div class="mini-desk" style="width: 84%; display: grid; grid-template-columns: 0.8fr 1.25fr 0.9fr; padding: 8px; gap: 6px;">
+        <div style="display:flex;flex-direction:column;gap:4px;min-width:0;">
+          <div style="display:flex;align-items:center;gap:4px;color:var(--ink);font-size:6.5px;font-weight:560;"><span class="brand-mark" style="width:13px;height:13px;border-radius:3px;font-size:7px;">F</span> fid coder</div>
+          <div style="display:flex;align-items:center;gap:3px;padding:4px;border:1px solid var(--line);border-radius:4px;background:rgba(0,0,0,.12);color:var(--faint);font-size:5.4px;">Search agents</div>
+          <div style="padding:4px;border:1px solid var(--line);border-radius:4px;background:rgba(255,255,255,.04);color:var(--ink);font-size:5.8px;box-shadow:inset 2px 0 0 var(--lime);">JIRA Agent<span style="display:block;color:var(--faint);font-size:5px;">Jira teammate</span></div>
+          <div style="padding:4px;color:var(--muted);font-size:5.8px;">GIT PR Review<span style="display:block;color:var(--faint);font-size:5px;">Code reviewer</span></div>
+          <div style="margin-top:auto;padding:4px;border:1px solid var(--line);border-radius:4px;color:var(--faint);font-size:5px;"><span style="color:var(--lime);">?</span> Help &amp; guide</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;min-width:0;padding:0 2px;">
+          <div style="display:flex;align-items:center;gap:4px;padding-bottom:4px;border-bottom:1px solid var(--line);color:var(--ink);font-size:6px;font-weight:560;">JIRA Agent <span class="ready-pill" style="font-size:4.6px;padding:1px 3px;">Ready</span></div>
+          <div class="mini-tool-card" style="font-size:5.4px;padding:4px 5px;">✓ 3 tool steps · Opened a page</div>
+          <div style="color:var(--text);font-size:5.7px;line-height:1.45;">Morning check is done. Two things need attention:</div>
+          <div style="color:var(--text);font-size:5.7px;line-height:1.45;">• <b style="color:var(--ink);">FID-482</b> duplicate charge<br>• <b style="color:var(--ink);">FID-471</b> export stuck</div>
+          <div style="align-self:flex-end;max-width:75%;padding:4px 6px;border-radius:5px 5px 2px 5px;background:#e3e5e8;color:#1b1c1f;font-size:5.4px;">Draft a standup update.</div>
+          <div style="margin-top:auto;display:flex;align-items:center;gap:4px;padding:4px 5px;border:1px solid var(--line);border-radius:4px;color:var(--faint);font-size:5.4px;">Message JIRA Agent… <span style="margin-left:auto;color:var(--lime);">●</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;min-width:0;padding-left:5px;border-left:1px solid var(--line);">
+          <div style="color:var(--faint);font-family:var(--font-mono);font-size:4.8px;letter-spacing:.08em;">AGENT DESK</div>
+          <div style="color:var(--faint);font-size:5px;">BROWSER <span style="color:var(--success);">Live</span></div>
+          <div style="height:36px;border:1px solid var(--line);border-radius:3px;background:#efede5;padding:3px;display:grid;grid-template-columns:repeat(3,1fr);gap:2px;">
+            <div><div style="height:3px;width:60%;background:#c8c4b7;border-radius:2px;"></div><div style="height:8px;margin-top:3px;border-radius:1px;background:#faf8f2;border:1px solid #ddd8cc;"></div></div>
+            <div><div style="height:3px;width:60%;background:#c8c4b7;border-radius:2px;"></div><div style="height:8px;margin-top:3px;border-radius:1px;background:#faf8f2;border:1px solid #ddd8cc;"></div></div>
+            <div><div style="height:3px;width:60%;background:#c8c4b7;border-radius:2px;"></div><div style="height:8px;margin-top:3px;border-radius:1px;background:#faf8f2;border:1px solid #ddd8cc;"></div></div>
+          </div>
+          <div style="color:var(--faint);font-size:5px;">ROUTINES</div>
+          <div style="padding:3px 0;border-bottom:1px solid var(--line);color:var(--text);font-size:5.2px;">Morning ticket sweep<span style="display:block;color:var(--faint);font-size:4.6px;">Weekdays · 9:00 AM</span></div>
+          <div style="padding:3px 0;color:var(--text);font-size:5.2px;">Friday release notes<span style="display:block;color:var(--faint);font-size:4.6px;">Fridays · Paused</span></div>
+          <div style="color:var(--faint);font-size:5px;">WORKSPACE</div>
+          <div style="padding:4px;border:1px solid var(--line);border-radius:3px;color:var(--text);font-size:4.8px;word-break:break-all;">D:\\Projects\\fid-coder<span style="display:block;color:var(--faint);font-size:4.4px;">Shell + files enabled</span></div>
+        </div>
+      </div>`,
+    agent: `
+      <div class="mini-modal">
+        <div class="mini-modal-head"><span>AGENT SETTINGS</span><b>Edit agent</b><span class="mini-x">×</span></div>
+        <div class="mini-modal-body">
+          <div class="mini-avatar-row"><span class="agent-avatar warm">J</span><div><b>JIRA Agent</b><span>Runs on this PC with its own browser profile.</span></div></div>
+          <div class="mini-row2">
+            <label class="mini-field"><span class="label">Name</span><span class="mini-input">JIRA Agent</span></label>
+            <label class="mini-field"><span class="label">Role</span><span class="mini-input">Jira teammate</span></label>
+          </div>
+          <label class="mini-field"><span class="label">Instructions</span><span class="mini-textarea">You are a JIRA agent. Use the local browser tools. Read the page before every click or type.</span></label>
+          <div class="mini-row2">
+            <label class="mini-field"><span class="label">Model</span><span class="mini-input">Auto</span></label>
+            <label class="mini-field"><span class="label">Tools</span><span class="mini-input">Browser only</span></label>
+          </div>
+          <label class="mini-field"><span class="label">Workspace</span><span class="mini-input muted">No workspace — browser agents do not need one</span></label>
+        </div>
+        <div class="mini-footer"><span class="spacer"></span><span class="mini-btn quiet">Cancel</span><span class="mini-btn primary">Save changes</span></div>
+      </div>`,
+    chat: `
+      <div class="mini-chat">
+        <div class="mini-chat-head"><span class="agent-avatar warm">J</span><b>JIRA Agent</b><span class="ready-pill"><span class="green-dot"></span> Ready</span><span class="spacer">◫</span></div>
+        <div class="mini-thread">
+          <div class="mini-tool-card"><span class="tool-check"><svg class="icon sm"><use href="#i-check"/></svg></span><b>3 tool steps</b> Opened a page · Read the page</div>
+          <div class="msg"><div class="msg-head"><span class="agent-avatar warm">J</span><b>JIRA Agent</b><span>1:09 PM</span></div><p>Morning check is done. Two things need your attention:</p><ul><li><b>FID-482 · Checkout retry loop</b> — release blocker.</li><li><b>FID-471 · Export job stuck</b> — waiting on approval.</li></ul></div>
+          <div class="user-msg">Draft a concise standup update.</div>
+          <div class="mini-approve"><span>Allow this delete?</span><code>del notes\\old.txt</code><span class="mini-btn quiet">Reject</span><span class="mini-btn danger">Approve</span></div>
+        </div>
+        <div class="mini-composer">Message JIRA Agent…<span class="spacer">Auto</span><span class="mini-send">↑</span></div>
+      </div>`,
+    browser: `
+      <div class="mini-desk">
+        <div class="desk-title"><span class="live-dot"></span> Agent desk <span class="desk-close">◫</span></div>
+        <div class="desk-label"><span>Browser</span><span class="live">Live</span></div>
+        <div class="browser-mini">
+          <div class="browser-mini-bar">fid.atlassian.net</div>
+          <div class="browser-mini-body">
+            <div class="kanban-col"><span></span><div class="kanban-card"></div><div class="kanban-card"></div><div class="kanban-card"></div></div>
+            <div class="kanban-col"><span></span><div class="kanban-card"></div><div class="kanban-card"></div></div>
+            <div class="kanban-col"><span></span><div class="kanban-card"></div><div class="kanban-card"></div><div class="kanban-card"></div></div>
+          </div>
+        </div>
+        <div class="desk-label"><span>Routines</span><span>+</span></div>
+        <div class="routine-mini"><svg class="icon sm routine-icon"><use href="#i-clock"/></svg><div><b>Morning ticket sweep</b><span>Weekdays at 9:00 AM · Tomorrow</span></div><span class="switch on"></span></div>
+        <div class="routine-mini"><svg class="icon sm routine-icon"><use href="#i-clock"/></svg><div><b>Friday release notes</b><span>Fridays at 4:00 PM · Paused</span></div><span class="switch"></span></div>
+        <div class="desk-label"><span>Workspace</span></div>
+        <div class="workspace-mini"><svg class="icon sm"><use href="#i-folder"/></svg><div>D:\\fid-coder-desktop-app<span>Shell + files enabled</span></div></div>
+      </div>`,
+    workspace: `
+      <div class="mini-tools">
+        <div class="mini-tools-head"><span>Tool profile</span><b>Shell, search, git, and files</b><span class="mini-btn">Developer</span></div>
+        <div class="tool-grid">
+          <span class="tool-chip">list_dir</span><span class="tool-chip">glob_files</span><span class="tool-chip">search_text</span><span class="tool-chip">file_read</span><span class="tool-chip">read_many</span><span class="tool-chip is-hot">explore_code</span><span class="tool-chip">apply_patch</span><span class="tool-chip">git_status</span><span class="tool-chip">git_diff</span><span class="tool-chip">gh_pr_view</span><span class="tool-chip">shell_run</span>
+        </div>
+        <div class="mini-tree">
+          <div>src/</div>
+          <div class="indent">main/</div>
+          <div class="indent2">runner.ts <em>— tools + prompt</em></div>
+          <div class="indent2">ipc.ts <em>— desktop bridge</em></div>
+          <div class="indent">tools/</div>
+          <div class="indent2">explore.ts <em>— list, glob, search</em></div>
+          <div class="indent2">git.ts <em>— status, diff, PRs</em></div>
+        </div>
+        <div class="mini-approve" style="font-size:6px;"><span>Delete approval:</span><code>git clean -fd</code><span class="mini-btn quiet">Reject</span><span class="mini-btn danger">Approve</span></div>
+      </div>`,
+    routines: `
+      <div class="mini-routines">
+        <div class="mini-routine-nav">
+          <b>2 ROUTINES</b>
+          <div class="mini-routine-item is-active"><b>Morning ticket sweep</b><span>Weekdays at 9:00 AM</span></div>
+          <div class="mini-routine-item"><b>Friday release notes</b><span>Fridays at 4:00 PM</span></div>
+          <div style="margin-top:8px;padding:5px;border:1px dashed var(--line-strong);border-radius:4px;color:var(--faint);text-align:center;font-size:5.8px;">+ New routine</div>
+        </div>
+        <div class="mini-routine-editor">
+          <div class="title"><b>Morning ticket sweep</b><span class="switch on"></span><span class="play">▶</span></div>
+          <label class="mini-field"><span class="label">Instruction</span><span class="mini-textarea">Check my assigned Jira tickets and summarize the top three.</span></label>
+          <div class="mini-row2">
+            <label class="mini-field"><span class="label">Frequency</span><span class="mini-input">Weekdays</span></label>
+            <label class="mini-field"><span class="label">Time</span><span class="mini-input">09:00 AM</span></label>
+          </div>
+          <div class="mini-toggle-row">Windows notification <span class="switch on"></span></div>
+          <div class="mini-last">Last run · 1d <strong>Completed</strong></div>
+        </div>
+      </div>`,
+    settings: `
+      <div class="mini-settings">
+        <div class="mini-settings-nav"><span>ACCOUNT</span><div class="item is-active">Copilot</div><div class="item">GitHub</div><div class="item">Jira</div></div>
+        <div class="mini-settings-main">
+          <h4>GitHub Copilot</h4>
+          <p>The account your agents use to think and call tools.</p>
+          <div class="mini-connection">
+            <div class="mini-connection-head"><span class="mini-connection-icon">✦</span><div><b>Copilot account</b><span>Signed in through the local CLI</span></div><span class="mini-btn">Connected</span></div>
+            <div class="mini-connection-grid"><div>ACCOUNT<b>raja</b></div><div>CLI<b>✓ Copilot CLI 1.0.83</b></div></div>
+          </div>
+          <div class="mini-integrations">
+            <div class="mini-integration"><b>GitHub</b>Token for PRs and repos.<br><span style="color:var(--faint);">Not connected</span></div>
+            <div class="mini-integration"><b>Jira</b>Site URL and API token.<br><span style="color:var(--faint);">Not connected</span></div>
+          </div>
+          <div style="margin-top:6px;color:var(--faint);font-size:5.4px;">⌂ Tokens are encrypted with Windows and never leave this machine.</div>
+        </div>
+      </div>`,
+    privacy: `
+      <div class="mini-data">
+        <div class="path-card">
+          <b><svg class="icon sm"><use href="#i-folder"/></svg> %APPDATA%\\fid-coder\\</b>
+          <div class="path-row">fid-coder.sqlite <span>agents · messages · routines</span></div>
+          <div class="path-row">browser-profiles\\ <span>per-agent cookies and logins</span></div>
+          <div class="path-row">secrets.bin.json <span>Windows-encrypted tokens</span></div>
+        </div>
+        <div class="mini-note"><span class="green-dot"></span> No cloud sync. No telemetry. Copilot requests go to GitHub.</div>
+      </div>`,
+    error: `
+      <div class="mini-error">
+        <div class="error-banner">Copilot is not signed in. Open Settings, sign in, then try again. <span class="mini-btn">Open settings</span></div>
+        <div class="check-list">
+          <div class="check-row"><span class="check-mark">✓</span> Copilot CLI found <span>v1.0.83</span></div>
+          <div class="check-row"><span class="check-mark">✓</span> Windows encryption available <span>safeStorage</span></div>
+          <div class="check-row"><span class="open-mark">○</span> Copilot account <span>Sign in</span></div>
+          <div class="check-row"><span class="open-mark">○</span> Local browser <span>Install Chromium</span></div>
+        </div>
+      </div>`,
+    tools: `
+      <div class="mini-table">
+        <div class="mini-table-head"><span>Tool</span><span>Profile</span><span>What it does</span></div>
+        <div class="mini-table-row"><code>browser_navigate</code><span class="tag">Browser</span><span>Open an http or https URL in the agent's browser.</span></div>
+        <div class="mini-table-row"><code>browser_snapshot</code><span class="tag">Browser</span><span>Read the page before clicking or typing.</span></div>
+        <div class="mini-table-row"><code>search_text</code><span class="tag">Developer</span><span>Search file contents with ripgrep; path:line:text.</span></div>
+        <div class="mini-table-row"><code>explore_code</code><span class="tag">Developer</span><span>Ask a read-only explorer for a short code brief.</span></div>
+        <div class="mini-table-row"><code>apply_patch</code><span class="tag">Developer</span><span>Replace one exact match in an existing file.</span></div>
+        <div class="mini-table-row"><code>shell_run</code><span class="tag">Developer</span><span>Run cmd.exe in the workspace; deletes need approval.</span></div>
+      </div>`
+  };
+
+  const TOPICS = [
+    {
+      id: "welcome", group: "Start here", title: "Welcome to Fid Coder", read: "3 min read", figure: "cockpit",
+      intro: "Fid Coder runs AI agents on this Windows PC. Each agent has its own instructions, model, tools, and saved conversation. GitHub Copilot does the thinking; the browser, files, and shell stay local.",
+      steps: [
+        ["Pick an agent in the sidebar.", "The two seeded agents are starting points: JIRA Agent for the browser and GIT PR Review for code."],
+        ["Type in the composer.", "Replies stream into the thread, and tool steps appear while the agent works."],
+        ["Open the Agent Desk.", "It shows the live browser, routines, and workspace for the selected agent."],
+        ["Use Settings for connections.", "Sign in to Copilot, and optionally add GitHub or Jira tokens."]
+      ],
+      tip: ["Everything except Copilot requests stays on this machine.", "Credentials are encrypted with Windows."],
+      caption: "The three working areas: agent list, conversation, and Agent Desk.",
+      related: ["quickstart", "cockpit", "privacy"]
+    },
+    {
+      id: "quickstart", group: "Start here", title: "Your first conversation", read: "4 min read", figure: "agent",
+      intro: "Sign in once, pick an agent, and send a message. The agent chooses tools based on its instructions and the tools you allow.",
+      steps: [
+        ["Sign in to Copilot.", "Open Settings → Copilot and choose Sign in with Copilot. Finish the browser flow; the app checks until your account appears."],
+        ["Create an agent.", "Use + in the sidebar. Give it a name, a short role, and instructions written like a brief for a teammate."],
+        ["Choose a tool profile.", "All tools, Browser only, or Shell, search, git, and files. The profile is enforced."],
+        ["Pick a workspace folder.", "Developer agents need one for file, search, git, and shell tools. Browser-only agents do not."],
+        ["Send a message.", "Press Enter to send, Shift+Enter for a new line. Start with Auto and change models later."]
+      ],
+      tip: ["The first message can be short.", "Tell the agent the outcome you want, not the steps you think it should take."],
+      caption: "The agent editor: name, role, instructions, model, tools, and workspace.",
+      related: ["agents", "chat", "connections"]
+    },
+    {
+      id: "cockpit", group: "Start here", title: "The cockpit at a glance", read: "3 min read", figure: "cockpit",
+      intro: "The window has three working areas. The sidebar selects an agent, the center column is the conversation, and the Agent Desk shows what the agent is doing on this machine.",
+      steps: [
+        ["Sidebar.", "Search agents with Ctrl+K, create one with +, or right-click an agent to edit or delete it."],
+        ["Chat.", "Replies support headings, lists, tables, code, and Mermaid diagrams. Tool steps collapse into one expandable card."],
+        ["Agent Desk.", "Live browser preview, routine switches, and the workspace path. Toggle it with the panel button."],
+        ["Composer.", "Model picker, next scheduled run, stop button while working, and the send button."]
+      ],
+      tip: ["The Agent Desk opens automatically on wide windows.", "Below 1181 px it stays closed until you use the panel button."],
+      caption: "The cockpit: agents on the left, the conversation in the middle, live work on the right.",
+      related: ["chat", "browser", "routines"]
+    },
+    {
+      id: "agents", group: "Using Fid Coder", title: "Create and edit agents", read: "5 min read", figure: "agent",
+      intro: "An agent is a saved teammate. Its name, instructions, model, tools, and workspace are stored locally in SQLite.",
+      steps: [
+        ["Open + in the sidebar.", "Name the agent and add a short role such as “Jira teammate” or “Code reviewer.”"],
+        ["Write instructions.", "State what the agent should do, what it should avoid, and how it should reply."],
+        ["Choose tools.", "All tools, Browser only, or Shell, search, git, and files. A browser-only agent cannot run commands or touch files."],
+        ["Choose a workspace.", "File, search, git, and shell tools stay inside that folder."],
+        ["Save.", "Right-click an agent later to edit it. Deleting also removes its conversation, routines, and browser profile."]
+      ],
+      tip: ["The seeded agents are ordinary agents.", "Edit or delete them the same way as any agent you create."],
+      caption: "The agent editor. Tool profile and workspace are the two settings that change what the agent can do.",
+      related: ["quickstart", "workspace", "chat"]
+    },
+    {
+      id: "chat", group: "Using Fid Coder", title: "Chat and tool steps", read: "4 min read", figure: "chat",
+      intro: "Messages stream in as the agent works. Tool calls are grouped so the thread stays readable, and every result is saved with the conversation.",
+      steps: [
+        ["Send with Enter.", "Use Shift+Enter for a new line. The composer grows up to eight lines."],
+        ["Watch the live status line.", "Finished calls collapse into a tool card you can expand."],
+        ["Switch models from the composer.", "Auto lets Copilot choose. The picker is disabled while the agent is working."],
+        ["Stop a running turn.", "The stop square aborts the turn. Partial text is kept in the conversation."],
+        ["Copy any reply.", "Code blocks and diagrams have their own copy buttons."]
+      ],
+      tip: ["Delete commands pause the turn.", "Approve or reject them in the bar above the composer; nothing is deleted before you answer."],
+      caption: "Tool steps collapse into one card. Destructive commands pause for approval.",
+      related: ["cockpit", "workspace", "troubleshooting"]
+    },
+    {
+      id: "browser", group: "Using Fid Coder", title: "The local browser", read: "4 min read", figure: "browser",
+      intro: "Browser agents drive a headed Microsoft Edge or Chrome window on this PC. Each agent gets its own persistent profile, so logins survive restarts.",
+      steps: [
+        ["Ask the agent to open a site.", "It calls browser_navigate, then browser_snapshot to read the page."],
+        ["The agent clicks and types.", "Selectors come from the latest snapshot. The agent is told to snapshot before every action."],
+        ["Watch the Agent Desk.", "The preview refreshes every three seconds while the browser is open."],
+        ["Open the real window.", "Choose Open browser to bring it to the front."]
+      ],
+      tip: ["Use Browser only for web work.", "That profile cannot run shell commands or touch files."],
+      caption: "The Agent Desk shows the live page, schedule switches, and workspace path.",
+      related: ["agents", "cockpit", "workspace"]
+    },
+    {
+      id: "workspace", group: "Using Fid Coder", title: "Files, search, and shell", read: "6 min read", figure: "workspace",
+      intro: "Developer agents work inside one folder. The app injects a workspace brief and gives the model fast, native tools instead of making it discover everything through the shell.",
+      steps: [
+        ["List and read.", "Use list_dir, glob_files, search_text, file_read, and read_many."],
+        ["Edit existing files.", "Use apply_patch. Use file_write only to create a new file."],
+        ["Use git tools.", "git_status, git_diff, and git_log for git; gh_pr_view and gh_pr_diff for pull requests."],
+        ["Ask explore_code.", "A read-only explorer returns a short brief with paths and line numbers."],
+        ["Use shell_run for the rest.", "Builds, tests, and commands. Output is capped and commands time out."]
+      ],
+      tip: ["Every path is resolved inside the workspace.", "Deleting files, folders, or branches requires your approval in chat."],
+      caption: "The developer tool set. The workspace brief tells the agent what the folder contains before it searches.",
+      related: ["agents", "chat", "tools"]
+    },
+    {
+      id: "routines", group: "Using Fid Coder", title: "Scheduled routines", read: "4 min read", figure: "routines",
+      intro: "A routine sends a saved instruction to an agent on a schedule. Results land in the same conversation and can raise a Windows notification.",
+      steps: [
+        ["Open Routines.", "Use the Routines button in the Agent Desk or the + in its Routines section."],
+        ["Write the instruction.", "Write it the way you would write a chat message."],
+        ["Pick a schedule.", "Every day, Weekdays, Every week, or a custom five-field cron. Times use the PC's local time."],
+        ["Leave notifications on.", "Finished runs and failures raise a Windows toast."],
+        ["Run once or pause.", "Use the play button to run now, or the switch in the Agent Desk to pause."]
+      ],
+      tip: ["Routines run only while Fid Coder is open.", "If the agent is already working, the run is marked skipped instead of queued."],
+      caption: "The routine editor: instruction, schedule, notifications, and last-run status.",
+      related: ["cockpit", "agents", "troubleshooting"]
+    },
+    {
+      id: "connections", group: "Using Fid Coder", title: "Copilot, GitHub, and Jira", read: "4 min read", figure: "settings",
+      intro: "Copilot is the only AI backend. GitHub and Jira tokens are optional and are handed only to the tools that need them.",
+      steps: [
+        ["Copilot.", "Sign in with the browser flow. Re-check refreshes the account state; Sign out clears the saved session."],
+        ["GitHub.", "Save a personal access token. Shell and git tools receive it as GH_TOKEN and GITHUB_TOKEN."],
+        ["Jira.", "Save the site URL and an API token. Developer agents receive JIRA_API_TOKEN and JIRA_SITE in the shell."],
+        ["Credentials stay local.", "Tokens are encrypted with Windows safeStorage and never printed in chat or passed to Copilot."]
+      ],
+      tip: ["Changing a token drops every live Copilot session.", "Saved conversations stay; the next message rebuilds context."],
+      caption: "Settings: Copilot sign-in, optional GitHub and Jira connections, and the encryption note.",
+      related: ["quickstart", "privacy", "troubleshooting"]
+    },
+    {
+      id: "privacy", group: "Reference", title: "What stays on this PC", read: "3 min read", figure: "privacy",
+      intro: "Fid Coder is local-first. Conversations, agents, routines, browser profiles, and credentials live under your Windows user profile.",
+      steps: [
+        ["SQLite.", "Agents, messages, routines, and settings live in %APPDATA%\\fid-coder\\fid-coder.sqlite."],
+        ["Browser profiles.", "Each agent has its own folder under browser-profiles, with its own cookies and logins."],
+        ["Secrets.", "Tokens live in secrets.bin.json, encrypted with Windows safeStorage."],
+        ["Chat memory.", "The saved transcript is the memory. A rebuilt session sends the last 30 messages, clipped to 12,000 characters."],
+        ["Deletion.", "Deleting an agent removes its conversation, routines, and browser profile. This cannot be undone."]
+      ],
+      tip: ["Set FID_CODER_USER_DATA to use a different data folder.", "Useful for a portable drive or a test profile."],
+      caption: "The complete local data set. Nothing here is synced to a Fid Coder service.",
+      related: ["connections", "agents", "troubleshooting"]
+    },
+    {
+      id: "troubleshooting", group: "Reference", title: "Troubleshooting", read: "3 min read", figure: "error",
+      intro: "Most setup problems come from Copilot sign-in, a missing CLI, or a missing browser. Keep the fix next to the error.",
+      steps: [
+        ["“Copilot is not signed in.”", "Open Settings → Copilot, sign in, then send the message again."],
+        ["“Copilot CLI was not found.”", "Install GitHub Copilot CLI and make sure copilot.exe is on PATH, then re-check."],
+        ["“Model list unavailable.”", "The catalog could not be read. Auto still works; retry after signing in."],
+        ["“Could not open a local browser.”", "Install Chromium with npx playwright install chromium, or install Edge or Chrome."],
+        ["No Windows toast.", "Confirm notifications are allowed for Fid Coder in Windows settings."]
+      ],
+      tip: ["Try Re-check before restarting.", "Settings → Copilot refreshes the CLI and auth state without losing the conversation."],
+      caption: "Troubleshooting starts with the state of the machine, not a generic FAQ.",
+      related: ["connections", "browser", "privacy"]
+    },
+    {
+      id: "tools", group: "Reference", title: "Tool reference", read: "5 min read", figure: "tools",
+      intro: "Every tool is scoped by the agent's tool profile. Browser-only agents get four browser tools; developer agents get fourteen local tools; All tools combines them.",
+      steps: [
+        ["Browser.", "browser_navigate, browser_snapshot, browser_click, browser_type."],
+        ["Explore.", "list_dir, glob_files, search_text, explore_code."],
+        ["Files.", "file_read, read_many, file_write, apply_patch."],
+        ["Git.", "git_status, git_diff, git_log, gh_pr_view, gh_pr_diff."],
+        ["Shell.", "shell_run, with workspace jail, token injection, timeout, output caps, and delete approval."]
+      ],
+      tip: ["The reference is generated from the same registry the agent uses.", "Arguments, limits, and examples stay in one place."],
+      caption: "A compact tool table. Each row can expand into arguments, limits, and an example.",
+      related: ["workspace", "agents", "chat"]
+    }
+  ];
+
+  const FIGURE_LABELS = {
+    cockpit: "The cockpit and its three working areas.",
+    agent: "The agent editor.",
+    chat: "A live conversation with tool steps and approval.",
+    browser: "The Agent Desk browser preview.",
+    workspace: "The developer tool set and workspace tree.",
+    routines: "The routine editor.",
+    settings: "Settings and connections.",
+    privacy: "The local data map.",
+    error: "A troubleshooting state.",
+    tools: "The tool reference table."
+  };
+
+  const CALLOUTS = {
+    cockpit: [[16, 31], [45, 57], [81, 35]],
+    agent: [[62, 67], [62, 52], [41, 83]],
+    chat: [[37, 32], [47, 68], [78, 86]],
+    browser: [[53, 42], [53, 73], [53, 92]],
+    workspace: [[50, 30], [50, 49], [38, 83]],
+    routines: [[64, 63], [69, 83], [31, 62]],
+    settings: [[50, 38], [73, 54], [48, 85]],
+    privacy: [[42, 54], [43, 66], [58, 82]],
+    error: [[50, 25], [51, 51], [51, 77]],
+    tools: [[28, 31], [55, 47], [80, 63]]
+  };
+
+  const state = { active: "agents", query: "" };
+  const nav = document.getElementById("helpNav");
+  const article = document.getElementById("helpArticle");
+  const search = document.getElementById("guideSearch");
+  const helpLayer = document.getElementById("helpLayer");
+  const helpEntry = document.getElementById("helpEntry");
+  const helpClose = document.getElementById("helpClose");
+  const helpScrim = document.getElementById("helpScrim");
+  const baseApp = document.getElementById("baseApp");
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function esc(value) {
+    return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function filteredTopics() {
+    const q = state.query.trim().toLowerCase();
+    if (!q) return TOPICS;
+    return TOPICS.filter((topic) => `${topic.title} ${topic.intro} ${topic.group}`.toLowerCase().includes(q));
+  }
+
+  function renderNav() {
+    const visible = filteredTopics();
+    let html = "";
+    let group = "";
+    for (const topic of visible) {
+      if (topic.group !== group) {
+        group = topic.group;
+        html += `<div class="nav-group-label">${esc(group)}</div>`;
+      }
+      html += `<button type="button" class="nav-item ${topic.id === state.active ? "is-active" : ""}" data-topic="${topic.id}">
+        <span class="nav-mark"></span>${esc(topic.title)}<span class="nav-count">${topic.read.split(" ")[0]}</span>
+      </button>`;
+    }
+    if (!visible.length) {
+      html += `<div class="nav-group-label">No results</div><div style="padding:6px 8px;color:var(--faint);font-size:8px;line-height:1.5;">Try “browser”, “routine”, or “token”.</div>`;
+    }
+    html += `<div class="help-nav-foot"><b>F1</b> opens this guide anywhere in Fid Coder. The guide follows the app version.</div>`;
+    nav.innerHTML = html;
+  }
+
+  function renderArticle() {
+    const topic = TOPICS.find((item) => item.id === state.active) || TOPICS[0];
+    const callouts = CALLOUTS[topic.figure] || [];
+    const markers = callouts.map(([left, top], index) => `<span class="co" style="left:${left}%;top:${top}%;">${index + 1}</span>`).join("");
+    const related = topic.related
+      .map((id) => TOPICS.find((item) => item.id === id))
+      .filter(Boolean)
+      .map((item) => `<button type="button" data-topic="${item.id}">${esc(item.title)}</button>`)
+      .join("");
+
+    article.innerHTML = `
+      <div class="article-top">
+        <span>${esc(topic.group)}</span><span>/</span><span class="crumb-current">${esc(topic.title)}</span>
+        <span class="read-time">${esc(topic.read)}</span>
+      </div>
+      <h2>${esc(topic.title)}</h2>
+      <p class="article-intro">${esc(topic.intro)}</p>
+      <figure class="figure">
+        <div class="figure-bar">
+          <span class="win-dots"><i></i><i></i><i></i></span>
+          <span>Fid Coder — ${esc(FIGURE_LABELS[topic.figure])}</span>
+          <span class="figure-tag">Figure ${String(TOPICS.findIndex((item) => item.id === topic.id) + 1).padStart(2, "0")}</span>
+        </div>
+        <div class="figure-body">
+          ${FIGURES[topic.figure]}
+          ${markers}
+        </div>
+        <figcaption><b>${esc(FIGURE_LABELS[topic.figure])}</b> ${esc(topic.caption)}</figcaption>
+      </figure>
+      <ol class="steps">
+        ${topic.steps.map(([lead, body], index) => `<li class="step"><span class="step-num">${index + 1}</span><span><b>${esc(lead)}</b> ${esc(body)}</span></li>`).join("")}
+      </ol>
+      <div class="tip"><b>${esc(topic.tip[0])}</b> ${esc(topic.tip[1])}</div>
+      <div class="related">Related <span style="color:var(--line-strong)">/</span> ${related}</div>
+    `;
+  }
+
+  function selectTopic(id) {
+    if (!TOPICS.some((topic) => topic.id === id)) return;
+    state.active = id;
+    renderNav();
+    renderArticle();
+    article.scrollTop = 0;
+  }
+
+  nav.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-topic]");
+    if (item) selectTopic(item.dataset.topic);
+  });
+
+  article.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-topic]");
+    if (item) selectTopic(item.dataset.topic);
+  });
+
+  search.addEventListener("input", () => {
+    state.query = search.value;
+    const visible = filteredTopics();
+    if (visible.length && !visible.some((topic) => topic.id === state.active)) {
+      state.active = visible[0].id;
+      renderArticle();
+    }
+    renderNav();
+  });
+
+  function openHelp() {
+    helpLayer.hidden = false;
+    baseApp.inert = true;
+    helpEntry.setAttribute("aria-expanded", "true");
+    search.focus();
+  }
+
+  function closeHelp() {
+    helpLayer.hidden = true;
+    baseApp.inert = false;
+    helpEntry.setAttribute("aria-expanded", "false");
+  }
+
+  helpClose.addEventListener("click", closeHelp);
+  helpScrim.addEventListener("click", closeHelp);
+  helpEntry.addEventListener("click", openHelp);
+  helpEntry.setAttribute("aria-expanded", "true");
+
+  document.addEventListener("keydown", (event) => {
+    const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName || "");
+    if (event.key === "F1") {
+      event.preventDefault();
+      if (helpLayer.hidden) openHelp();
+      else closeHelp();
+      return;
+    }
+    if (event.key === "Escape" && !helpLayer.hidden) {
+      closeHelp();
+      return;
+    }
+    if (event.key === "/" && !typing) {
+      if (!helpLayer.hidden) {
+        event.preventDefault();
+        search.focus();
+        search.select();
+      }
+    }
+  });
+
+  renderNav();
+  renderArticle();
+</script>

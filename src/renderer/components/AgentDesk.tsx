@@ -37,7 +37,7 @@ export function AgentDesk({
   const [error, setError] = useState<string | null>(null);
   const shellEnabled = agent.toolProfile !== "browser";
   const workspaceNote = !shellEnabled
-    ? "Browser tools only"
+    ? "Browser and Jira"
     : agent.workspaceDir
       ? "Shell + files enabled"
       : "Shell + files unavailable";

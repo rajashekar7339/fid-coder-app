@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
+import { COPILOT_USAGE_REFRESH_MS, type CopilotUsageView } from "../shared/copilot-usage";
 import type { Agent, CopilotModel, Routine, SettingsView } from "../shared/types";
 import { AgentDesk } from "./components/AgentDesk";
 import { AgentDialog } from "./components/AgentDialog";
 import { BrandMark } from "./components/BrandMark";
 import { ChatView } from "./components/ChatView";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { HelpDialog } from "./components/HelpDialog";
 import { RoutinesDialog } from "./components/RoutinesDialog";
 import { SettingsDialog, type SettingsSection, type SignInNote } from "./components/SettingsDialog";
 import { Sidebar, type CopilotPresence } from "./components/Sidebar";
@@ -14,6 +16,7 @@ import { errorText, fid, hasFid } from "./fid";
 type Dialog =
   | { kind: "create" }
   | { kind: "edit"; agentId: string }
+  | { kind: "help" }
   | { kind: "routines" }
   | { kind: "settings"; section: SettingsSection };
 
@@ -29,6 +32,9 @@ export function App() {
   const [agentId, setAgentId] = useState<string | null>(null);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [settings, setSettings] = useState<SettingsView | null>(null);
+  const [usage, setUsage] = useState<CopilotUsageView | null>(null);
+  const [usageMessage, setUsageMessage] = useState<string | null>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Agent | null>(null);
   const [deskOpen, setDeskOpen] = useState(() => window.innerWidth >= 1181);
@@ -38,6 +44,7 @@ export function App() {
 
   const modelsRequest = useRef(0);
   const routinesRequest = useRef(0);
+  const usageRequest = useRef(0);
   const signInWatch = useRef(0);
   const signInTimer = useRef<number | null>(null);
 
@@ -67,6 +74,23 @@ export function App() {
     const next = await fid().settings.get(refreshAuth ? { refreshAuth: true } : undefined);
     setSettings(next);
     return next;
+  }, []);
+
+  const refreshUsage = useCallback(async (force = false): Promise<void> => {
+    const request = ++usageRequest.current;
+    setUsageLoading(true);
+    try {
+      const result = await fid().settings.usage(force ? { force: true } : undefined);
+      if (usageRequest.current !== request) return;
+      setUsage(result.usage);
+      setUsageMessage(result.message);
+    } catch (caught) {
+      if (usageRequest.current !== request) return;
+      setUsage(null);
+      setUsageMessage(errorText(caught));
+    } finally {
+      if (usageRequest.current === request) setUsageLoading(false);
+    }
   }, []);
 
   const refreshRoutines = useCallback(async (): Promise<Routine[]> => {
@@ -208,19 +232,40 @@ export function App() {
   }, [settings?.signedIn, refreshModels]);
 
   useEffect(() => {
+    if (!settings?.signedIn) {
+      usageRequest.current += 1;
+      setUsage(null);
+      setUsageMessage(null);
+      setUsageLoading(false);
+      return;
+    }
+    void refreshUsage();
+  }, [settings?.signedIn, refreshUsage]);
+
+  useEffect(() => {
+    if (!settings?.signedIn) return;
+    const timer = window.setInterval(() => {
+      void refreshUsage();
+    }, COPILOT_USAGE_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [settings?.signedIn, refreshUsage]);
+
+  useEffect(() => {
     if (dialog?.kind !== "settings") return;
     void refreshSettings().catch((error: unknown) => setLoadError(errorText(error)));
-  }, [dialog, refreshSettings]);
+    void refreshUsage();
+  }, [dialog, refreshSettings, refreshUsage]);
 
   useEffect(() => {
     function onFocus() {
       void refreshSettings().catch(() => undefined);
       void refreshAgents().catch(() => undefined);
       if (agentId) void refreshRoutines().catch(() => undefined);
+      if (settings?.signedIn) void refreshUsage();
     }
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [agentId, refreshAgents, refreshRoutines, refreshSettings]);
+  }, [agentId, settings?.signedIn, refreshAgents, refreshRoutines, refreshSettings, refreshUsage]);
 
   useEffect(() => {
     const query = window.matchMedia(DESK_BREAKPOINT);
@@ -228,6 +273,19 @@ export function App() {
     sync();
     query.addEventListener("change", sync);
     return () => query.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
+    function onHelpKey(event: KeyboardEvent) {
+      if (event.key !== "F1") return;
+      event.preventDefault();
+      setDialog((current) => {
+        if (current?.kind === "help") return null;
+        return current ?? { kind: "help" };
+      });
+    }
+    window.addEventListener("keydown", onHelpKey);
+    return () => window.removeEventListener("keydown", onHelpKey);
   }, []);
 
   useEffect(() => {
@@ -249,6 +307,10 @@ export function App() {
 
   function openRoutines() {
     if (agentId) setDialog({ kind: "routines" });
+  }
+
+  function openHelp() {
+    setDialog({ kind: "help" });
   }
 
   function startSignInFromChat() {
@@ -292,11 +354,13 @@ export function App() {
           copilotPresence={copilotPresence}
           loginName={settings?.loginName ?? null}
           signedIn={settings?.signedIn ?? false}
+          usage={usage}
           onSelect={setAgentId}
           onCreate={openCreate}
           onEdit={openEdit}
           onDelete={setPendingDelete}
           onSettings={() => openSettings("copilot")}
+          onHelp={openHelp}
         />
 
         <div className="center-column">
@@ -376,6 +440,9 @@ export function App() {
             setDialog(null);
             setAgents((current) => current.map((item) => (item.id === agent.id ? agent : item)));
           }}
+          onMemoryCleared={(agent) => {
+            setAgents((current) => current.map((item) => (item.id === agent.id ? agent : item)));
+          }}
         />
       ) : null}
 
@@ -388,9 +455,15 @@ export function App() {
         />
       ) : null}
 
+      {dialog?.kind === "help" ? <HelpDialog onClose={() => setDialog(null)} /> : null}
+
       {dialog?.kind === "settings" ? (
         <SettingsDialog
           settings={settings}
+          usage={usage}
+          usageMessage={usageMessage}
+          usageLoading={usageLoading}
+          onRefreshUsage={refreshUsage}
           section={dialog.section}
           checkingSignIn={checkingSignIn}
           signInNote={signInNote}

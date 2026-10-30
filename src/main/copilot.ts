@@ -2,6 +2,13 @@ import { createHash } from "crypto";
 import { spawn, spawnSync } from "child_process";
 import fs from "fs";
 import path from "path";
+import {
+  COPILOT_USAGE_REFRESH_MS,
+  COPILOT_USAGE_UNAVAILABLE,
+  normalizeCopilotUsage,
+  usageFailureMessage,
+  type CopilotUsageResult,
+} from "../shared/copilot-usage";
 import { AUTO_MODEL_ID, catalogModels, type CatalogModel, type CatalogPrice } from "../shared/model";
 import type { CopilotModel, SettingsView } from "../shared/types";
 import type { AppTool, ToolContext } from "../tools/types";
@@ -109,7 +116,18 @@ export async function stopClient(): Promise<void> {
 type AccountApi = {
   getAllUsers?: () => Promise<unknown>;
   logout?: (params: { selectionId?: string }) => Promise<unknown>;
+  getQuota?: (params: { selectionId?: string }) => Promise<unknown>;
 };
+
+type UsageCacheEntry = {
+  at: number;
+  result: CopilotUsageResult;
+};
+
+let usageCache: UsageCacheEntry | null = null;
+let usageInFlight: Promise<CopilotUsageResult> | null = null;
+let usageEpoch = 0;
+let usageTimer: ReturnType<typeof setInterval> | null = null;
 
 export async function signOutCopilot(): Promise<void> {
   let token: string | null = null;
@@ -124,6 +142,7 @@ export async function signOutCopilot(): Promise<void> {
   } finally {
     clearSecret(secretKeys.copilot);
     await stopClient();
+    stopUsageWatch();
   }
   const status = await getCopilotStatus();
   if (status.signedIn) {
@@ -213,9 +232,7 @@ async function readSessionCatalog(copilot: ClientLike): Promise<{ sessionModels:
   } catch {
     return { sessionModels: [], priceCategories: [] };
   } finally {
-    const sessionId = session?.sessionId;
-    await Promise.resolve(session?.disconnect?.()).catch(() => undefined);
-    if (sessionId) await copilot.deleteSession?.(sessionId).catch(() => undefined);
+    await closeSession(copilot, session);
   }
 }
 
@@ -240,6 +257,10 @@ export async function openSession(input: {
       name: tool.name,
       description: tool.description,
       parameters: tool.parameters,
+      // Copilot CLI ships apply_patch. Session setup fails unless this flag
+      // replaces that built-in. Keep the object schema so the model still
+      // sends path, old_string, and new_string.
+      ...(tool.name === "apply_patch" ? { overridesBuiltInTool: true } : {}),
       skipPermission: true,
       defer: "never",
       handler: async (args: unknown) => {
@@ -262,7 +283,7 @@ export async function openSession(input: {
     try {
       await session.rpc?.model?.switchTo?.({ modelId: input.model });
     } catch (error) {
-      await Promise.resolve(session.disconnect?.()).catch(() => undefined);
+      await closeSession(copilot, session);
       throw new Error(modelSwitchError(error, input.model));
     }
   }
@@ -324,6 +345,18 @@ export function detach(subscription: (() => void) | { unsubscribe?: () => void }
   else subscription.unsubscribe?.();
 }
 
+export async function closeLiveSession(live: LiveSession): Promise<void> {
+  if (client) await closeSession(client, live.session);
+  else await Promise.resolve(live.session.disconnect?.()).catch(() => undefined);
+}
+
+async function closeSession(copilot: ClientLike, session: SessionLike | null): Promise<void> {
+  if (!session) return;
+  const sessionId = session.sessionId;
+  await Promise.resolve(session.disconnect?.()).catch(() => undefined);
+  if (sessionId) await copilot.deleteSession?.(sessionId).catch(() => undefined);
+}
+
 export async function getCopilotStatus(): Promise<SettingsView> {
   const exe = resolveCopilotExe();
   const version = exe ? readVersion(exe) : null;
@@ -368,6 +401,124 @@ export async function getCopilotStatus(): Promise<SettingsView> {
     hasJiraToken: hasSecret(secretKeys.jira),
     jiraSiteUrl: "",
   };
+}
+
+const MEMORY_TIMEOUT_MS = 45_000;
+
+export async function completeOnce(model: string, systemMessage: string, prompt: string): Promise<string> {
+  let token: string | null = null;
+  try {
+    token = hasSecret(secretKeys.copilot) ? getSecret(secretKeys.copilot) : null;
+  } catch {
+    token = null;
+  }
+  const copilot = await ensureClient(token);
+  const session = await copilot.createSession({
+    streaming: false,
+    model,
+    clientName: "fid-coder",
+    systemMessage: { mode: "replace", content: systemMessage },
+    availableTools: [],
+    tools: [],
+    onPermissionRequest: () => ({ kind: "reject", feedback: "No tools" }),
+  });
+  try {
+    if (model !== AUTO_MODEL_ID) await session.rpc?.model?.switchTo?.({ modelId: model });
+    const response = await session.sendAndWait({ prompt }, MEMORY_TIMEOUT_MS);
+    return readAssistantText(response, "").trim();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.trim() || /ghp_|github_pat_|gho_|ghu_|eyJ|Bearer\s+\S+|Basic\s+\S+/i.test(message)) {
+      throw new Error("Copilot could not update agent memory.");
+    }
+    throw error instanceof Error ? error : new Error(message);
+  } finally {
+    await closeSession(copilot, session);
+  }
+}
+
+export function stopUsageWatch(): void {
+  usageEpoch += 1;
+  usageCache = null;
+  usageInFlight = null;
+  if (usageTimer) {
+    clearInterval(usageTimer);
+    usageTimer = null;
+  }
+}
+
+export function watchCopilotUsage(signedIn: boolean): void {
+  if (!signedIn) {
+    stopUsageWatch();
+    return;
+  }
+  if (usageTimer) return;
+  const timer = setInterval(() => {
+    void getCopilotUsage(true);
+  }, COPILOT_USAGE_REFRESH_MS);
+  timer.unref();
+  usageTimer = timer;
+  void getCopilotUsage(true);
+}
+
+export function getCopilotUsage(force = false): Promise<CopilotUsageResult> {
+  if (!force && usageCache && Date.now() - usageCache.at < COPILOT_USAGE_REFRESH_MS) {
+    return Promise.resolve(usageCache.result);
+  }
+  if (usageInFlight) return usageInFlight;
+  const epoch = usageEpoch;
+  const pending = loadCopilotUsage(epoch).finally(() => {
+    if (usageInFlight === pending) usageInFlight = null;
+  });
+  usageInFlight = pending;
+  return pending;
+}
+
+async function loadCopilotUsage(epoch: number): Promise<CopilotUsageResult> {
+  if (epoch !== usageEpoch) return { usage: null, message: null };
+  let token: string | null = null;
+  try {
+    token = hasSecret(secretKeys.copilot) ? getSecret(secretKeys.copilot) : null;
+  } catch {
+    token = null;
+  }
+  try {
+    const copilot = await ensureClient(token);
+    if (epoch !== usageEpoch) return { usage: null, message: null };
+    const auth = (await copilot.getAuthStatus?.()) ?? null;
+    if (auth?.isAuthenticated !== true) {
+      if (epoch === usageEpoch) stopUsageWatch();
+      return { usage: null, message: null };
+    }
+    const account = (copilot as unknown as { rpc?: { account?: AccountApi } }).rpc?.account;
+    if (!account?.getQuota) {
+      return rememberUsage(epoch, { usage: null, message: COPILOT_USAGE_UNAVAILABLE });
+    }
+    const raw = await account.getQuota({});
+    if (epoch !== usageEpoch) return { usage: null, message: null };
+    const usage = normalizeCopilotUsage(readQuotaSnapshots(raw));
+    return rememberUsage(epoch, {
+      usage,
+      message: usage ? null : COPILOT_USAGE_UNAVAILABLE,
+    });
+  } catch (error) {
+    if (epoch !== usageEpoch) return { usage: null, message: null };
+    return rememberUsage(epoch, { usage: null, message: usageFailureMessage(error) });
+  }
+}
+
+function rememberUsage(epoch: number, result: CopilotUsageResult): CopilotUsageResult {
+  if (epoch !== usageEpoch) return { usage: null, message: null };
+  usageCache = { at: Date.now(), result };
+  return result;
+}
+
+function readQuotaSnapshots(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const record = raw as Record<string, unknown>;
+  if ("quotaSnapshots" in record) return record.quotaSnapshots;
+  if ("quota_snapshots" in record) return record.quota_snapshots;
+  return record;
 }
 
 export async function startCopilotLogin(): Promise<{ ok: boolean; message: string }> {

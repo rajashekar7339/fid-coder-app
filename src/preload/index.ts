@@ -8,6 +8,7 @@ const channels = {
   agentsList: "agents:list",
   agentsCreate: "agents:create",
   agentsUpdate: "agents:update",
+  agentsClearMemory: "agents:clear-memory",
   agentsDelete: "agents:delete",
   messagesList: "messages:list",
   chatSend: "chat:send",
@@ -22,6 +23,7 @@ const channels = {
   routinesDelete: "routines:delete",
   routinesRun: "routines:run",
   settingsGet: "settings:get",
+  settingsUsage: "settings:usage",
   settingsSignOut: "settings:sign-out",
   settingsLogin: "settings:login",
   settingsSaveGithubPat: "settings:save-github-pat",
@@ -41,6 +43,7 @@ const api: FidApi = {
     list: () => ipcRenderer.invoke(channels.agentsList),
     create: (input: AgentInput) => ipcRenderer.invoke(channels.agentsCreate, input),
     update: (id: string, input: AgentInput) => ipcRenderer.invoke(channels.agentsUpdate, id, input),
+    clearMemory: (id: string) => ipcRenderer.invoke(channels.agentsClearMemory, id),
     delete: (id: string) => ipcRenderer.invoke(channels.agentsDelete, id),
   },
   messages: {
@@ -77,6 +80,7 @@ const api: FidApi = {
   },
   settings: {
     get: (options?: { refreshAuth?: boolean }) => ipcRenderer.invoke(channels.settingsGet, options),
+    usage: (options?: { force?: boolean }) => ipcRenderer.invoke(channels.settingsUsage, options),
     signOut: () => ipcRenderer.invoke(channels.settingsSignOut),
     startCopilotLogin: () => ipcRenderer.invoke(channels.settingsLogin),
     saveGithubPat: (token: string) => ipcRenderer.invoke(channels.settingsSaveGithubPat, token),

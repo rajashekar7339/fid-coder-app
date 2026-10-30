@@ -51,6 +51,7 @@ export function needsDeleteConfirmation(command: string): boolean {
     if (!first) continue;
     if (DELETE_COMMANDS.has(first)) return true;
     if ((first === "git" || first === "git.exe") && isDestructiveGit(tokens)) return true;
+    if (TRANSFER_COMMANDS.has(first)) return true;
   }
   if (/\bdo\s+@?(del|erase|rd|rmdir|rm)\b/.test(normalized)) return true;
   if (/(powershell|pwsh)/.test(normalized) && /\b(remove-item|ri|del|erase|rmdir|rm)\b/.test(normalized)) {
@@ -89,7 +90,7 @@ function isDestructiveGit(tokens: string[]): boolean {
   if (gitIndex < 0) return false;
   const args = tokens.slice(gitIndex + 1);
   const command = gitSubcommand(args);
-  if (command === "clean" || command === "rm" || command === "restore") return true;
+  if (command === "push" || command === "clean" || command === "rm" || command === "restore") return true;
   if (command === "reset" && args.includes("--hard")) return true;
   if (command === "checkout" && args.includes("--")) return true;
   if (command === "stash" && (args.includes("drop") || args.includes("clear"))) return true;
@@ -109,6 +110,17 @@ function gitSubcommand(args: string[]): string | undefined {
   }
   return undefined;
 }
+
+const TRANSFER_COMMANDS = new Set([
+  "curl",
+  "curl.exe",
+  "wget",
+  "wget.exe",
+  "iwr",
+  "irm",
+  "invoke-webrequest",
+  "invoke-restmethod",
+]);
 
 function cleanToken(token: string): string {
   return token.replace(/^["']+|["']+$/g, "").replace(/^@/, "");

@@ -90,7 +90,20 @@ app.whenReady().then(async () => {
 
     const browserNames = toolsForAgent("browser").map((tool) => tool.name);
     const developerNames = toolsForAgent("developer").map((tool) => tool.name);
-    if (browserNames.some((name) => name === "shell_run" || name.startsWith("file_"))) {
+    const exploreNames = [
+      "list_dir",
+      "glob_files",
+      "search_text",
+      "read_many",
+      "apply_patch",
+      "git_status",
+      "git_diff",
+      "git_log",
+      "gh_pr_view",
+      "gh_pr_diff",
+      "explore_code",
+    ];
+    if (browserNames.some((name) => name === "shell_run" || name.startsWith("file_") || exploreNames.includes(name))) {
       throw new Error("browser profile includes shell or file tools");
     }
     if (developerNames.some((name) => name.startsWith("browser_"))) {
@@ -99,7 +112,8 @@ app.whenReady().then(async () => {
     if (
       !browserNames.includes("browser_navigate") ||
       !developerNames.includes("shell_run") ||
-      !developerNames.includes("file_read")
+      !developerNames.includes("file_read") ||
+      exploreNames.some((name) => !developerNames.includes(name))
     ) {
       throw new Error("tool profiles are missing their tools");
     }
@@ -126,7 +140,7 @@ app.whenReady().then(async () => {
 
     await tools.file_write.handler({ path: "notes/hello.txt", content: "desk-note" }, ctx);
     const readBack = await tools.file_read.handler({ path: "notes/hello.txt" }, ctx);
-    if (readBack !== "desk-note") throw new Error("file roundtrip mismatch");
+    if (!readBack.includes("1|desk-note")) throw new Error(`file roundtrip mismatch: ${readBack}`);
     let fileEscaped = false;
     try {
       await tools.file_read.handler({ path: "../outside.txt" }, ctx);

@@ -21,6 +21,8 @@ type AgentRow = {
   workspace_dir: string | null;
   model: string | null;
   tool_profile: string | null;
+  memory_summary: string | null;
+  memory_enabled: number;
   last_activity_at: string | null;
   next_routine_at: string | null;
   created_at: string;
@@ -73,12 +75,18 @@ const GIT_DESCRIPTION = "Code reviewer";
 
 const OLD_JIRA_PROMPT = `You are a Jira agent. Use the local browser tools browser_navigate, browser_snapshot, browser_click, and browser_type. The browser profile belongs to this agent and keeps logins. Read browser_snapshot before every click or type. Choose Playwright selectors from the snapshot, such as role=link[name="Boards"] or text=Assigned to me. Report only what the page shows. Do not type passwords unless the user explicitly provides one in this conversation.`;
 
-const JIRA_PROMPT = `You are a JIRA agent. Use the local browser tools browser_navigate, browser_snapshot, browser_click, and browser_type. The browser profile belongs to this agent and keeps logins. Read browser_snapshot before every click or type. Choose Playwright selectors from the snapshot, such as role=link[name="Boards"] or text=Assigned to me. Report only what the page shows. Do not type passwords unless the user explicitly provides one in this conversation.`;
+const PREVIOUS_JIRA_PROMPT = `You are a JIRA agent. Use the local browser tools browser_navigate, browser_snapshot, browser_click, and browser_type. The browser profile belongs to this agent and keeps logins. Read browser_snapshot before every click or type. Choose Playwright selectors from the snapshot, such as role=link[name="Boards"] or text=Assigned to me. Report only what the page shows. Do not type passwords unless the user explicitly provides one in this conversation.`;
+
+const API_JIRA_PROMPT = `You are a JIRA agent. Read the saved Jira site with jira_search, jira_issue, and jira_myself before using the browser. Use the browser only when the user needs the page itself. Read browser_snapshot before every click or type. Choose Playwright selectors from the snapshot, such as role=link[name="Boards"] or text=Assigned to me. Report only what the tools or the page show. Do not type passwords unless the user explicitly provides one in this conversation.`;
+
+const JIRA_PROMPT = `You are a JIRA agent. Use jira_search, jira_issue, and jira_myself when they are available. Use the browser when they are not, when the user asks for the browser, or when a Jira tool fails. Read browser_snapshot before every click or type. Choose Playwright selectors from the snapshot, such as role=link[name="Boards"] or text=Assigned to me. Report only what the tools or the page show. Do not type passwords unless the user explicitly provides one in this conversation.`;
 
 const OLD_GIT_NAME = "Git PR Review";
 const GIT_NAME = "GIT PR Review";
 
-const GIT_PROMPT = `You are a Git pull request review agent. Work only inside the workspace folder. Use shell_run for git and gh, and file_read to inspect files. Summarize the change, name the risks, and quote file paths. Do not push, force-push, or change git config. If no workspace folder is set, ask the user to pick one in the agent editor.`;
+const OLD_GIT_PROMPT = `You are a Git pull request review agent. Work only inside the workspace folder. Use shell_run for git and gh, and file_read to inspect files. Summarize the change, name the risks, and quote file paths. Do not push, force-push, or change git config. If no workspace folder is set, ask the user to pick one in the agent editor.`;
+
+const GIT_PROMPT = `You are a Git pull request review agent. Work only inside the workspace folder. Use git_status, git_diff, git_log, gh_pr_view, and gh_pr_diff for the review. Use file_read, read_many, and search_text to inspect code. Use explore_code when you need to find where a change lives. Summarize the change, name the risks, and quote file paths. Do not push, force-push, or change git config. If no workspace folder is set, ask the user to pick one in the agent editor.`;
 
 export class AppDatabase {
   private readonly db: DatabaseSync;
@@ -108,6 +116,9 @@ export class AppDatabase {
         workspace_dir TEXT,
         model TEXT NOT NULL DEFAULT 'auto',
         tool_profile TEXT NOT NULL DEFAULT 'all',
+        memory_summary TEXT NOT NULL DEFAULT '',
+        memory_turn_count INTEGER NOT NULL DEFAULT 0,
+        memory_enabled INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -152,6 +163,7 @@ export class AppDatabase {
     `);
     this.ensureAgentModelColumn();
     this.ensureAgentDescriptionColumn();
+    this.ensureAgentMemoryColumns();
     const addedToolProfile = this.ensureAgentToolProfileColumn();
     const now = new Date().toISOString();
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(JIRA_NAME, now, OLD_JIRA_NAME);
@@ -160,7 +172,10 @@ export class AppDatabase {
       this.db.prepare("UPDATE agents SET tool_profile = ? WHERE name = ? AND tool_profile = ?").run("browser", JIRA_NAME, "all");
       this.db.prepare("UPDATE agents SET tool_profile = ? WHERE name = ? AND tool_profile = ?").run("developer", GIT_NAME, "all");
     }
-    this.db.prepare("UPDATE agents SET system_prompt = ?, updated_at = ? WHERE system_prompt = ?").run(JIRA_PROMPT, now, OLD_JIRA_PROMPT);
+    for (const prompt of [OLD_JIRA_PROMPT, PREVIOUS_JIRA_PROMPT, API_JIRA_PROMPT]) {
+      this.db.prepare("UPDATE agents SET system_prompt = ?, updated_at = ? WHERE system_prompt = ?").run(JIRA_PROMPT, now, prompt);
+    }
+    this.db.prepare("UPDATE agents SET system_prompt = ?, updated_at = ? WHERE system_prompt = ?").run(GIT_PROMPT, now, OLD_GIT_PROMPT);
     this.db.prepare("UPDATE agents SET description = ? WHERE name = ? AND description = ''").run(JIRA_DESCRIPTION, JIRA_NAME);
     this.db.prepare("UPDATE agents SET description = ? WHERE name = ? AND description = ''").run(GIT_DESCRIPTION, GIT_NAME);
     this.removeSeededTodo();
@@ -176,6 +191,20 @@ export class AppDatabase {
     const columns = this.db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
     if (columns.some((column) => column.name === "description")) return;
     this.db.exec("ALTER TABLE agents ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+  }
+
+  private ensureAgentMemoryColumns(): void {
+    const columns = this.db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+    const names = new Set(columns.map((column) => column.name));
+    if (!names.has("memory_summary")) {
+      this.db.exec("ALTER TABLE agents ADD COLUMN memory_summary TEXT NOT NULL DEFAULT ''");
+    }
+    if (!names.has("memory_turn_count")) {
+      this.db.exec("ALTER TABLE agents ADD COLUMN memory_turn_count INTEGER NOT NULL DEFAULT 0");
+    }
+    if (!names.has("memory_enabled")) {
+      this.db.exec("ALTER TABLE agents ADD COLUMN memory_enabled INTEGER NOT NULL DEFAULT 1");
+    }
   }
 
   private ensureAgentToolProfileColumn(): boolean {
@@ -235,8 +264,9 @@ export class AppDatabase {
     const id = crypto.randomUUID();
     this.db
       .prepare(
-        `INSERT INTO agents (id, name, description, system_prompt, workspace_dir, model, tool_profile, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO agents (
+          id, name, description, system_prompt, workspace_dir, model, tool_profile, memory_enabled, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -246,6 +276,7 @@ export class AppDatabase {
         emptyToNull(input.workspaceDir),
         normalizeModelId(input.model),
         normalizeToolProfile(input.toolProfile),
+        input.memoryEnabled ? 1 : 0,
         now,
         now,
       );
@@ -257,7 +288,8 @@ export class AppDatabase {
     const result = this.db
       .prepare(
         `UPDATE agents
-         SET name = ?, description = ?, system_prompt = ?, workspace_dir = ?, model = ?, tool_profile = ?, updated_at = ?
+         SET name = ?, description = ?, system_prompt = ?, workspace_dir = ?, model = ?, tool_profile = ?,
+             memory_enabled = ?, updated_at = ?
          WHERE id = ?`,
       )
       .run(
@@ -267,9 +299,31 @@ export class AppDatabase {
         emptyToNull(input.workspaceDir),
         normalizeModelId(input.model),
         normalizeToolProfile(input.toolProfile),
+        input.memoryEnabled ? 1 : 0,
         now,
         id,
       );
+    if (result.changes === 0) throw new Error("Agent not found");
+    return this.requireAgent(id);
+  }
+
+  getMemoryTurnCount(id: string): number {
+    const row = this.db.prepare("SELECT memory_turn_count FROM agents WHERE id = ?").get(id) as
+      | { memory_turn_count: number }
+      | undefined;
+    return row?.memory_turn_count ?? 0;
+  }
+
+  setMemorySummary(id: string, summary: string, turnCount: number): void {
+    this.db
+      .prepare("UPDATE agents SET memory_summary = ?, memory_turn_count = ? WHERE id = ?")
+      .run(summary, Math.max(0, Math.floor(turnCount)), id);
+  }
+
+  clearMemorySummary(id: string): Agent {
+    const result = this.db
+      .prepare("UPDATE agents SET memory_summary = '', memory_turn_count = 0, updated_at = ? WHERE id = ?")
+      .run(new Date().toISOString(), id);
     if (result.changes === 0) throw new Error("Agent not found");
     return this.requireAgent(id);
   }
@@ -402,6 +456,8 @@ function mapAgent(row: AgentRow): Agent {
     workspaceDir: row.workspace_dir,
     model: readModel(row.model),
     toolProfile: normalizeToolProfile(row.tool_profile),
+    memorySummary: row.memory_summary ?? "",
+    memoryEnabled: row.memory_enabled !== 0,
     lastActivityAt: row.last_activity_at,
     nextRoutineAt: row.next_routine_at,
     createdAt: row.created_at,

@@ -5,7 +5,15 @@ import { normalizeToolProfile } from "../shared/tool-profile";
 import type { AgentInput, RoutineInput, RoutinePatch } from "../shared/types";
 import type { BrowserManager } from "./browser-manager";
 import { assertCron, nextRunIso } from "./cron";
-import { getCopilotStatus, listCopilotModels, signOutCopilot, startCopilotLogin, stopClient } from "./copilot";
+import {
+  getCopilotStatus,
+  getCopilotUsage,
+  listCopilotModels,
+  signOutCopilot,
+  startCopilotLogin,
+  stopClient,
+  watchCopilotUsage,
+} from "./copilot";
 import type { AppDatabase } from "./db";
 import type { Runner } from "./runner";
 import type { Scheduler } from "./scheduler";
@@ -27,6 +35,11 @@ export function registerIpc(services: AppServices): void {
   ipcMain.handle(channels.agentsUpdate, async (_event, id: string, input: AgentInput) => {
     const agent = db.updateAgent(id, cleanAgent(input));
     await runner.dropSession(id);
+    return agent;
+  });
+  ipcMain.handle(channels.agentsClearMemory, async (_event, id: string) => {
+    const agent = db.clearMemorySummary(String(id ?? ""));
+    await runner.dropSession(agent.id);
     return agent;
   });
   ipcMain.handle(channels.agentsDelete, async (_event, id: string) => {
@@ -82,10 +95,21 @@ export function registerIpc(services: AppServices): void {
 
   ipcMain.handle(channels.settingsGet, async (_event, options?: { refreshAuth?: boolean }) => {
     if (options?.refreshAuth) await stopClient();
-    return {
+    const status = {
       ...(await getCopilotStatus()),
       jiraSiteUrl: db.getSetting("jira_site_url") ?? "",
     };
+    watchCopilotUsage(status.signedIn);
+    return status;
+  });
+  ipcMain.handle(channels.settingsUsage, async (_event, options?: { force?: boolean }) => {
+    const status = await getCopilotStatus();
+    if (!status.signedIn) {
+      watchCopilotUsage(false);
+      return { usage: null, message: null };
+    }
+    watchCopilotUsage(true);
+    return getCopilotUsage(options?.force === true);
   });
   ipcMain.handle(channels.settingsSignOut, async () => {
     await runner.dropAllSessions();
@@ -144,6 +168,7 @@ function cleanAgent(input: AgentInput): AgentInput {
     workspaceDir: input.workspaceDir?.trim() || null,
     model: normalizeModelId(input?.model),
     toolProfile: normalizeToolProfile(input?.toolProfile),
+    memoryEnabled: input.memoryEnabled !== false,
   };
 }
 

@@ -10,12 +10,14 @@ import type {
   RoutinePatch,
   SettingsView,
 } from "./types";
+import type { CopilotUsageResult } from "./copilot-usage";
 
 export interface FidApi {
   agents: {
     list: () => Promise<Agent[]>;
     create: (input: AgentInput) => Promise<Agent>;
     update: (id: string, input: AgentInput) => Promise<Agent>;
+    clearMemory: (id: string) => Promise<Agent>;
     delete: (id: string) => Promise<void>;
   };
   messages: {
@@ -41,6 +43,7 @@ export interface FidApi {
   };
   settings: {
     get: (options?: { refreshAuth?: boolean }) => Promise<SettingsView>;
+    usage: (options?: { force?: boolean }) => Promise<CopilotUsageResult>;
     signOut: () => Promise<SettingsView>;
     startCopilotLogin: () => Promise<{ ok: boolean; message: string }>;
     saveGithubPat: (token: string) => Promise<void>;

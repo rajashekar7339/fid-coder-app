@@ -19,7 +19,8 @@ import {
   Wrench,
   type LucideIcon,
 } from "lucide-react";
-import { groupToolCalls, liveTurnSettled, projectThread, userTurnAccepted, type LiveTurn } from "../../shared/chat-thread";
+import { groupToolCalls, liveTurnSettled, projectThread, userTurnAccepted, type LiveTool, type LiveTurn } from "../../shared/chat-thread";
+import { summarizeTool } from "../../shared/summary";
 import { DELETE_CONFIRM_MARKER } from "../../shared/types";
 import type { Agent, ChatEvent, CopilotModel, Message } from "../../shared/types";
 import { agentSubtitle } from "../agent-display";
@@ -45,16 +46,27 @@ type Props = {
   onAuthRequired: () => void;
 };
 
-type ToolMeta = { label: string; Icon: LucideIcon };
+type ToolMeta = { label: string; active: string; Icon: LucideIcon };
 
 const TOOL_META: Record<string, ToolMeta> = {
-  browser_navigate: { label: "Opened a page", Icon: Globe2 },
-  browser_snapshot: { label: "Read the page", Icon: ScanSearch },
-  browser_click: { label: "Clicked an element", Icon: MousePointerClick },
-  browser_type: { label: "Typed into a field", Icon: Keyboard },
-  shell_run: { label: "Ran a shell command", Icon: Terminal },
-  file_read: { label: "Read a file", Icon: FileText },
-  file_write: { label: "Wrote a file", Icon: FileText },
+  browser_navigate: { label: "Opened a page", active: "Opening a page", Icon: Globe2 },
+  browser_snapshot: { label: "Read the page", active: "Reading the page", Icon: ScanSearch },
+  browser_click: { label: "Clicked an element", active: "Clicking an element", Icon: MousePointerClick },
+  browser_type: { label: "Typed into a field", active: "Typing into a field", Icon: Keyboard },
+  shell_run: { label: "Ran a shell command", active: "Running a command", Icon: Terminal },
+  list_dir: { label: "Listed a folder", active: "Listing a folder", Icon: Folder },
+  glob_files: { label: "Found files", active: "Finding files", Icon: Folder },
+  search_text: { label: "Searched the code", active: "Searching the code", Icon: ScanSearch },
+  file_read: { label: "Read a file", active: "Reading a file", Icon: FileText },
+  read_many: { label: "Read files", active: "Reading files", Icon: FileText },
+  file_write: { label: "Wrote a file", active: "Writing a file", Icon: FileText },
+  apply_patch: { label: "Patched a file", active: "Patching a file", Icon: FileText },
+  git_status: { label: "Checked git status", active: "Checking git status", Icon: Terminal },
+  git_diff: { label: "Read the diff", active: "Reading the diff", Icon: Terminal },
+  git_log: { label: "Read the git log", active: "Reading the git log", Icon: Terminal },
+  gh_pr_view: { label: "Read a pull request", active: "Reading a pull request", Icon: Terminal },
+  gh_pr_diff: { label: "Read a pull request diff", active: "Reading a pull request diff", Icon: Terminal },
+  explore_code: { label: "Explored the code", active: "Exploring the code", Icon: ScanSearch },
 };
 
 const liveByAgent = new Map<string, LiveTurn>();
@@ -65,7 +77,28 @@ function remember(agentId: string, live: LiveTurn | null) {
 }
 
 function toolMeta(name: string): ToolMeta {
-  return TOOL_META[name] ?? { label: "Used a tool", Icon: Wrench };
+  return TOOL_META[name] ?? { label: "Used a tool", active: "Using a tool", Icon: Wrench };
+}
+
+function blankLive(startedAt: number, partial: Partial<LiveTurn> = {}): LiveTurn {
+  return { userText: "", assistant: "", tools: [], startedAt, ...partial };
+}
+
+function toolPreview(name: string, preview: string | undefined): string {
+  const text = (preview ?? "").replace(/\s+/g, " ").trim();
+  if (!text || text === "{}") return name;
+  return `${name}: ${text.slice(0, 160)}`;
+}
+
+function finishLiveTool(tools: LiveTool[], name: string, ok: boolean, text: string): LiveTool[] {
+  const next = tools.slice();
+  let index = next.findIndex((tool) => tool.pending && tool.name === name);
+  if (index < 0) index = next.findIndex((tool) => tool.pending);
+  if (index < 0) return next;
+  const current = next[index];
+  if (!current) return next;
+  next[index] = { ...current, pending: false, content: summarizeTool(name, ok, text) };
+  return next;
 }
 
 function splitTool(content: string): { name: string; body: string } {
@@ -139,7 +172,7 @@ export function ChatView({
         if (cancelled || generation.current !== gen || loadId !== messageLoad.current) return;
         const current = liveByAgent.get(agent.id) ?? null;
         const next = active
-          ? (current ?? { userText: "", assistant: "", toolLine: null, startedAt: Date.now() })
+          ? (current ?? blankLive(Date.now()))
           : !current?.userText || liveTurnSettled(list, current)
             ? null
             : current;
@@ -158,26 +191,37 @@ export function ChatView({
         setRunning(true);
         updateLive((current) => {
           if (current?.userText === event.text) return current;
-          return {
+          return blankLive(current?.startedAt ?? Date.now(), {
             userText: event.text,
             assistant: current?.assistant ?? "",
-            toolLine: current?.toolLine ?? null,
-            startedAt: current?.startedAt ?? Date.now(),
-          };
+            tools: current?.tools ?? [],
+          });
         });
       }
       if (event.type === "text") {
         setRunning(true);
         updateLive((current) => {
-          const base = current ?? { userText: "", assistant: "", toolLine: null, startedAt: Date.now() };
+          const base = current ?? blankLive(Date.now());
           return { ...base, assistant: base.assistant + event.text };
         });
       }
       if (event.type === "tool-start") {
         if (event.toolName === "shell_run") setPendingConfirm(null);
         updateLive((current) => {
-          const base = current ?? { userText: "", assistant: "", toolLine: null, startedAt: Date.now() };
-          return { ...base, toolLine: event.toolName };
+          const base = current ?? blankLive(Date.now());
+          const tools = base.tools ?? [];
+          return {
+            ...base,
+            tools: [
+              ...tools,
+              {
+                id: `live-tool-${base.startedAt}-${tools.length}`,
+                name: event.toolName,
+                content: toolPreview(event.toolName, event.text),
+                pending: true,
+              },
+            ],
+          };
         });
       }
       if (event.type === "tool-end") {
@@ -185,7 +229,11 @@ export function ChatView({
           const command = event.text.slice(DELETE_CONFIRM_MARKER.length).split("\n")[0].trim();
           setPendingConfirm(command.length > 200 ? `${command.slice(0, 200)}…` : command);
         }
-        updateLive((current) => (current ? { ...current, toolLine: null } : current));
+        updateLive((current) => {
+          if (!current) return current;
+          const tools = finishLiveTool(current.tools ?? [], event.toolName, event.ok, event.text ?? "");
+          return { ...current, tools };
+        });
       }
       if (event.type === "done" || event.type === "error") {
         if (event.type === "error") {
@@ -230,7 +278,7 @@ export function ChatView({
     const element = scroller.current;
     if (!element || !pinned.current) return;
     element.scrollTop = element.scrollHeight;
-  }, [projected.messages, projected.thinking, projected.toolLine, draft]);
+  }, [projected.messages, projected.thinking, projected.pendingToolId, draft]);
 
   useEffect(() => {
     const element = scroller.current;
@@ -277,7 +325,7 @@ export function ChatView({
     setError(null);
     setPendingConfirm(null);
     setRunning(true);
-    updateLive(() => ({ userText: text, assistant: "", toolLine: null, startedAt }));
+    updateLive(() => blankLive(startedAt, { userText: text }));
     void fid()
       .chat.send(agent.id, text)
       .catch(async (caught: unknown) => {
@@ -317,6 +365,7 @@ export function ChatView({
         workspaceDir: agent.workspaceDir,
         model,
         toolProfile: agent.toolProfile,
+        memoryEnabled: agent.memoryEnabled,
       });
       onUpdated(saved);
     } catch (caught) {
@@ -423,7 +472,7 @@ export function ChatView({
                 <Fragment key={item.kind === "message" ? item.message.id : item.id}>
                   {showDay ? <div className="day-separator">{day}</div> : null}
                   {item.kind === "tools" ? (
-                    <ToolGroup calls={item.calls} />
+                    <ToolGroup calls={item.calls} pendingId={projected.pendingToolId} />
                   ) : (
                     <MessageRow
                       agent={agent}
@@ -444,11 +493,7 @@ export function ChatView({
                 </Fragment>
               );
             })}
-            {projected.toolLine ? (
-              <ToolStatus name={projected.toolLine} />
-            ) : projected.thinking ? (
-              <TypingRow agent={agent} />
-            ) : null}
+            {projected.pendingToolId ? null : projected.thinking ? <TypingRow agent={agent} /> : null}
           </div>
         )}
       </div>
@@ -476,15 +521,15 @@ export function ChatView({
       ) : null}
 
       {pendingConfirm && !running ? (
-        <div className="confirm-bar" role="group" aria-label="Delete confirmation">
+        <div className="confirm-bar" role="group" aria-label="Command confirmation">
           <span>
-            Allow this delete? <code>{pendingConfirm}</code>
+            Allow this command? <code>{pendingConfirm}</code>
           </span>
           <div className="confirm-actions">
-            <button type="button" className="btn btn-quiet" onClick={() => sendText("No, do not delete it.")}>
+            <button type="button" className="btn btn-quiet" onClick={() => sendText("No, do not run it.")}>
               Reject
             </button>
-            <button type="button" className="btn btn-destructive" onClick={() => sendText("Yes, I approve. Delete it.")}>
+            <button type="button" className="btn btn-destructive" onClick={() => sendText("Yes, I approve. Run it.")}>
               Approve
             </button>
           </div>
@@ -590,17 +635,6 @@ function TypingRow({ agent }: { agent: Agent }) {
   );
 }
 
-function ToolStatus({ name }: { name: string }) {
-  const meta = toolMeta(name);
-  return (
-    <div className="tool-status">
-      <Loader2 size={13} className="spin" aria-hidden="true" />
-      <span>{meta.label}</span>
-      <code>{name}</code>
-    </div>
-  );
-}
-
 function MessageRow({
   agent,
   message,
@@ -630,7 +664,7 @@ function MessageRow({
         <span className="message-time">{formatClock(message.createdAt)}</span>
       </div>
       <div className="message-body">
-        <MessageContent text={message.content} />
+        <MessageContent text={message.content} streaming={streaming} />
         {streaming ? <span className="stream-caret" /> : null}
       </div>
       {!streaming ? (
@@ -643,28 +677,45 @@ function MessageRow({
   );
 }
 
-function ToolGroup({ calls }: { calls: Message[] }) {
-  const names = calls.map((call) => toolMeta(splitTool(call.content).name).label);
+function ToolGroup({ calls, pendingId }: { calls: Message[]; pendingId: string | null }) {
+  const live = calls.some((call) => call.id.startsWith("live-tool-"));
+  const card = useRef<HTMLDetailsElement>(null);
+  const names = calls.map((call) => {
+    const split = splitTool(call.content);
+    const meta = toolMeta(split.name);
+    return call.id === pendingId ? meta.active : meta.label;
+  });
+  const summary = pendingId ? names.slice(-2).join(" · ") : names.slice(0, 2).join(" · ");
+
+  useEffect(() => {
+    if (live) card.current?.setAttribute("open", "");
+  }, [live]);
+
   return (
-    <details className="tool-card">
+    <details ref={card} className={live ? "tool-card is-live" : "tool-card"}>
       <summary>
         <span className="tool-check">
-          <Wrench size={11} aria-hidden="true" />
+          {pendingId && live ? <Loader2 size={11} className="spin" aria-hidden="true" /> : <Wrench size={11} aria-hidden="true" />}
         </span>
         <b>{calls.length === 1 ? "1 tool step" : `${calls.length} tool steps`}</b>
-        <span className="tool-summary">{names.slice(0, 2).join(" · ")}</span>
+        <span className="tool-summary">{summary}</span>
         <ChevronDown size={12} className="tool-chevron" aria-hidden="true" />
       </summary>
       <div className="tool-steps">
         {calls.map((call) => {
           const split = splitTool(call.content);
           const meta = toolMeta(split.name);
+          const pending = call.id === pendingId;
           const Icon = meta.Icon;
           return (
-            <details className="tool-step" key={call.id}>
+            <details className={pending ? "tool-step is-running" : "tool-step"} key={call.id}>
               <summary>
-                <Icon size={12} className="tool-step-icon" aria-hidden="true" />
-                <span className="tool-step-label">{meta.label}</span>
+                {pending ? (
+                  <Loader2 size={12} className="tool-step-icon spin" aria-hidden="true" />
+                ) : (
+                  <Icon size={12} className="tool-step-icon" aria-hidden="true" />
+                )}
+                <span className="tool-step-label">{pending ? meta.active : meta.label}</span>
                 <code>{split.name}</code>
                 <span className="tool-step-time">{formatClock(call.createdAt)}</span>
                 <ChevronDown size={10} className="tool-step-chevron" aria-hidden="true" />
