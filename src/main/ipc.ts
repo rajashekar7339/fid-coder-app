@@ -1,9 +1,10 @@
-import { BrowserWindow, dialog, ipcMain } from "electron";
+import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { channels } from "../shared/channels";
 import { normalizeModelId } from "../shared/model";
 import { normalizeToolProfile } from "../shared/tool-profile";
 import type { AgentInput, RoutineInput, RoutinePatch } from "../shared/types";
 import type { BrowserManager } from "./browser-manager";
+import type { CheckpointStore } from "./checkpoints";
 import { assertCron, nextRunIso } from "./cron";
 import {
   getCopilotStatus,
@@ -18,22 +19,26 @@ import type { AppDatabase } from "./db";
 import type { Runner } from "./runner";
 import type { Scheduler } from "./scheduler";
 import { clearSecret, secretKeys, setSecret } from "./secrets";
+import { createAgentsFile, ruleFilePath, workspaceRules } from "./workspace-rules";
 
 type AppServices = {
   db: AppDatabase;
   runner: Runner;
   scheduler: Scheduler;
   browser: BrowserManager;
+  checkpoints: CheckpointStore;
   getWindow: () => BrowserWindow | null;
 };
 
 export function registerIpc(services: AppServices): void {
-  const { db, runner, scheduler, browser } = services;
+  const { db, runner, scheduler, browser, checkpoints } = services;
 
   ipcMain.handle(channels.agentsList, () => db.listAgents());
   ipcMain.handle(channels.agentsCreate, (_event, input: AgentInput) => db.createAgent(cleanAgent(input)));
   ipcMain.handle(channels.agentsUpdate, async (_event, id: string, input: AgentInput) => {
+    const before = db.getAgent(id);
     const agent = db.updateAgent(id, cleanAgent(input));
+    if (before?.workspaceDir !== agent.workspaceDir) checkpoints.clearAgent(id);
     await runner.dropSession(id);
     return agent;
   });
@@ -49,6 +54,7 @@ export function registerIpc(services: AppServices): void {
     } catch (error) {
       console.error("Failed to remove browser profile", error);
     }
+    checkpoints.clearAgent(id);
     db.deleteAgent(id);
     scheduler.reload();
   });
@@ -64,6 +70,35 @@ export function registerIpc(services: AppServices): void {
 
   ipcMain.handle(channels.browserPreview, (_event, agentId: string) => browser.preview(String(agentId ?? "")));
   ipcMain.handle(channels.browserFocus, (_event, agentId: string) => browser.focus(String(agentId ?? "")));
+
+  ipcMain.handle(channels.changesLatest, (_event, agentId: string) => checkpoints.latest(String(agentId ?? "")));
+  ipcMain.handle(channels.changesDiff, (_event, changeId: string) => checkpoints.diff(String(changeId ?? "")));
+  ipcMain.handle(channels.changesRevert, (_event, changeId: string) => checkpoints.revert(String(changeId ?? "")));
+  ipcMain.handle(channels.changesRevertTurn, (_event, turnId: string) => checkpoints.revertTurn(String(turnId ?? "")));
+
+  ipcMain.handle(channels.plansGet, (_event, agentId: string) => db.getPlan(String(agentId ?? "")));
+  ipcMain.handle(channels.contextPreview, (_event, agentId: string) =>
+    runner.previewContext(String(agentId ?? "")),
+  );
+
+  ipcMain.handle(channels.workspaceRules, (_event, agentId: string) => {
+    const agent = db.getAgent(String(agentId ?? ""));
+    if (!agent?.workspaceDir) return [];
+    return workspaceRules(agent.workspaceDir).files;
+  });
+  ipcMain.handle(channels.workspaceCreateRules, (_event, agentId: string) => {
+    const agent = db.getAgent(String(agentId ?? ""));
+    if (!agent?.workspaceDir) throw new Error("Pick a workspace folder for this agent first");
+    return createAgentsFile(agent.workspaceDir).files;
+  });
+  ipcMain.handle(channels.workspaceOpenRule, async (_event, agentId: string, relative: string) => {
+    const agent = db.getAgent(String(agentId ?? ""));
+    if (!agent?.workspaceDir) throw new Error("Pick a workspace folder for this agent first");
+    const file = ruleFilePath(agent.workspaceDir, String(relative ?? ""));
+    if (!file) throw new Error("That file is not a project rules file");
+    const error = await shell.openPath(file);
+    if (error) throw new Error(error);
+  });
 
   ipcMain.handle(channels.routinesList, (_event, agentId: string) => db.listRoutines(agentId));
   ipcMain.handle(channels.routinesCreate, (_event, input: RoutineInput) => {

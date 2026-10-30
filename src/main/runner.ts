@@ -7,17 +7,19 @@ import {
   summaryUpdatePrompt,
 } from "../shared/memory-summary";
 import { AUTO_MODEL_ID } from "../shared/model";
-import type { Agent, ChatEvent } from "../shared/types";
+import type { Agent, ChatEvent, ContextView } from "../shared/types";
 import { jiraToolsReady } from "../tools/jira-format";
 import { toolsForAgent } from "../tools/registry";
 import { summarizeTool } from "../shared/summary";
 import type { ToolContext } from "../tools/types";
 import type { BrowserManager } from "./browser-manager";
+import type { CheckpointStore } from "./checkpoints";
 import { completeOnce, detach, getCopilotStatus, openSession, readAssistantText, type LiveSession } from "./copilot";
 import type { AppDatabase } from "./db";
 import { runCodeExplore } from "./explore-session";
 import { getSecret, hasSecret, secretKeys } from "./secrets";
 import { workspaceBrief } from "./workspace-brief";
+import { workspaceRules, type WorkspaceRules } from "./workspace-rules";
 
 const WORKSPACE_HINT =
   "A workspace brief is included below. Use it before searching. Explore with list_dir, glob_files, search_text, file_read, and read_many. For an unfamiliar area, call explore_code with a specific question. It returns a short brief and does not edit. Edit an existing file with apply_patch. Use file_write only to create a file. Use git_status, git_diff, and git_log for git. Use gh_pr_view and gh_pr_diff for a pull request. Use shell_run for builds, tests, and other commands. Do not use shell_run to list folders, search files, or read files.";
@@ -33,14 +35,19 @@ type CachedSession = {
 const TURN_TIMEOUT_MS = 8 * 60 * 1000;
 const deltaHolders = new Map<string, (delta: string) => void>();
 
+const PLAN_HINT =
+  "For a task that needs three or more steps, call set_plan before you start and keep it current. Mark the step you are working on in_progress and finished steps done. Skip it for simple one-step requests.";
+
 export class Runner {
   private sink: Sink = () => undefined;
   private readonly running = new Set<string>();
   private readonly sessions = new Map<string, CachedSession>();
+  private readonly activeTurns = new Map<string, string>();
 
   constructor(
     private readonly db: AppDatabase,
     private readonly browser: BrowserManager,
+    private readonly checkpoints: CheckpointStore,
   ) {}
 
   setSink(sink: Sink): void {
@@ -79,12 +86,16 @@ export class Runner {
     }
 
     this.running.add(agent.id);
+    const turnId = this.db.createTurn(agent.id, input.source);
+    this.activeTurns.set(agent.id, turnId);
+    this.db.clearPlan(agent.id);
+    this.sink({ agentId: agent.id, type: "plan", steps: [], turnId });
     let streamed = "";
     deltaHolders.set(agent.id, (delta) => {
       streamed += delta;
     });
     const visible = input.source === "routine" ? `[Routine] ${text}` : text;
-    const userMessage = this.db.addMessage(agent.id, "user", visible);
+    const userMessage = this.db.addMessage(agent.id, "user", visible, turnId);
     this.sink({ agentId: agent.id, type: "user", text: visible });
 
     try {
@@ -103,7 +114,9 @@ export class Runner {
       });
       const response = await opened.live.session.sendAndWait({ prompt }, TURN_TIMEOUT_MS);
       const finalText = readAssistantText(response, streamed).trim() || streamed.trim() || "No response.";
-      this.db.addMessage(agent.id, "assistant", finalText);
+      this.db.addMessage(agent.id, "assistant", finalText, turnId);
+      this.db.finishTurn(turnId, "ok");
+      this.finalizeCheckpoints(agent.id, turnId);
       this.sink({ agentId: agent.id, type: "done", text: finalText });
       void this.refreshMemory(agent.id).catch((error: unknown) => {
         console.error("Failed to update agent memory", error);
@@ -113,10 +126,13 @@ export class Runner {
       const message = explainCopilotError(error instanceof Error ? error.message : String(error));
       const partial = streamed.trim();
       const stored = partial ? `${partial}\n\nStopped: ${message}` : `Stopped: ${message}`;
-      this.db.addMessage(agent.id, "assistant", stored);
+      this.db.addMessage(agent.id, "assistant", stored, turnId);
+      this.db.finishTurn(turnId, "error");
+      this.finalizeCheckpoints(agent.id, turnId);
       this.sink({ agentId: agent.id, type: "error", error: message });
       throw new Error(message);
     } finally {
+      this.activeTurns.delete(agent.id);
       deltaHolders.delete(agent.id);
       this.running.delete(agent.id);
     }
@@ -140,7 +156,7 @@ export class Runner {
       },
       onToolEnd: (toolName, ok, text) => {
         const live = text.length > 2000 ? `${text.slice(0, 2000)}…` : text;
-        this.db.addMessage(agent.id, "tool", summarizeTool(toolName, ok, live));
+        this.db.addMessage(agent.id, "tool", summarizeTool(toolName, ok, live), this.activeTurns.get(agent.id) ?? null);
         this.sink({ agentId: agent.id, type: "tool-end", toolName, ok, text: live });
       },
     });
@@ -166,10 +182,12 @@ export class Runner {
     if (!agent) throw new Error("Agent not found");
     const shellEnabled = agent.toolProfile !== "browser";
     const workspaceDir = agent.workspaceDir;
+    const turnId = this.activeTurns.get(agentId) ?? null;
     return {
       agentId,
       workspaceDir,
       model: agent.model,
+      turnId: turnId ?? undefined,
       browser: this.browser,
       githubPat: shellEnabled && hasSecret(secretKeys.githubPat) ? getSecret(secretKeys.githubPat) : null,
       jiraToken: hasSecret(secretKeys.jira) ? getSecret(secretKeys.jira) : null,
@@ -178,18 +196,65 @@ export class Runner {
         shellEnabled && workspaceDir
           ? (question) => runCodeExplore(this.context(agentId), question)
           : undefined,
+      checkpoint:
+        turnId === null
+          ? undefined
+          : {
+              capture: (file, previous) => this.checkpoints.capture(agentId, turnId, file, previous),
+            },
+      onPlan:
+        turnId === null
+          ? undefined
+          : (steps) => {
+              this.db.setPlan(agentId, turnId, steps);
+              this.sink({ agentId, type: "plan", steps, turnId });
+            },
+    };
+  }
+
+  async previewContext(agentId: string): Promise<ContextView> {
+    const agent = this.db.getAgent(agentId);
+    if (!agent) throw new Error("Agent not found");
+    const parts = await this.systemParts(agent);
+    return {
+      agentId,
+      model: agent.model,
+      toolProfile: agent.toolProfile,
+      systemMessage: parts.text,
+      memorySummary: agent.memorySummary,
+      workspaceBrief: parts.brief,
+      rules: parts.rules?.files ?? [],
+      tools: this.toolsFor(agent).map((tool) => tool.name),
+      chars: {
+        system: parts.text.length,
+        memory: agent.memorySummary.length,
+        brief: parts.brief?.length ?? 0,
+        rules: parts.rules?.text.length ?? 0,
+      },
     };
   }
 
   private async systemMessage(agent: Agent): Promise<string> {
+    return (await this.systemParts(agent)).text;
+  }
+
+  private async systemParts(
+    agent: Agent,
+  ): Promise<{ text: string; brief: string | null; rules: WorkspaceRules | null }> {
     const shellEnabled = agent.toolProfile !== "browser";
     const browserEnabled = agent.toolProfile !== "developer";
-    const lines = [agent.systemPrompt];
+    const lines = [agent.systemPrompt, PLAN_HINT];
+    let brief: string | null = null;
+    let rules: WorkspaceRules | null = null;
     if (shellEnabled && agent.workspaceDir) {
       lines.push(`Workspace folder: ${agent.workspaceDir}`);
       lines.push(WORKSPACE_HINT);
-      const brief = await workspaceBrief(agent.workspaceDir);
+      brief = await workspaceBrief(agent.workspaceDir);
       if (brief) lines.push(brief);
+    }
+    if (agent.workspaceDir) {
+      rules = workspaceRules(agent.workspaceDir);
+      if (rules.text) lines.push(rules.text);
     }
     const jiraSite = this.db.getSetting("jira_site_url");
     if (jiraSite) lines.push(`Jira site URL: ${jiraSite}`);
@@ -216,13 +281,21 @@ export class Runner {
         "Browser tools control a headed browser on this Windows machine. This agent has its own persistent profile. Call browser_snapshot before browser_click or browser_type.",
       );
     }
-    return lines.join("\n\n");
+    return { text: lines.join("\n\n"), brief, rules };
   }
 
   private toolsFor(agent: Agent) {
     const tools = toolsForAgent(agent.toolProfile);
     if (jiraToolsReady(this.db.getSetting("jira_site_url"), hasSecret(secretKeys.jira))) return tools;
     return tools.filter((tool) => !tool.name.startsWith("jira_"));
+  }
+
+  private finalizeCheckpoints(agentId: string, turnId: string): void {
+    try {
+      this.checkpoints.finalizeTurn(agentId, turnId);
+    } catch (error) {
+      console.error("Failed to finalize turn checkpoints", error);
+    }
   }
 
   private async refreshMemory(agentId: string): Promise<void> {

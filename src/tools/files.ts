@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { StringDecoder } from "string_decoder";
 import { asRecord, optionalNumber, requiredString } from "./args";
-import type { AppTool } from "./types";
+import { MAX_CHECKPOINT_BYTES, type AppTool } from "./types";
 import { resolveInside } from "./workspace";
 
 const MAX_WRITE = 200_000;
@@ -81,6 +81,8 @@ export const fileTools: AppTool[] = [
       if (typeof content !== "string") throw new Error("content must be a string");
       if (content.length > MAX_WRITE) throw new Error("content is too large");
       const file = resolveInside(ctx.workspaceDir, requiredString(record, "path"));
+      const existing = existingFile(file);
+      ctx.checkpoint?.capture(file, existing.previous, existing.existed);
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, content, "utf8");
       return `wrote ${path.basename(file)} (${content.length} chars)`;
@@ -102,7 +104,9 @@ export const fileTools: AppTool[] = [
     handler: async (args, ctx) => {
       const record = asRecord(args);
       const file = resolveInside(ctx.workspaceDir, requiredString(record, "path"));
-      return applyPatch(file, rawString(record, "old_string"), rawString(record, "new_string", true));
+      return applyPatch(file, rawString(record, "old_string"), rawString(record, "new_string", true), (target, previous) =>
+        ctx.checkpoint?.capture(target, previous, true),
+      );
     },
   },
 ];
@@ -142,7 +146,12 @@ function rawString(record: Record<string, unknown>, key: string, allowEmpty = fa
   return value;
 }
 
-function applyPatch(file: string, oldString: string, newString: string): string {
+function applyPatch(
+  file: string,
+  oldString: string,
+  newString: string,
+  onBeforeWrite?: (file: string, previous: Buffer) => void,
+): string {
   if (oldString === newString) throw new Error("old_string and new_string are the same");
   let stat: fs.Stats;
   try {
@@ -165,6 +174,7 @@ function applyPatch(file: string, oldString: string, newString: string): string 
   if (found > 1) throw new Error(`old_string matched ${found} times. Include more surrounding lines.`);
   const updated = replaceOnce(normalized, oldNorm, newNorm);
   const written = newline === "\r\n" ? updated.replace(/\n/g, "\r\n") : updated;
+  onBeforeWrite?.(file, original);
   fs.writeFileSync(file, written, "utf8");
   return `patched ${path.basename(file)}`;
 }
@@ -255,4 +265,15 @@ function findNewline(value: string): number {
 
 function isNotFound(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && (error as NodeJS.ErrnoException).code === "ENOENT");
+}
+
+function existingFile(file: string): { previous: Buffer | null; existed: boolean } {
+  try {
+    const stat = fs.statSync(file);
+    if (!stat.isFile() || stat.size > MAX_CHECKPOINT_BYTES) return { previous: null, existed: true };
+    return { previous: fs.readFileSync(file), existed: true };
+  } catch (error) {
+    if (isNotFound(error)) return { previous: null, existed: false };
+    throw error;
+  }
 }

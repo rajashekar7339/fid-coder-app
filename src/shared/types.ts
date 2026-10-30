@@ -48,11 +48,80 @@ export type Routine = {
   updatedAt: string;
 };
 
+export type PlanStepStatus = "pending" | "in_progress" | "done";
+
+export type PlanStep = {
+  text: string;
+  status: PlanStepStatus;
+};
+
+export type PlanView = {
+  agentId: string;
+  turnId: string | null;
+  steps: PlanStep[];
+  updatedAt: string;
+};
+
+export type FileChangeKind = "create" | "update";
+
+export type FileChangeSummary = {
+  id: string;
+  path: string;
+  kind: FileChangeKind;
+  additions: number;
+  deletions: number;
+  revertible: boolean;
+  note: string | null;
+};
+
+export type ChangeSet = {
+  turnId: string;
+  startedAt: string;
+  source: string;
+  status: string | null;
+  files: FileChangeSummary[];
+};
+
+export type FileDiff = {
+  id: string;
+  path: string;
+  kind: FileChangeKind;
+  before: string | null;
+  after: string | null;
+  truncated: boolean;
+  revertible: boolean;
+  note: string | null;
+};
+
+export type WorkspaceRuleFile = {
+  path: string;
+  chars: number;
+  truncated: boolean;
+};
+
+export type ContextView = {
+  agentId: string;
+  model: string;
+  toolProfile: AgentToolProfile;
+  systemMessage: string;
+  memorySummary: string;
+  workspaceBrief: string | null;
+  rules: WorkspaceRuleFile[];
+  tools: string[];
+  chars: {
+    system: number;
+    memory: number;
+    brief: number;
+    rules: number;
+  };
+};
+
 export type ChatEvent =
   | { agentId: string; type: "user"; text: string }
   | { agentId: string; type: "text"; text: string }
   | { agentId: string; type: "tool-start"; toolName: string; text?: string }
   | { agentId: string; type: "tool-end"; toolName: string; ok: boolean; text?: string }
+  | { agentId: string; type: "plan"; steps: PlanStep[]; turnId: string | null }
   | { agentId: string; type: "done"; text: string }
   | { agentId: string; type: "error"; error: string };
 

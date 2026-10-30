@@ -1,9 +1,10 @@
 import path from "path";
 import { app, BrowserWindow, nativeTheme } from "electron";
 import { BrowserManager } from "./browser-manager";
+import { CheckpointStore } from "./checkpoints";
 import { AppDatabase } from "./db";
 import { registerIpc } from "./ipc";
-import { databasePath } from "./paths";
+import { checkpointsDir, databasePath } from "./paths";
 import { Runner } from "./runner";
 import { Scheduler } from "./scheduler";
 import { stopClient } from "./copilot";
@@ -37,7 +38,8 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     db = new AppDatabase(databasePath());
-    const runner = new Runner(db, browser);
+    const checkpoints = new CheckpointStore(db, checkpointsDir());
+    const runner = new Runner(db, browser, checkpoints);
     scheduler = new Scheduler(db, runner);
     runner.setSink((event) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -49,6 +51,7 @@ if (!gotLock) {
       runner,
       scheduler,
       browser,
+      checkpoints,
       getWindow: () => mainWindow,
     });
     ensureWindowsToastShortcut();

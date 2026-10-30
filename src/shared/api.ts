@@ -2,13 +2,18 @@ import type {
   Agent,
   AgentInput,
   BrowserPreview,
+  ChangeSet,
   ChatEvent,
+  ContextView,
   CopilotModel,
+  FileDiff,
   Message,
+  PlanView,
   Routine,
   RoutineInput,
   RoutinePatch,
   SettingsView,
+  WorkspaceRuleFile,
 } from "./types";
 import type { CopilotUsageResult } from "./copilot-usage";
 
@@ -33,6 +38,23 @@ export interface FidApi {
   browser: {
     preview: (agentId: string) => Promise<BrowserPreview | null>;
     focus: (agentId: string) => Promise<boolean>;
+  };
+  changes: {
+    latest: (agentId: string) => Promise<ChangeSet | null>;
+    diff: (changeId: string) => Promise<FileDiff>;
+    revert: (changeId: string) => Promise<void>;
+    revertTurn: (turnId: string) => Promise<void>;
+  };
+  plans: {
+    get: (agentId: string) => Promise<PlanView | null>;
+  };
+  context: {
+    preview: (agentId: string) => Promise<ContextView>;
+  };
+  workspace: {
+    rules: (agentId: string) => Promise<WorkspaceRuleFile[]>;
+    createRules: (agentId: string) => Promise<WorkspaceRuleFile[]>;
+    openRule: (agentId: string, path: string) => Promise<void>;
   };
   routines: {
     list: (agentId: string) => Promise<Routine[]>;

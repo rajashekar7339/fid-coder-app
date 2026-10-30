@@ -6,8 +6,11 @@ import { normalizeToolProfile } from "../shared/tool-profile";
 import type {
   Agent,
   AgentInput,
+  FileChangeKind,
   Message,
   MessageRole,
+  PlanStep,
+  PlanView,
   Routine,
   RoutineInput,
   RoutinePatch,
@@ -46,6 +49,68 @@ type MessageRow = {
   role: MessageRole;
   content: string;
   created_at: string;
+};
+
+type TurnRow = {
+  id: string;
+  agent_id: string;
+  source: string;
+  started_at: string;
+  ended_at: string | null;
+  status: string | null;
+};
+
+type FileChangeRow = {
+  id: string;
+  turn_id: string;
+  agent_id: string;
+  path: string;
+  kind: string;
+  before_ref: string | null;
+  before_size: number;
+  after_size: number;
+  after_hash: string | null;
+  additions: number;
+  deletions: number;
+  note: string | null;
+  created_at: string;
+};
+
+type PlanRow = {
+  agent_id: string;
+  turn_id: string | null;
+  steps: string;
+  updated_at: string;
+};
+
+export type TurnRecord = {
+  id: string;
+  agentId: string;
+  source: string;
+  startedAt: string;
+  endedAt: string | null;
+  status: string | null;
+};
+
+export type FileChangeRecord = {
+  id: string;
+  turnId: string;
+  agentId: string;
+  path: string;
+  kind: FileChangeKind;
+  beforeRef: string | null;
+  beforeSize: number;
+  afterSize: number;
+  afterHash: string | null;
+  additions: number;
+  deletions: number;
+  note: string | null;
+  createdAt: string;
+};
+
+export type ChangeSetRecord = {
+  turn: TurnRecord;
+  files: FileChangeRecord[];
 };
 
 type RoutineRow = {
@@ -160,10 +225,46 @@ export class AppDatabase {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS turns (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        source TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        status TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_turns_agent ON turns(agent_id, started_at);
+
+      CREATE TABLE IF NOT EXISTS file_changes (
+        id TEXT PRIMARY KEY,
+        turn_id TEXT NOT NULL REFERENCES turns(id) ON DELETE CASCADE,
+        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        path TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        before_ref TEXT,
+        before_size INTEGER NOT NULL DEFAULT 0,
+        after_size INTEGER NOT NULL DEFAULT 0,
+        after_hash TEXT,
+        additions INTEGER NOT NULL DEFAULT 0,
+        deletions INTEGER NOT NULL DEFAULT 0,
+        note TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE(turn_id, path)
+      );
+      CREATE INDEX IF NOT EXISTS idx_file_changes_agent ON file_changes(agent_id);
+
+      CREATE TABLE IF NOT EXISTS plans (
+        agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
+        turn_id TEXT,
+        steps TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `);
     this.ensureAgentModelColumn();
     this.ensureAgentDescriptionColumn();
     this.ensureAgentMemoryColumns();
+    this.ensureMessageTurnColumn();
     const addedToolProfile = this.ensureAgentToolProfileColumn();
     const now = new Date().toISOString();
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(JIRA_NAME, now, OLD_JIRA_NAME);
@@ -212,6 +313,12 @@ export class AppDatabase {
     if (columns.some((column) => column.name === "tool_profile")) return false;
     this.db.exec("ALTER TABLE agents ADD COLUMN tool_profile TEXT NOT NULL DEFAULT 'all'");
     return true;
+  }
+
+  private ensureMessageTurnColumn(): void {
+    const columns = this.db.prepare("PRAGMA table_info(messages)").all() as { name: string }[];
+    if (columns.some((column) => column.name === "turn_id")) return;
+    this.db.exec("ALTER TABLE messages ADD COLUMN turn_id TEXT");
   }
 
   private removeSeededTodo(): void {
@@ -339,13 +446,164 @@ export class AppDatabase {
     return rows.map(mapMessage);
   }
 
-  addMessage(agentId: string, role: MessageRole, content: string): Message {
+  addMessage(agentId: string, role: MessageRole, content: string, turnId: string | null = null): Message {
     const id = crypto.randomUUID();
     const createdAt = new Date().toISOString();
     this.db
-      .prepare("INSERT INTO messages (id, agent_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)")
-      .run(id, agentId, role, content, createdAt);
+      .prepare("INSERT INTO messages (id, agent_id, role, content, created_at, turn_id) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(id, agentId, role, content, createdAt, turnId);
     return { id, agentId, role, content, createdAt };
+  }
+
+  createTurn(agentId: string, source: string): string {
+    const id = crypto.randomUUID();
+    this.db
+      .prepare("INSERT INTO turns (id, agent_id, source, started_at) VALUES (?, ?, ?, ?)")
+      .run(id, agentId, source, new Date().toISOString());
+    return id;
+  }
+
+  finishTurn(id: string, status: string): void {
+    this.db
+      .prepare("UPDATE turns SET ended_at = ?, status = ? WHERE id = ?")
+      .run(new Date().toISOString(), status.slice(0, 200), id);
+  }
+
+  getTurn(id: string): TurnRecord | null {
+    const row = this.db.prepare("SELECT * FROM turns WHERE id = ?").get(id) as TurnRow | undefined;
+    return row ? mapTurn(row) : null;
+  }
+
+  getFileChangeByPath(turnId: string, filePath: string): FileChangeRecord | null {
+    const row = this.db
+      .prepare("SELECT * FROM file_changes WHERE turn_id = ? AND path = ?")
+      .get(turnId, filePath) as FileChangeRow | undefined;
+    return row ? mapFileChange(row) : null;
+  }
+
+  addFileChange(input: {
+    id: string;
+    turnId: string;
+    agentId: string;
+    path: string;
+    kind: FileChangeKind;
+    beforeRef: string | null;
+    beforeSize: number;
+    note: string | null;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT INTO file_changes (
+          id, turn_id, agent_id, path, kind, before_ref, before_size, created_at, note
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.id,
+        input.turnId,
+        input.agentId,
+        input.path,
+        input.kind,
+        input.beforeRef,
+        input.beforeSize,
+        new Date().toISOString(),
+        input.note,
+      );
+  }
+
+  finalizeFileChange(id: string, afterHash: string | null, afterSize: number, additions: number, deletions: number, note: string | null): void {
+    this.db
+      .prepare(
+        `UPDATE file_changes
+         SET after_hash = ?, after_size = ?, additions = ?, deletions = ?, note = COALESCE(?, note)
+         WHERE id = ?`,
+      )
+      .run(afterHash, afterSize, additions, deletions, note, id);
+  }
+
+  getFileChange(id: string): FileChangeRecord | null {
+    const row = this.db.prepare("SELECT * FROM file_changes WHERE id = ?").get(id) as FileChangeRow | undefined;
+    return row ? mapFileChange(row) : null;
+  }
+
+  listFileChanges(turnId: string): FileChangeRecord[] {
+    const rows = this.db
+      .prepare("SELECT * FROM file_changes WHERE turn_id = ? ORDER BY created_at ASC, rowid ASC")
+      .all(turnId) as FileChangeRow[];
+    return rows.map(mapFileChange);
+  }
+
+  latestChangeSet(agentId: string): ChangeSetRecord | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM turns t
+         WHERE t.agent_id = ?
+           AND EXISTS (SELECT 1 FROM file_changes c WHERE c.turn_id = t.id)
+         ORDER BY t.started_at DESC
+         LIMIT 1`,
+      )
+      .get(agentId) as TurnRow | undefined;
+    if (!row) return null;
+    return { turn: mapTurn(row), files: this.listFileChanges(row.id) };
+  }
+
+  deleteFileChange(id: string): void {
+    this.db.prepare("DELETE FROM file_changes WHERE id = ?").run(id);
+  }
+
+  deleteAgentChanges(agentId: string): void {
+    this.db.exec("BEGIN");
+    try {
+      this.db.prepare("DELETE FROM file_changes WHERE agent_id = ?").run(agentId);
+      this.db.prepare("DELETE FROM turns WHERE agent_id = ?").run(agentId);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  pruneTurns(cutoff: string): Array<{ id: string; agentId: string }> {
+    const rows = this.db
+      .prepare("SELECT id, agent_id FROM turns WHERE started_at < ?")
+      .all(cutoff) as Array<{ id: string; agent_id: string }>;
+    if (rows.length === 0) return [];
+    const remove = this.db.prepare("DELETE FROM turns WHERE id = ?");
+    this.db.exec("BEGIN");
+    try {
+      for (const row of rows) remove.run(row.id);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    return rows.map((row) => ({ id: row.id, agentId: row.agent_id }));
+  }
+
+  getPlan(agentId: string): PlanView | null {
+    const row = this.db.prepare("SELECT * FROM plans WHERE agent_id = ?").get(agentId) as PlanRow | undefined;
+    if (!row) return null;
+    return {
+      agentId,
+      turnId: row.turn_id,
+      steps: readPlanSteps(row.steps),
+      updatedAt: row.updated_at,
+    };
+  }
+
+  setPlan(agentId: string, turnId: string | null, steps: PlanStep[]): PlanView {
+    const updatedAt = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO plans (agent_id, turn_id, steps, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(agent_id) DO UPDATE SET turn_id = excluded.turn_id, steps = excluded.steps, updated_at = excluded.updated_at`,
+      )
+      .run(agentId, turnId, JSON.stringify(steps), updatedAt);
+    return { agentId, turnId, steps, updatedAt };
+  }
+
+  clearPlan(agentId: string): void {
+    this.db.prepare("DELETE FROM plans WHERE agent_id = ?").run(agentId);
   }
 
   listRoutines(agentId: string): Routine[] {
@@ -490,6 +748,53 @@ function mapRoutine(row: RoutineRow): Routine {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function mapTurn(row: TurnRow): TurnRecord {
+  return {
+    id: row.id,
+    agentId: row.agent_id,
+    source: row.source,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    status: row.status,
+  };
+}
+
+function mapFileChange(row: FileChangeRow): FileChangeRecord {
+  return {
+    id: row.id,
+    turnId: row.turn_id,
+    agentId: row.agent_id,
+    path: row.path,
+    kind: row.kind === "create" ? "create" : "update",
+    beforeRef: row.before_ref,
+    beforeSize: row.before_size,
+    afterSize: row.after_size,
+    afterHash: row.after_hash,
+    additions: row.additions,
+    deletions: row.deletions,
+    note: row.note,
+    createdAt: row.created_at,
+  };
+}
+
+function readPlanSteps(raw: string): PlanStep[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((item): item is PlanStep => {
+    if (!item || typeof item !== "object") return false;
+    const step = item as { text?: unknown; status?: unknown };
+    return (
+      typeof step.text === "string" &&
+      (step.status === "pending" || step.status === "in_progress" || step.status === "done")
+    );
+  });
 }
 
 function readModel(value: string | null | undefined): string {

@@ -5,6 +5,7 @@ import { exploreTools } from "./explore";
 import { fileTools } from "./files";
 import { gitTools } from "./git";
 import { jiraTools } from "./jira";
+import { planTools } from "./plan";
 import { shellTools } from "./shell";
 import type { AppTool } from "./types";
 
@@ -15,11 +16,22 @@ export function readOnlyTools(): AppTool[] {
 }
 
 export function allTools(): AppTool[] {
-  return [...browserTools, ...jiraTools, ...shellTools, ...exploreTools, ...fileTools, ...gitTools, exploreCodeTool];
+  return [
+    ...browserTools,
+    ...jiraTools,
+    ...shellTools,
+    ...exploreTools,
+    ...fileTools,
+    ...gitTools,
+    exploreCodeTool,
+    ...planTools,
+  ];
 }
 
 export function toolsForAgent(profile: AgentToolProfile): AppTool[] {
-  if (profile === "browser") return [...browserTools, ...jiraTools];
-  if (profile === "developer") return [...shellTools, ...exploreTools, ...fileTools, ...gitTools, exploreCodeTool];
+  if (profile === "browser") return [...browserTools, ...jiraTools, ...planTools];
+  if (profile === "developer") {
+    return [...shellTools, ...exploreTools, ...fileTools, ...gitTools, exploreCodeTool, ...planTools];
+  }
   return allTools();
 }

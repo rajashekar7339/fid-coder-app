@@ -7,11 +7,12 @@ type Props = {
   title: string;
   description: ReactNode;
   confirmLabel: string;
+  busyLabel?: string;
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 };
 
-export function ConfirmDialog({ title, description, confirmLabel, onCancel, onConfirm }: Props) {
+export function ConfirmDialog({ title, description, confirmLabel, busyLabel, onCancel, onConfirm }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,7 +66,7 @@ export function ConfirmDialog({ title, description, confirmLabel, onCancel, onCo
           Cancel
         </button>
         <button type="button" className="btn btn-destructive" disabled={busy} onClick={() => void confirm()}>
-          {busy ? "Deleting…" : confirmLabel}
+          {busy ? (busyLabel ?? "Deleting…") : confirmLabel}
         </button>
       </footer>
     </Modal>
