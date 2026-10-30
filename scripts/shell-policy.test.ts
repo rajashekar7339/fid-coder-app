@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { needsDeleteConfirmation } from "../src/tools/shell-policy.ts";
+import { needsDeleteConfirmation } from "../src/tools/shell/shell-policy.ts";
 
 test("asks before a push or a download", () => {
   assert.equal(needsDeleteConfirmation("git push origin main"), true);

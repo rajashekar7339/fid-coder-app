@@ -1,14 +1,14 @@
 import path from "path";
 import { app, BrowserWindow, nativeTheme } from "electron";
-import { BrowserManager } from "./browser-manager";
-import { CheckpointStore } from "./checkpoints";
+import { BrowserManager } from "./browser/browser-manager";
+import { CheckpointStore } from "./workspace/checkpoints";
 import { AppDatabase } from "./db";
 import { registerIpc } from "./ipc";
 import { checkpointsDir, databasePath } from "./paths";
-import { Runner } from "./runner";
-import { Scheduler } from "./scheduler";
+import { Runner } from "./chat/runner";
+import { Scheduler } from "./routines/scheduler";
 import { stopClient } from "./copilot";
-import { ensureWindowsToastShortcut } from "./notify";
+import { ensureWindowsToastShortcut } from "./routines/notify";
 import { channels } from "../shared/channels";
 
 app.setName("fid-coder");

@@ -40,13 +40,13 @@ function record(status, name, detail) {
 }
 
 app.whenReady().then(async () => {
-  const { AppDatabase } = require("../dist/main/db.js");
-  const { BrowserManager } = require("../dist/main/browser-manager.js");
-  const { Runner } = require("../dist/main/runner.js");
-  const { Scheduler } = require("../dist/main/scheduler.js");
+  const { AppDatabase } = require("../dist/main/db/index.js");
+  const { BrowserManager } = require("../dist/main/browser/browser-manager.js");
+  const { Runner } = require("../dist/main/chat/runner.js");
+  const { Scheduler } = require("../dist/main/routines/scheduler.js");
   const { databasePath, profileDir } = require("../dist/main/paths.js");
-  const { notify } = require("../dist/main/notify.js");
-  const { stopClient } = require("../dist/main/copilot.js");
+  const { notify } = require("../dist/main/routines/notify.js");
+  const { stopClient } = require("../dist/main/copilot/index.js");
   const { allTools, toolsForAgent } = require("../dist/tools/registry.js");
 
   const db = new AppDatabase(databasePath());
@@ -191,7 +191,7 @@ app.whenReady().then(async () => {
     if (fs.existsSync(profile)) throw new Error("profile directory was not deleted");
     record("PASS", "browser", `navigate, type, click, persistent profile. ${nav.split("\n")[0]}`);
 
-    const { ensureWindowsToastShortcut } = require("../dist/main/notify.js");
+    const { ensureWindowsToastShortcut } = require("../dist/main/routines/notify.js");
     const shortcutOk = ensureWindowsToastShortcut();
     const direct = new OriginalNotification({ title: "Fid Coder check", body: "Local verification toast" });
     direct.on("show", () => toastEvents.push("direct-show"));

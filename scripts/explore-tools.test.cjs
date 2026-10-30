@@ -3,10 +3,10 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const test = require("node:test");
-const { exploreTools } = require("../dist/tools/explore.js");
-const { fileTools } = require("../dist/tools/files.js");
+const { exploreTools } = require("../dist/tools/explore/explore.js");
+const { fileTools } = require("../dist/tools/files/files.js");
 const { toolsForAgent } = require("../dist/tools/registry.js");
-const { shellTools } = require("../dist/tools/shell.js");
+const { shellTools } = require("../dist/tools/shell/shell.js");
 
 const tools = Object.fromEntries([...exploreTools, ...fileTools].map((tool) => [tool.name, tool]));
 

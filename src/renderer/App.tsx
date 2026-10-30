@@ -2,16 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { COPILOT_USAGE_REFRESH_MS, type CopilotUsageView } from "../shared/copilot-usage";
 import type { Agent, CopilotModel, Routine, SettingsView } from "../shared/types";
-import { AgentDesk } from "./components/AgentDesk";
-import { AgentDialog } from "./components/AgentDialog";
-import { BrandMark } from "./components/BrandMark";
-import { ChatView } from "./components/ChatView";
-import { ConfirmDialog } from "./components/ConfirmDialog";
-import { HelpDialog } from "./components/HelpDialog";
-import { RoutinesDialog } from "./components/RoutinesDialog";
-import { SettingsDialog, type SettingsSection, type SignInNote } from "./components/SettingsDialog";
-import { Sidebar, type CopilotPresence } from "./components/Sidebar";
-import { errorText, fid, hasFid } from "./fid";
+import { AgentDesk } from "./components/desk/AgentDesk";
+import { AgentDialog } from "./components/agents/AgentDialog";
+import { BrandMark } from "./components/ui/BrandMark";
+import { ChatView } from "./components/chat/ChatView";
+import { ConfirmDialog } from "./components/ui/ConfirmDialog";
+import { HelpDialog } from "./components/help/HelpDialog";
+import { RoutinesDialog } from "./components/routines/RoutinesDialog";
+import { SettingsDialog, type SettingsSection, type SignInNote } from "./components/settings/SettingsDialog";
+import { Sidebar, type CopilotPresence } from "./components/sidebar/Sidebar";
+import { errorText, fid, hasFid } from "./lib/fid";
 
 type Dialog =
   | { kind: "create" }

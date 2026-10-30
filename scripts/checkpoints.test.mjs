@@ -3,8 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import checkpointsModule from "../dist/main/checkpoints.js";
-import databaseModule from "../dist/main/db.js";
+import checkpointsModule from "../dist/main/workspace/checkpoints.js";
+import databaseModule from "../dist/main/db/index.js";
 
 const { CheckpointStore } = checkpointsModule;
 const { AppDatabase } = databaseModule;

@@ -4,12 +4,12 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const test = require("node:test");
-const { fileTools } = require("../dist/tools/files.js");
-const { gitTools, parseGitHubRemote } = require("../dist/tools/git.js");
-const { exploreCodeTool } = require("../dist/tools/explore-code.js");
+const { fileTools } = require("../dist/tools/files/files.js");
+const { gitTools, parseGitHubRemote } = require("../dist/tools/git/git.js");
+const { exploreCodeTool } = require("../dist/tools/explore/explore-code.js");
 const { toolsForAgent } = require("../dist/tools/registry.js");
 const { summarizeTool } = require("../dist/shared/summary.js");
-const { workspaceBrief } = require("../dist/main/workspace-brief.js");
+const { workspaceBrief } = require("../dist/main/workspace/workspace-brief.js");
 
 const files = Object.fromEntries(fileTools.map((tool) => [tool.name, tool]));
 const git = Object.fromEntries(gitTools.map((tool) => [tool.name, tool]));

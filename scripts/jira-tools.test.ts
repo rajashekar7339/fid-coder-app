@@ -8,7 +8,7 @@ import {
   jiraConfigError,
   jiraSearchBody,
   jiraToolsReady,
-} from "../src/tools/jira-format.ts";
+} from "../src/tools/jira/jira-format.ts";
 
 test("uses the site origin and caps a search at 20 issues", () => {
   assert.equal(jiraBaseUrl("https://fid.atlassian.net/jira/software").origin, "https://fid.atlassian.net");

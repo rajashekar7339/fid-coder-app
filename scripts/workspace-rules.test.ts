@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createAgentsFile, ruleFilePath, workspaceRules } from "../src/main/workspace-rules.ts";
+import { createAgentsFile, ruleFilePath, workspaceRules } from "../src/main/workspace/workspace-rules.ts";
 
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "fid-rules-"));

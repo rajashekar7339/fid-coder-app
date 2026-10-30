@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isAsciiDiagram, parseMessageBlocks } from "../src/renderer/message-markdown.ts";
+import { isAsciiDiagram, parseMessageBlocks } from "../src/renderer/lib/message-markdown.ts";
 
 test("parses a GFM table with alignment and stops at the next paragraph", () => {
   const blocks = parseMessageBlocks(

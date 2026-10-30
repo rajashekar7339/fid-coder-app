@@ -6,3 +6,7 @@ release/
 
 # Local study checkouts. They stay on disk and are not part of this app.
 reference_projects/
+
+# Claude Code local worktrees and settings.
+.claude/worktrees/
+.claude/settings.local.json

@@ -11,6 +11,9 @@
     "build": "npm run build:node && vite build",
     "dist:win": "npm run build && electron-builder --win portable --x64",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.preload.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "node --test \"scripts/*.test.ts\"",
+    "test:integration": "npm run build:node && node --test \"scripts/*.test.cjs\" \"scripts/*.test.mjs\"",
     "test:features": "npm run build:node && node scripts/features-smoke.mjs",
     "start": "electron ."
   },

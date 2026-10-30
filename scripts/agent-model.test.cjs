@@ -4,7 +4,7 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const { DatabaseSync } = require("node:sqlite");
-const { AppDatabase } = require("../dist/main/db.js");
+const { AppDatabase } = require("../dist/main/db/index.js");
 const { AUTO_MODEL_ID, catalogModels, isListedModelId, normalizeModelId } = require("../dist/shared/model.js");
 
 test("Auto is the default model id", () => {
