@@ -17,6 +17,15 @@ const channels = {
   chatEvent: "chat:event",
   browserPreview: "browser:preview",
   browserFocus: "browser:focus",
+  changesLatest: "changes:latest",
+  changesDiff: "changes:diff",
+  changesRevert: "changes:revert",
+  changesRevertTurn: "changes:revert-turn",
+  plansGet: "plans:get",
+  contextPreview: "context:preview",
+  workspaceRules: "workspace:rules",
+  workspaceCreateRules: "workspace:create-rules",
+  workspaceOpenRule: "workspace:open-rule",
   routinesList: "routines:list",
   routinesCreate: "routines:create",
   routinesUpdate: "routines:update",
@@ -70,6 +79,23 @@ const api: FidApi = {
   browser: {
     preview: (agentId: string) => ipcRenderer.invoke(channels.browserPreview, agentId),
     focus: (agentId: string) => ipcRenderer.invoke(channels.browserFocus, agentId),
+  },
+  changes: {
+    latest: (agentId: string) => ipcRenderer.invoke(channels.changesLatest, agentId),
+    diff: (changeId: string) => ipcRenderer.invoke(channels.changesDiff, changeId),
+    revert: (changeId: string) => ipcRenderer.invoke(channels.changesRevert, changeId),
+    revertTurn: (turnId: string) => ipcRenderer.invoke(channels.changesRevertTurn, turnId),
+  },
+  plans: {
+    get: (agentId: string) => ipcRenderer.invoke(channels.plansGet, agentId),
+  },
+  context: {
+    preview: (agentId: string) => ipcRenderer.invoke(channels.contextPreview, agentId),
+  },
+  workspace: {
+    rules: (agentId: string) => ipcRenderer.invoke(channels.workspaceRules, agentId),
+    createRules: (agentId: string) => ipcRenderer.invoke(channels.workspaceCreateRules, agentId),
+    openRule: (agentId: string, path: string) => ipcRenderer.invoke(channels.workspaceOpenRule, agentId, path),
   },
   routines: {
     list: (agentId: string) => ipcRenderer.invoke(channels.routinesList, agentId),

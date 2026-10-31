@@ -21,3 +21,7 @@ export function profileDir(agentId: string): string {
   }
   return path.join(userDataDir(), "browser-profiles", agentId);
 }
+
+export function checkpointsDir(): string {
+  return path.join(userDataDir(), "checkpoints");
+}

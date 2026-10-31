@@ -1,55 +1,58 @@
-# Windows Local AI Agents — POC Instructions
+# Fid Coder
 
-This folder contains everything you need to start building the POC with **Grok Build CLI**.
+Fid Coder is a Windows desktop app for local AI agents. Each agent chats through GitHub Copilot, uses tools for files, shell, git, Jira, and a local browser, and can run on a schedule. Agents, transcripts, plans, file checkpoints, and settings stay on this machine.
 
-## Files
+## Requirements
 
-| File | Contents |
-|------|----------|
-| `01-architecture-prompt.md` | Complete architecture prompt to paste into Grok Build |
-| `02-tech-stack.md` | Required technology stack and suggested dependencies |
-| `03-open-source-references.md` | Open-source projects to study (do not clone as starting point) |
-| `04-grok-build-tips.md` | How to get better results from Grok Build CLI (including AGENTS.md) |
-| `README.md` | This index |
+- Windows 11
+- Node.js 22 or newer (the current test run uses Node 24)
+- npm
+- GitHub Copilot signed in on this machine (Settings → Copilot in the app)
 
-## Quick Start
+## Run the app
 
-1. Create an empty folder for your project.
-2. Open a terminal in that folder and run `grok`.
-3. Open `01-architecture-prompt.md` and paste the prompt into Grok Build.
-4. Prefer **plan mode** for the initial scaffold.
-5. Create an `AGENTS.md` in the project root using the content from `04-grok-build-tips.md`.
-6. Build in this order:
-   - Scaffold Electron + React + Vite + TypeScript
-   - Agent CRUD
-   - Copilot chat with secure token storage
-   - Basic Playwright tools (persistent context per agent)
-   - One scheduled routine + Windows notification
-
-## Key Constraints (repeat these often)
-
-- No Docker
-- No remote sandboxes
-- Browser control on the local Windows machine via Playwright persistent context
-- GitHub Copilot as the only AI backend
-- Keep the POC scope tight until the core features work
-
-## Architecture Summary
-
-```
-Windows Desktop App (Electron)
-├── React UI (agent list, chat, create/edit, settings)
-├── Local Agent Engine
-│   ├── Copilot client (token)
-│   ├── SQLite (agents, memory, routines)
-│   └── Tool registry
-├── Tools
-│   ├── Playwright (per-agent persistent profile)
-│   ├── Shell / git tools
-│   └── File tools
-└── Background Service
-    ├── Scheduler
-    └── Windows notifications
+```powershell
+npm install
+npm run dev
 ```
 
-Happy building!
+`npm run dev` builds the main and preload processes, starts Vite on `127.0.0.1:5173`, and launches Electron. Set `FID_CODER_DEVTOOLS=1` to open DevTools, or `FID_CODER_USER_DATA=<folder>` to run against an isolated profile.
+
+## Scripts
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Build main/preload, start Vite, and launch Electron |
+| `npm run build` | Build main, preload, and renderer |
+| `npm start` | Launch Electron against the Vite dev server on port 5173 |
+| `npm run typecheck` | Type-check all three programs |
+| `npm test` | Unit and integration tests |
+| `npm run test:unit` | Fast tests against source files |
+| `npm run test:integration` | Tests against compiled `dist` output; builds first |
+| `npm run test:features` | Live Electron harness for plans, changes/revert, rules, and the context inspector. Needs Copilot sign-in and runs against a temporary profile. |
+| `npm run dist:win` | Build the portable Windows app into `release/` |
+
+## Project layout
+
+```text
+src/
+  main/       Electron lifecycle, IPC, SQLite, Copilot sessions, scheduler
+  preload/    Sandboxed bridge exposed as window.fid
+  renderer/   React UI
+  shared/     Types, channels, API contract, and pure helpers
+  tools/      Copilot tool implementations
+```
+
+`AGENTS.md` has the detailed folder map and the rules for adding a tool, IPC handler, screen, or database method.
+
+## Data
+
+The app stores its SQLite database at `%APPDATA%\fid-coder\fid-coder.sqlite`. Browser profiles, checkpoints, and generated files live under the same user data directory. Set `FID_CODER_USER_DATA` to use a different folder.
+
+## Documentation
+
+- `docs/guide/` — end-user guide
+- `docs/memory.md` — how an agent's transcript and rolling summary work
+- `docs/build-exe.md` — packaging notes
+- `docs/archive/` — original POC planning notes, kept for history
+- `AGENTS.md` — repository conventions and where new code belongs
