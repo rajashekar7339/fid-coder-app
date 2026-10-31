@@ -1,3 +1,5 @@
+// Tests normalization and formatting of Copilot usage quota payloads.
+
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -6,7 +8,7 @@ import {
   formatUsageReset,
   normalizeCopilotUsage,
   usageFailureMessage,
-} from "../src/shared/copilot-usage.ts";
+} from "../../src/shared/copilot-usage.ts";
 
 test("premium requests win over a finite chat snapshot", () => {
   const usage = normalizeCopilotUsage({

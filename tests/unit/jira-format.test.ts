@@ -1,3 +1,5 @@
+// Tests Jira URL and config helpers plus formatting of search, issue, and account results.
+
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -8,7 +10,7 @@ import {
   jiraConfigError,
   jiraSearchBody,
   jiraToolsReady,
-} from "../src/tools/jira/jira-format.ts";
+} from "../../src/tools/jira/jira-format.ts";
 
 test("uses the site origin and caps a search at 20 issues", () => {
   assert.equal(jiraBaseUrl("https://fid.atlassian.net/jira/software").origin, "https://fid.atlassian.net");

@@ -1,4 +1,5 @@
-// Live UI smoke test for the plan strip, turn checkpoints, and workspace context.
+// Live end-to-end test for the plan strip, turn changes/revert, workspace rules,
+// and the context inspector.
 //
 // Usage:
 //   npm run test:features            # two real Copilot turns
@@ -20,7 +21,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron } from "playwright";
 
-const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "fid-coder-features-"));
 const userData = path.join(root, "userdata");
 const workspace = path.join(root, "workspace");
@@ -306,6 +307,20 @@ async function main() {
     await sendAndWait(page, "What is 2 + 2? Answer in one short sentence.");
     const reply2 = await lastAssistantText(page);
     check("rules were applied to the turn", /banana/i.test(reply2), reply2.replace(/\s+/g, " ").slice(0, 160));
+
+    const planAfterTurn2 = await page.locator(".plan-strip").count();
+    check("plan stays visible on a second message", planAfterTurn2 > 0);
+    if (planAfterTurn2 > 0) {
+      const planHead = page.locator(".plan-head");
+      if ((await planHead.getAttribute("aria-expanded")) !== "true") await planHead.click();
+      await page.locator(".plan-steps").waitFor({ state: "visible", timeout: 5_000 });
+      const planText2 = await page.locator(".plan-steps").innerText();
+      check(
+        "plan keeps the first turn's steps",
+        /demo\.ts|notes\.md/i.test(planText2),
+        planText2.replace(/\s+/g, " ").slice(0, 160),
+      );
+    }
 
     await page.locator('.agent-desk button:has-text("Context")').click();
     await page.waitForSelector(".context-modal", { timeout: 15_000 });

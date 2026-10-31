@@ -1,10 +1,11 @@
+// Tests file checkpoints, diff stats, and reverting a file or an entire turn.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import checkpointsModule from "../dist/main/workspace/checkpoints.js";
-import databaseModule from "../dist/main/db/index.js";
+import checkpointsModule from "../../dist/main/workspace/checkpoints.js";
+import databaseModule from "../../dist/main/db/index.js";
 
 const { CheckpointStore } = checkpointsModule;
 const { AppDatabase } = databaseModule;
@@ -179,24 +180,3 @@ test("marks an existing file without a checkpoint as not revertible", () => {
   }
 });
 
-test("stores and clears the current plan", () => {
-  const { db, agent, cleanup } = setup();
-  try {
-    const turnId = db.createTurn(agent.id, "chat");
-    const steps = [
-      { text: "Read the code", status: "done" },
-      { text: "Apply the fix", status: "in_progress" },
-    ];
-    db.setPlan(agent.id, turnId, steps);
-    const plan = db.getPlan(agent.id);
-    assert.ok(plan);
-    assert.equal(plan.turnId, turnId);
-    assert.deepEqual(plan.steps, steps);
-    db.setPlan(agent.id, turnId, [{ text: "Only step", status: "pending" }]);
-    assert.deepEqual(db.getPlan(agent.id).steps, [{ text: "Only step", status: "pending" }]);
-    db.clearPlan(agent.id);
-    assert.equal(db.getPlan(agent.id), null);
-  } finally {
-    cleanup();
-  }
-});

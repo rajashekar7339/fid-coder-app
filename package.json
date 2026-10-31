@@ -12,9 +12,9 @@
     "dist:win": "npm run build && electron-builder --win portable --x64",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.preload.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
     "test": "npm run test:unit && npm run test:integration",
-    "test:unit": "node --test \"scripts/*.test.ts\"",
-    "test:integration": "npm run build:node && node --test \"scripts/*.test.cjs\" \"scripts/*.test.mjs\"",
-    "test:features": "npm run build:node && node scripts/features-smoke.mjs",
+    "test:unit": "node --test \"tests/unit/*.test.ts\"",
+    "test:integration": "npm run build:node && node --test \"tests/integration/*.test.cjs\" \"tests/integration/*.test.mjs\"",
+    "test:features": "npm run build:node && node tests/e2e-live/plans-changes-context.e2e.mjs",
     "start": "electron ."
   },
   "dependencies": {

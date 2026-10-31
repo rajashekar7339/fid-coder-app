@@ -1,6 +1,8 @@
+// Tests the line diff used by turn checkpoints and the diff view.
+
 import assert from "node:assert/strict";
 import test from "node:test";
-import { diffLines } from "../src/shared/diff.ts";
+import { diffLines } from "../../src/shared/diff.ts";
 
 test("keeps common lines and reports replacements", () => {
   const result = diffLines("a\nb\nc", "a\nB\nc\nd");

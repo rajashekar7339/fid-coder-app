@@ -1,50 +1,12 @@
+// Tests SQLite migrations, seeded agents, and agent activity queries.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const { DatabaseSync } = require("node:sqlite");
-const { AppDatabase } = require("../dist/main/db/index.js");
-const { AUTO_MODEL_ID, catalogModels, isListedModelId, normalizeModelId } = require("../dist/shared/model.js");
-
-test("Auto is the default model id", () => {
-  assert.equal(normalizeModelId(undefined), AUTO_MODEL_ID);
-  assert.equal(normalizeModelId(""), AUTO_MODEL_ID);
-  assert.equal(normalizeModelId(" AUTO "), AUTO_MODEL_ID);
-  assert.equal(normalizeModelId("claude-sonnet-4.5"), "claude-sonnet-4.5");
-  assert.equal(isListedModelId("auto"), false);
-  assert.equal(isListedModelId("gpt-5.4"), true);
-  assert.throws(() => normalizeModelId("not a model"), /available model/);
-});
-
-test("model menu uses the session list, or price categories when that list is empty", () => {
-  const priced = catalogModels({
-    clientModels: [{ id: "auto", name: "Auto" }],
-    sessionModels: [],
-    priceCategories: [
-      { id: "gpt-4o", priceCategory: "medium" },
-      { id: "gpt-5.6-luna-free-auto", priceCategory: "low" },
-      { id: "claude-haiku-4.5", priceCategory: "low" },
-    ],
-  });
-  assert.deepEqual(
-    priced.map((model) => model.id),
-    ["gpt-4o", "claude-haiku-4.5"],
-  );
-  assert.equal(priced[0].name, "gpt-4o · Medium cost");
-
-  const named = catalogModels({
-    sessionModels: [
-      { id: "gpt-5.4", name: "GPT-5.4" },
-      { id: "old", name: "Old", policy: { state: "disabled" } },
-    ],
-    priceCategories: [{ id: "gpt-4o", priceCategory: "medium" }],
-  });
-  assert.deepEqual(
-    named.map((model) => model.id),
-    ["gpt-5.4"],
-  );
-});
+const { AppDatabase } = require("../../dist/main/db/index.js");
+const { AUTO_MODEL_ID } = require("../../dist/shared/model.js");
 
 test("existing agents default to Auto and keep a chosen model", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-model-"));

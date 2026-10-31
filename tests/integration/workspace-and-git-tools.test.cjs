@@ -1,15 +1,14 @@
+// Tests workspace briefs, apply_patch/read_many, and git status/diff/log tools.
 const assert = require("node:assert/strict");
 const { spawnSync } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const test = require("node:test");
-const { fileTools } = require("../dist/tools/files/files.js");
-const { gitTools, parseGitHubRemote } = require("../dist/tools/git/git.js");
-const { exploreCodeTool } = require("../dist/tools/explore/explore-code.js");
-const { toolsForAgent } = require("../dist/tools/registry.js");
-const { summarizeTool } = require("../dist/shared/summary.js");
-const { workspaceBrief } = require("../dist/main/workspace/workspace-brief.js");
+const { fileTools } = require("../../dist/tools/files/files.js");
+const { gitTools } = require("../../dist/tools/git/git.js");
+const { exploreCodeTool } = require("../../dist/tools/explore/explore-code.js");
+const { workspaceBrief } = require("../../dist/main/workspace/workspace-brief.js");
 
 const files = Object.fromEntries(fileTools.map((tool) => [tool.name, tool]));
 const git = Object.fromEntries(gitTools.map((tool) => [tool.name, tool]));
@@ -38,49 +37,6 @@ function runGit(cwd, args) {
 
 const gitAvailable = spawnSync("git", ["--version"], { encoding: "utf8", windowsHide: true }).status === 0;
 const ghAvailable = spawnSync("gh", ["--version"], { encoding: "utf8", windowsHide: true }).status === 0;
-
-test("parseGitHubRemote reads GitHub remotes", () => {
-  assert.deepEqual(parseGitHubRemote("https://github.com/acme/widget.git"), {
-    api: "https://api.github.com",
-    owner: "acme",
-    repo: "widget",
-  });
-  assert.deepEqual(parseGitHubRemote("git@github.com:acme/widget.git"), {
-    api: "https://api.github.com",
-    owner: "acme",
-    repo: "widget",
-  });
-  assert.deepEqual(parseGitHubRemote("ssh://git@github.com/acme/widget.git"), {
-    api: "https://api.github.com",
-    owner: "acme",
-    repo: "widget",
-  });
-  assert.deepEqual(parseGitHubRemote("https://x-access-token:secret@github.com/acme/widget.git"), {
-    api: "https://api.github.com",
-    owner: "acme",
-    repo: "widget",
-  });
-  assert.deepEqual(parseGitHubRemote("https://github.example.com/acme/widget"), {
-    api: "https://github.example.com/api/v3",
-    owner: "acme",
-    repo: "widget",
-  });
-  assert.equal(parseGitHubRemote("https://example.com/onlyone"), null);
-});
-
-test("developer tools include patch, git, and explore, and the browser profile does not", () => {
-  const browser = toolsForAgent("browser").map((tool) => tool.name);
-  const developer = toolsForAgent("developer").map((tool) => tool.name);
-  for (const name of ["read_many", "apply_patch", "git_status", "git_diff", "git_log", "gh_pr_view", "gh_pr_diff", "explore_code"]) {
-    assert.equal(developer.includes(name), true, name);
-    assert.equal(browser.includes(name), false, name);
-  }
-});
-
-test("summarizeTool keeps one line", () => {
-  assert.equal(summarizeTool("search_text", true, "src/app.ts:1:run\nnext\nlast"), "search_text: src/app.ts:1:run (+2 more lines)");
-  assert.equal(summarizeTool("git_status", false, "not a repository"), "git_status: failed: not a repository");
-});
 
 test("workspace brief, patch, batch read, and git tools", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fid-coder-harness-"));

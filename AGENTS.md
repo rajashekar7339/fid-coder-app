@@ -50,7 +50,12 @@ src/
     jira/           jira.ts, jira-format.ts
     shell/          shell.ts, shell-policy.ts
     explore/        explore.ts, explore-code.ts
-scripts/            tests stay next to the command that runs them
+tests/
+  unit/              source-level .test.ts files
+  integration/       .test.cjs and .test.mjs files against dist
+  e2e-live/          Electron/Playwright .e2e.mjs harnesses and manual diagnostics
+scripts/
+  generate-guide-screenshots.mjs
 docs/
   guide/            in-app help
   memory.md
@@ -71,7 +76,7 @@ Import a tool by its file name, for example `./browser/browser`. TypeScript reso
 
 `src/main/db/index.ts`, `src/main/copilot/index.ts`, and `src/main/ipc/index.ts` are one module each. `src/renderer/styles/index.css` is one sheet, and `@import "tailwindcss"` stays its first line. Add new code in that file. Split one of those files only while you are already editing it, and keep the CSS sections in their current order.
 
-`scripts/*.test.ts` imports from `src` keep the `.ts` suffix. Node runs those files as ESM. Leave `package.json` without `"type": "module"`. Scripts that load `dist/` run after `npm run build:node`.
+`tests/unit/*.test.ts` imports from `src` keep the `.ts` suffix. Node runs those files as ESM. Leave `package.json` without `"type": "module"`. Tests in `tests/integration/` load `dist/` and run after `npm run build:node`.
 
 `npm test` runs the unit and integration suites. `npm run test:features` runs the live Electron harness.
 

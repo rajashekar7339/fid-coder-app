@@ -88,8 +88,7 @@ export class Runner {
     this.running.add(agent.id);
     const turnId = this.db.createTurn(agent.id, input.source);
     this.activeTurns.set(agent.id, turnId);
-    this.db.clearPlan(agent.id);
-    this.sink({ agentId: agent.id, type: "plan", steps: [], turnId });
+    // Keep the last plan visible across turns; set_plan replaces it for a new task.
     let streamed = "";
     deltaHolders.set(agent.id, (delta) => {
       streamed += delta;

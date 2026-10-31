@@ -1,3 +1,11 @@
+// Regenerates the screenshots used by the in-app guide.
+//
+// Usage:
+//   node scripts/generate-guide-screenshots.mjs
+//
+// Requirements: `npm install` and a free port 5173. The script launches its
+// own Vite server and Electron instance, seeds demo data in a temporary
+// userData directory, and overwrites the images in docs/guide/images.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";

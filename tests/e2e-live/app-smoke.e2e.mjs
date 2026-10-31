@@ -1,3 +1,5 @@
+// Launch smoke test: agent and routine CRUD, settings, and a basic chat round trip.
+// Set FID_CODER_SKIP_CHAT=1 to skip the chat round trip.
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -5,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron } from "playwright";
 
-const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), "fid-coder-smoke-"));
 const vite = spawn(process.execPath, [path.join(appDir, "node_modules", "vite", "bin", "vite.js")], {
   cwd: appDir,

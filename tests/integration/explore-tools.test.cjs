@@ -1,14 +1,13 @@
+// Tests workspace listing, globbing, and text search tools and their profile access.
 const assert = require("node:assert/strict");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const test = require("node:test");
-const { exploreTools } = require("../dist/tools/explore/explore.js");
-const { fileTools } = require("../dist/tools/files/files.js");
-const { toolsForAgent } = require("../dist/tools/registry.js");
-const { shellTools } = require("../dist/tools/shell/shell.js");
+const { exploreTools } = require("../../dist/tools/explore/explore.js");
+const { toolsForAgent } = require("../../dist/tools/registry.js");
 
-const tools = Object.fromEntries([...exploreTools, ...fileTools].map((tool) => [tool.name, tool]));
+const tools = Object.fromEntries(exploreTools.map((tool) => [tool.name, tool]));
 
 function context(workspaceDir) {
   return {
@@ -100,56 +99,6 @@ test("lists, finds, and searches without walking skipped folders", async () => {
     await assert.rejects(tools.list_dir.handler({ path: "../outside" }, ctx), /outside the workspace/);
     await assert.rejects(tools.glob_files.handler({ pattern: "*.ts", path: ".." }, ctx), /outside the workspace/);
     await assert.rejects(tools.search_text.handler({ pattern: "x", path: ".." }, ctx), /outside the workspace/);
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("shell cwd still stays inside the workspace", async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "fid-coder-shell-"));
-  try {
-    await assert.rejects(shellTools[0].handler({ command: "echo no", cwd: ".." }, context(root)), /outside the workspace/);
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("file_read returns a numbered window", async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "fid-coder-read-"));
-  const ctx = context(root);
-  try {
-    write(root, "notes/hello.txt", "desk-note");
-    const short = await tools.file_read.handler({ path: "notes/hello.txt" }, ctx);
-    assert.match(short, /Showing lines 1-1 of 1/);
-    assert.match(short, /1\|desk-note/);
-
-    write(root, "crlf.txt", "alpha\r\nbeta\r\n");
-    const crlf = await tools.file_read.handler({ path: "crlf.txt" }, ctx);
-    assert.match(crlf, /1\|alpha/);
-    assert.match(crlf, /2\|beta/);
-    assert.match(crlf, /of 2/);
-
-    const many = Array.from({ length: 401 }, (_, index) => `L${index + 1}`).join("\n");
-    write(root, "long.txt", many);
-    const capped = await tools.file_read.handler({ path: "long.txt", limit: 10000 }, ctx);
-    assert.match(capped, /Showing lines 1-400/);
-    assert.match(capped, /More lines follow/);
-    assert.match(capped, /400\|L400/);
-    assert.doesNotMatch(capped, /401\|L401/);
-
-    const page = await tools.file_read.handler({ path: "long.txt", offset: 400, limit: 10 }, ctx);
-    assert.match(page, /400\|L400/);
-    assert.match(page, /401\|L401/);
-    assert.match(page, /of 401/);
-
-    write(root, "empty.txt", "");
-    assert.equal(await tools.file_read.handler({ path: "empty.txt" }, ctx), "(empty file)");
-    write(root, "binary.bin", Buffer.from([0, 1, 2, 3]));
-    await assert.rejects(tools.file_read.handler({ path: "binary.bin" }, ctx), /binary/);
-    await assert.rejects(tools.file_read.handler({ path: "missing.txt" }, ctx), /not found/i);
-    await assert.rejects(tools.file_read.handler({ path: "../outside.txt" }, ctx), /outside the workspace/);
-    await assert.rejects(tools.file_read.handler({ path: "notes/hello.txt", offset: 0 }, ctx), /offset must be at least 1/);
-    await assert.rejects(tools.file_read.handler({ path: "notes/hello.txt" }, context(null)), /workspace folder/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

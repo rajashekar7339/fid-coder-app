@@ -1,3 +1,5 @@
+// Tests session prompt construction, memory turn pairing, and summary clipping.
+
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -7,7 +9,7 @@ import {
   memoryTurns,
   pendingMemoryTurns,
   summaryUpdatePrompt,
-} from "../src/shared/memory-summary.ts";
+} from "../../src/shared/memory-summary.ts";
 
 test("a warm session sends only the new message", () => {
   const prompt = buildSessionPrompt({

@@ -1,7 +1,9 @@
+// Tests how the chat view merges saved messages, live text, and tool steps into one thread.
+
 import assert from "node:assert/strict";
 import test from "node:test";
-import { groupToolCalls, liveTurnSettled, projectThread, userTurnAccepted, type LiveTurn } from "../src/shared/chat-thread.ts";
-import type { Message, MessageRole } from "../src/shared/types.ts";
+import { groupToolCalls, liveTurnSettled, projectThread, userTurnAccepted, type LiveTurn } from "../../src/shared/chat-thread.ts";
+import type { Message, MessageRole } from "../../src/shared/types.ts";
 
 function message(id: string, role: MessageRole, content: string, createdAt: string): Message {
   return { id, agentId: "agent-1", role, content, createdAt };
