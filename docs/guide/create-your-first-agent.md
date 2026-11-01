@@ -21,7 +21,7 @@ Select **+** at the top of the sidebar, or **New agent** below the agent list. T
 
 ## Write the instructions
 
-Instructions become the agent's system prompt. Write them as a brief for a teammate: what to do, what to avoid, and how to reply.
+Instructions become the agent's system prompt and are sent with every message. Write them as standing guidance for a teammate: what to do, what to avoid, and how to reply. Put a one-time request in the chat instead.
 
 > You are a release assistant. Read the changelog and open pull requests, then draft release notes with the main changes, risks, and testing gaps.
 

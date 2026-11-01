@@ -31,7 +31,7 @@ The app also builds a workspace brief for the system message: the top of the fol
 
 ## Safety
 
-Paths from file and search tools are resolved inside the workspace; a path outside the folder is rejected. The shell starts in the workspace, but it is not a full sandbox. Destructive commands such as deleting files or cleaning a git repository pause the turn and ask you to approve them in chat.
+Paths from file and search tools are resolved inside the workspace; a path outside the folder is rejected. The shell starts in the workspace, but it is not a full sandbox. Destructive commands such as deleting files or cleaning a git repository pause the turn and show a compact approval card in the conversation. The card names the command, folder, and risk. Allow once, save an allow rule, reject, or save a deny rule. Every decision is recorded in the Agent Desk approvals history.
 
 Treat the workspace folder as the agent's boundary, and keep secrets out of it.
 

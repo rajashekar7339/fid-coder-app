@@ -28,6 +28,7 @@ The center column is the saved conversation for the selected agent.
 The right column shows the selected agent's local work.
 
 - **Browser** shows a live preview when a browser agent opens a page. Choose Open browser to bring the real window to the front.
+- **Approvals** shows recent allow, deny, and timeout decisions. Choose History for the full audit.
 - **Routines** lists scheduled prompts. Use the switch to pause one, or the plus to manage them.
 - **Workspace** shows the folder a developer agent can read, search, and edit. Browser-only agents show no workspace.
 - The desk opens automatically at 1181 px and wider. Use the panel button in the chat header to hide or show it.

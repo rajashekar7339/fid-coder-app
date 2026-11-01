@@ -9,6 +9,7 @@ export type CopilotUsageView = {
   included: number | null;
   remaining: number | null;
   remainingPercent: number | null;
+  usedPercent: number | null;
   overage: number;
   resetsAt: string | null;
   blocked: boolean;
@@ -100,6 +101,13 @@ function toView(key: string, record: Record<string, unknown>): CopilotUsageView 
   } else if (!unlimited && included === 0) {
     remainingPercent = 0;
   }
+  const usedPercent = unlimited
+    ? null
+    : included !== null && included > 0
+      ? roundUsage(Math.min(100, Math.max(0, (used / included) * 100)))
+      : remainingPercent === null
+        ? null
+        : roundUsage(Math.max(0, 100 - remainingPercent));
 
   const allowed = snapshotFlag(record, "usageAllowedWithExhaustedQuota", "usage_allowed_with_exhausted_quota");
   return {
@@ -109,6 +117,7 @@ function toView(key: string, record: Record<string, unknown>): CopilotUsageView 
     included,
     remaining,
     remainingPercent,
+    usedPercent,
     overage,
     resetsAt: readReset(record),
     blocked: !unlimited && remaining === 0 && allowed === false,

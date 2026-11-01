@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { Plus, ShieldAlert, X } from "lucide-react";
 import { COPILOT_USAGE_REFRESH_MS, type CopilotUsageView } from "../shared/copilot-usage";
-import type { Agent, CopilotModel, Routine, SettingsView } from "../shared/types";
-import { AgentDesk } from "./components/AgentDesk";
-import { AgentDialog } from "./components/AgentDialog";
-import { BrandMark } from "./components/BrandMark";
-import { ChatView } from "./components/ChatView";
-import { ConfirmDialog } from "./components/ConfirmDialog";
-import { HelpDialog } from "./components/HelpDialog";
-import { RoutinesDialog } from "./components/RoutinesDialog";
-import { SettingsDialog, type SettingsSection, type SignInNote } from "./components/SettingsDialog";
-import { Sidebar, type CopilotPresence } from "./components/Sidebar";
-import { errorText, fid, hasFid } from "./fid";
+import type { Agent, ApprovalAction, ApprovalRequest, CopilotModel, Routine, SettingsView } from "../shared/types";
+import { AgentDesk } from "./components/desk/AgentDesk";
+import { AgentDialog } from "./components/agents/AgentDialog";
+import { BrandMark } from "./components/ui/BrandMark";
+import { ChatView } from "./components/chat/ChatView";
+import { ConfirmDialog } from "./components/ui/ConfirmDialog";
+import { HelpDialog } from "./components/help/HelpDialog";
+import { RoutinesDialog } from "./components/routines/RoutinesDialog";
+import { SettingsDialog, type SettingsSection, type SignInNote } from "./components/settings/SettingsDialog";
+import { Sidebar, type CopilotPresence } from "./components/sidebar/Sidebar";
+import { errorText, fid, hasFid } from "./lib/fid";
 
 type Dialog =
   | { kind: "create" }
@@ -41,6 +41,9 @@ export function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [checkingSignIn, setCheckingSignIn] = useState(false);
   const [signInNote, setSignInNote] = useState<SignInNote | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
+  const [decidingApproval, setDecidingApproval] = useState(false);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
 
   const modelsRequest = useRef(0);
   const routinesRequest = useRef(0);
@@ -113,6 +116,28 @@ export function App() {
   }, []);
 
   useEffect(() => () => stopSignInWatch(), [stopSignInWatch]);
+
+  useEffect(() => {
+    if (!hasFid()) return;
+    const id = fid().chat.onEvent((event) => {
+      if (event.type === "approval-request") {
+        setApprovalError(null);
+        setPendingApprovals((current) => {
+          if (current.some((item) => item.id === event.approval.id)) return current;
+          return [...current, event.approval].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+        });
+      }
+      if (event.type === "approval-resolved") {
+        setDecidingApproval(false);
+        setPendingApprovals((current) => current.filter((item) => item.id !== event.approvalId));
+      }
+    });
+    void fid()
+      .approvals.pending()
+      .then((list) => setPendingApprovals(list))
+      .catch(() => undefined);
+    return () => fid().chat.offEvent(id);
+  }, []);
 
   const watchSignIn = useCallback(() => {
     stopSignInWatch();
@@ -205,6 +230,21 @@ export function App() {
   async function toggleRoutine(routine: Routine) {
     await fid().routines.update(routine.id, { enabled: !routine.enabled });
     await Promise.all([refreshRoutines(), refreshAgents()]);
+  }
+
+  async function decideApproval(action: ApprovalAction) {
+    if (!approval || decidingApproval) return;
+    const approvalId = approval.id;
+    setDecidingApproval(true);
+    setApprovalError(null);
+    try {
+      await fid().approvals.decide(approvalId, action);
+      setPendingApprovals((current) => current.filter((item) => item.id !== approvalId));
+    } catch (caught) {
+      setApprovalError(errorText(caught));
+    } finally {
+      setDecidingApproval(false);
+    }
   }
 
   useEffect(() => {
@@ -331,6 +371,9 @@ export function App() {
   }
 
   const selected = agents.find((agent) => agent.id === agentId) ?? null;
+  const approval = pendingApprovals.find((item) => item.agentId === agentId) ?? null;
+  const otherApprovals = pendingApprovals.filter((item) => item.agentId !== agentId);
+  const otherApproval = otherApprovals[0] ?? null;
   const editing = dialog?.kind === "edit" ? (agents.find((agent) => agent.id === dialog.agentId) ?? null) : null;
   const copilotPresence: CopilotPresence = settings?.signedIn
     ? "ready"
@@ -372,6 +415,20 @@ export function App() {
               </button>
             </div>
           ) : null}
+          {otherApproval ? (
+            <button
+              type="button"
+              className="approval-notice"
+              onClick={() => setAgentId(otherApproval.agentId)}
+            >
+              <ShieldAlert size={13} aria-hidden="true" />
+              <span>
+                Approval needed for {otherApproval.agentName}
+                {otherApprovals.length > 1 ? ` +${otherApprovals.length - 1}` : ""}
+              </span>
+              <b>Open</b>
+            </button>
+          ) : null}
           {selected ? (
             <ChatView
               key={selected.id}
@@ -382,6 +439,10 @@ export function App() {
               signedIn={settings?.signedIn ?? false}
               checkingSignIn={checkingSignIn}
               deskOpen={deskOpen}
+              approval={approval}
+              approvalBusy={decidingApproval}
+              approvalError={approvalError}
+              onApprovalDecision={(action) => void decideApproval(action)}
               onStartSignIn={startSignInFromChat}
               onRetryModels={() => void refreshModels()}
               onToggleDesk={() => setDeskOpen((open) => !open)}
@@ -492,6 +553,7 @@ export function App() {
           onConfirm={() => deleteAgent(pendingDelete)}
         />
       ) : null}
+
     </>
   );
 }

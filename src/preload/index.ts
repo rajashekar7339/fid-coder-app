@@ -1,6 +1,15 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type { FidApi } from "../shared/api";
-import type { AgentInput, ChatEvent, RoutineInput, RoutinePatch } from "../shared/types";
+import type {
+  AgentInput,
+  ApprovalAction,
+  ApprovalRecord,
+  ApprovalRequest,
+  ApprovalRule,
+  ChatEvent,
+  RoutineInput,
+  RoutinePatch,
+} from "../shared/types";
 
 // Sandboxed preloads cannot require sibling files, so these names are inlined.
 // They match src/shared/channels.ts.
@@ -15,8 +24,22 @@ const channels = {
   chatRunning: "chat:running",
   chatAbort: "chat:abort",
   chatEvent: "chat:event",
+  chatApproval: "chat:approval",
+  approvalsPending: "approvals:pending",
+  approvalsHistory: "approvals:history",
+  approvalsRules: "approvals:rules",
+  approvalsDeleteRule: "approvals:delete-rule",
   browserPreview: "browser:preview",
   browserFocus: "browser:focus",
+  changesLatest: "changes:latest",
+  changesDiff: "changes:diff",
+  changesRevert: "changes:revert",
+  changesRevertTurn: "changes:revert-turn",
+  plansGet: "plans:get",
+  contextPreview: "context:preview",
+  workspaceRules: "workspace:rules",
+  workspaceCreateRules: "workspace:create-rules",
+  workspaceOpenRule: "workspace:open-rule",
   routinesList: "routines:list",
   routinesCreate: "routines:create",
   routinesUpdate: "routines:update",
@@ -67,9 +90,37 @@ const api: FidApi = {
       listeners.delete(id);
     },
   },
+  approvals: {
+    decide: (approvalId: string, action: ApprovalAction) =>
+      ipcRenderer.invoke(channels.chatApproval, approvalId, action),
+    pending: (agentId?: string): Promise<ApprovalRequest[]> =>
+      ipcRenderer.invoke(channels.approvalsPending, agentId),
+    history: (agentId: string, limit?: number): Promise<ApprovalRecord[]> =>
+      ipcRenderer.invoke(channels.approvalsHistory, agentId, limit),
+    rules: (agentId?: string): Promise<ApprovalRule[]> =>
+      ipcRenderer.invoke(channels.approvalsRules, agentId),
+    deleteRule: (id: string) => ipcRenderer.invoke(channels.approvalsDeleteRule, id),
+  },
   browser: {
     preview: (agentId: string) => ipcRenderer.invoke(channels.browserPreview, agentId),
     focus: (agentId: string) => ipcRenderer.invoke(channels.browserFocus, agentId),
+  },
+  changes: {
+    latest: (agentId: string) => ipcRenderer.invoke(channels.changesLatest, agentId),
+    diff: (changeId: string) => ipcRenderer.invoke(channels.changesDiff, changeId),
+    revert: (changeId: string) => ipcRenderer.invoke(channels.changesRevert, changeId),
+    revertTurn: (turnId: string) => ipcRenderer.invoke(channels.changesRevertTurn, turnId),
+  },
+  plans: {
+    get: (agentId: string) => ipcRenderer.invoke(channels.plansGet, agentId),
+  },
+  context: {
+    preview: (agentId: string) => ipcRenderer.invoke(channels.contextPreview, agentId),
+  },
+  workspace: {
+    rules: (agentId: string) => ipcRenderer.invoke(channels.workspaceRules, agentId),
+    createRules: (agentId: string) => ipcRenderer.invoke(channels.workspaceCreateRules, agentId),
+    openRule: (agentId: string, path: string) => ipcRenderer.invoke(channels.workspaceOpenRule, agentId, path),
   },
   routines: {
     list: (agentId: string) => ipcRenderer.invoke(channels.routinesList, agentId),

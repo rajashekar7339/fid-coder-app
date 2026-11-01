@@ -31,7 +31,7 @@ The first build downloads the Electron Windows binary and can take a few minutes
 2. Run `npm run dist:win`.
 3. Give people the new `release\Fid Coder 0.1.1.exe`. They quit the app and replace the old file.
 
-Agents, chat, and browser profiles stay on the machine. They live in `%APPDATA%\fid-coder`, not inside the `.exe`.
+Agents, chat, and browser profiles stay on the machine. They live in `%USERPROFILE%\.fid_coder_app`, not inside the `.exe`.
 
 This build does not update itself. There is no update check inside the app.
 
