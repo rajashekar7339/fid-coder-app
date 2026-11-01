@@ -1,6 +1,10 @@
 import type {
   Agent,
   AgentInput,
+  ApprovalAction,
+  ApprovalRecord,
+  ApprovalRequest,
+  ApprovalRule,
   BrowserPreview,
   ChangeSet,
   ChatEvent,
@@ -34,6 +38,13 @@ export interface FidApi {
     abort: (agentId: string) => Promise<void>;
     onEvent: (callback: (event: ChatEvent) => void) => number;
     offEvent: (id: number) => void;
+  };
+  approvals: {
+    decide: (approvalId: string, action: ApprovalAction) => Promise<boolean>;
+    pending: (agentId?: string) => Promise<ApprovalRequest[]>;
+    history: (agentId: string, limit?: number) => Promise<ApprovalRecord[]>;
+    rules: (agentId?: string) => Promise<ApprovalRule[]>;
+    deleteRule: (id: string) => Promise<void>;
   };
   browser: {
     preview: (agentId: string) => Promise<BrowserPreview | null>;

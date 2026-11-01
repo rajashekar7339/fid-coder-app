@@ -38,9 +38,17 @@ const WRAPPER_FLAGS = new Set(["/d", "/s", "/c", "/q", "/k", "-c", "-command", "
 
 const DELETE_EXE_PATH = /[\\/](rm|srm|shred|diskpart)\.exe\b|[\\/]format\.com\b/;
 
-export function needsDeleteConfirmation(command: string): boolean {
+export function needsApproval(command: string): boolean {
+  return approvalRisk(command) !== null;
+}
+
+export function approvalReason(command: string): string {
+  return approvalRisk(command) ?? "This command can change files or remote state.";
+}
+
+function approvalRisk(command: string): string | null {
   const normalized = command.toLowerCase();
-  if (DELETE_EXE_PATH.test(normalized)) return true;
+  if (DELETE_EXE_PATH.test(normalized)) return "This deletes files or data.";
   for (const segment of normalized.split(/&&|\|\||[&|;\n\r()]/)) {
     const tokens = segment
       .trim()
@@ -49,15 +57,19 @@ export function needsDeleteConfirmation(command: string): boolean {
       .map(cleanToken);
     const first = firstCommandToken(tokens);
     if (!first) continue;
-    if (DELETE_COMMANDS.has(first)) return true;
-    if ((first === "git" || first === "git.exe") && isDestructiveGit(tokens)) return true;
-    if (TRANSFER_COMMANDS.has(first)) return true;
+    if (DELETE_COMMANDS.has(first)) return "This deletes files or data.";
+    if ((first === "git" || first === "git.exe") && isDestructiveGit(tokens)) {
+      return /\bpush\b/.test(segment)
+        ? "This pushes commits to a remote repository."
+        : "This can discard local changes or rewrite repository history.";
+    }
+    if (TRANSFER_COMMANDS.has(first)) return "This downloads content from the network.";
   }
-  if (/\bdo\s+@?(del|erase|rd|rmdir|rm)\b/.test(normalized)) return true;
+  if (/\bdo\s+@?(del|erase|rd|rmdir|rm)\b/.test(normalized)) return "This deletes files or data.";
   if (/(powershell|pwsh)/.test(normalized) && /\b(remove-item|ri|del|erase|rmdir|rm)\b/.test(normalized)) {
-    return true;
+    return "This deletes files or data.";
   }
-  return false;
+  return null;
 }
 
 function firstCommandToken(tokens: string[]): string | undefined {

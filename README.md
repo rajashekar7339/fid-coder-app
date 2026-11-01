@@ -47,11 +47,12 @@ src/
 
 ## Data
 
-The app stores its SQLite database at `%APPDATA%\fid-coder\fid-coder.sqlite`. Browser profiles, checkpoints, and generated files live under the same user data directory. Set `FID_CODER_USER_DATA` to use a different folder.
+The app stores its SQLite database at `%USERPROFILE%\.fid_coder_app\fid-coder.sqlite`. Browser profiles, checkpoints, and generated files live under the same user data directory. Set `FID_CODER_USER_DATA` to use a different folder.
 
 ## Documentation
 
 - `docs/guide/` — end-user guide
+- `docs/feature-enhancements.md` — planned feature roadmap and sequencing
 - `docs/memory.md` — how an agent's transcript and rolling summary work
 - `docs/build-exe.md` — packaging notes
 - `docs/archive/` — original POC planning notes, kept for history

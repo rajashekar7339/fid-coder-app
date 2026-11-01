@@ -3,9 +3,16 @@ import path from "path";
 import { DatabaseSync } from "node:sqlite";
 import { AUTO_MODEL_ID, normalizeModelId } from "../../shared/model";
 import { normalizeToolProfile } from "../../shared/tool-profile";
+import { normalizeApprovalMatch } from "../../shared/approval";
 import type {
   Agent,
   AgentInput,
+  ApprovalDecision,
+  ApprovalKind,
+  ApprovalRecord,
+  ApprovalRule,
+  ApprovalRuleInput,
+  ApprovalSource,
   FileChangeKind,
   Message,
   MessageRole,
@@ -49,6 +56,7 @@ type MessageRow = {
   role: MessageRole;
   content: string;
   created_at: string;
+  turn_id: string | null;
 };
 
 type TurnRow = {
@@ -81,6 +89,32 @@ type PlanRow = {
   turn_id: string | null;
   steps: string;
   updated_at: string;
+};
+
+type ApprovalRow = {
+  id: string;
+  agent_id: string;
+  agent_name?: string;
+  turn_id: string | null;
+  kind: string;
+  command: string;
+  cwd: string;
+  reason: string;
+  decision: string;
+  source: string | null;
+  created_at: string;
+  decided_at: string | null;
+};
+
+type ApprovalRuleRow = {
+  id: string;
+  agent_id: string;
+  agent_name?: string;
+  kind: string;
+  decision: string;
+  match: string;
+  cwd: string;
+  created_at: string;
 };
 
 export type TurnRecord = {
@@ -260,7 +294,37 @@ export class AppDatabase {
         steps TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS approvals (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        turn_id TEXT,
+        kind TEXT NOT NULL,
+        command TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        decision TEXT NOT NULL DEFAULT 'pending',
+        source TEXT,
+        created_at TEXT NOT NULL,
+        decided_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_approvals_agent ON approvals(agent_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS approval_rules (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL,
+        decision TEXT NOT NULL,
+        match TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(agent_id, kind, decision, match, cwd)
+      );
+      CREATE INDEX IF NOT EXISTS idx_approval_rules_agent ON approval_rules(agent_id, created_at);
     `);
+    this.db
+      .prepare("UPDATE approvals SET decision = 'deny', source = 'aborted', decided_at = ? WHERE decision = 'pending'")
+      .run(new Date().toISOString());
     this.ensureAgentModelColumn();
     this.ensureAgentDescriptionColumn();
     this.ensureAgentMemoryColumns();
@@ -446,13 +510,87 @@ export class AppDatabase {
     return rows.map(mapMessage);
   }
 
+  firstUserMessages(agentId: string, limit = 1): Message[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM messages
+         WHERE agent_id = ? AND role = 'user'
+         ORDER BY created_at ASC, rowid ASC
+         LIMIT ?`,
+      )
+      .all(agentId, clampLimit(limit, 1, 10)) as MessageRow[];
+    return rows.map(mapMessage);
+  }
+
+  searchMessages(
+    agentId: string,
+    input: {
+      query?: string;
+      from?: string;
+      to?: string;
+      role?: MessageRole | "all";
+      limit?: number;
+      order?: "asc" | "desc";
+    },
+  ): Message[] {
+    const where = ["agent_id = ?"];
+    const params: Array<string | number> = [agentId];
+    if (input.role && input.role !== "all") {
+      where.push("role = ?");
+      params.push(input.role);
+    } else if (!input.role) {
+      where.push("role IN ('user', 'assistant')");
+    }
+    if (input.from) {
+      where.push("created_at >= ?");
+      params.push(input.from);
+    }
+    if (input.to) {
+      where.push("created_at <= ?");
+      params.push(input.to);
+    }
+    const query = input.query?.trim();
+    if (query) {
+      where.push("content LIKE ? ESCAPE '\\'");
+      params.push(`%${escapeLike(query)}%`);
+    }
+    const order = input.order === "asc" ? "ASC" : "DESC";
+    const limit = clampLimit(input.limit, 20, 50);
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM messages WHERE ${where.join(" AND ")} ORDER BY created_at ${order}, rowid ${order} LIMIT ?`,
+      )
+      .all(...params, limit) as MessageRow[];
+    return rows.map(mapMessage);
+  }
+
+  contextMessages(
+    agentId: string,
+    input: { from?: string; to?: string; limit?: number; includeTools?: boolean },
+  ): Message[] {
+    return this.searchMessages(agentId, {
+      from: input.from,
+      to: input.to,
+      role: input.includeTools ? "all" : undefined,
+      limit: clampLimit(input.limit, 40, 100),
+      order: "asc",
+    });
+  }
+
+  listTurnMessages(agentId: string, turnId: string): Message[] {
+    const rows = this.db
+      .prepare("SELECT * FROM messages WHERE agent_id = ? AND turn_id = ? ORDER BY created_at ASC, rowid ASC")
+      .all(agentId, turnId) as MessageRow[];
+    return rows.map(mapMessage);
+  }
+
   addMessage(agentId: string, role: MessageRole, content: string, turnId: string | null = null): Message {
     const id = crypto.randomUUID();
     const createdAt = new Date().toISOString();
     this.db
       .prepare("INSERT INTO messages (id, agent_id, role, content, created_at, turn_id) VALUES (?, ?, ?, ?, ?, ?)")
       .run(id, agentId, role, content, createdAt, turnId);
-    return { id, agentId, role, content, createdAt };
+    return { id, agentId, role, content, createdAt, turnId };
   }
 
   createTurn(agentId: string, source: string): string {
@@ -606,6 +744,109 @@ export class AppDatabase {
     this.db.prepare("DELETE FROM plans WHERE agent_id = ?").run(agentId);
   }
 
+  createApproval(input: {
+    id: string;
+    agentId: string;
+    turnId: string | null;
+    kind: ApprovalKind;
+    command: string;
+    cwd: string;
+    reason: string;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT INTO approvals (id, agent_id, turn_id, kind, command, cwd, reason, decision, source, created_at, decided_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?, NULL)`,
+      )
+      .run(
+        input.id,
+        input.agentId,
+        input.turnId,
+        input.kind,
+        input.command,
+        input.cwd,
+        input.reason,
+        new Date().toISOString(),
+      );
+  }
+
+  resolveApproval(id: string, decision: ApprovalDecision, source: ApprovalSource): void {
+    this.db
+      .prepare("UPDATE approvals SET decision = ?, source = ?, decided_at = ? WHERE id = ?")
+      .run(decision, source, new Date().toISOString(), id);
+  }
+
+  listApprovals(agentId: string, limit = 50): ApprovalRecord[] {
+    const size = Number.isFinite(limit) ? Math.floor(limit) : 50;
+    const rows = this.db
+      .prepare(
+        `SELECT ap.*, a.name AS agent_name
+         FROM approvals ap
+         JOIN agents a ON a.id = ap.agent_id
+         WHERE ap.agent_id = ?
+         ORDER BY ap.created_at DESC, ap.rowid DESC
+         LIMIT ?`,
+      )
+      .all(agentId, Math.max(1, Math.min(200, size))) as ApprovalRow[];
+    return rows.map(mapApproval);
+  }
+
+  findApprovalRule(agentId: string, kind: ApprovalKind, match: string, cwd: string): ApprovalRule | null {
+    const row = this.db
+      .prepare(
+        `SELECT r.*, a.name AS agent_name
+         FROM approval_rules r
+         JOIN agents a ON a.id = r.agent_id
+         WHERE r.agent_id = ? AND r.kind = ? AND r.match = ? AND (r.cwd = ? OR r.cwd = '')
+         ORDER BY CASE r.decision WHEN 'deny' THEN 0 ELSE 1 END, r.created_at DESC
+         LIMIT 1`,
+      )
+      .get(agentId, kind, normalizeApprovalMatch(match), cwd) as ApprovalRuleRow | undefined;
+    return row ? mapApprovalRule(row) : null;
+  }
+
+  createApprovalRule(input: ApprovalRuleInput): ApprovalRule {
+    if (input.decision !== "allow" && input.decision !== "deny") {
+      throw new Error("Approval rule decision must be allow or deny");
+    }
+    const match = normalizeApprovalMatch(input.match);
+    if (!match) throw new Error("Approval rule match is required");
+    const cwd = input.cwd.trim();
+    const decision = input.decision;
+    const createdAt = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO approval_rules (id, agent_id, kind, decision, match, cwd, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(crypto.randomUUID(), input.agentId, input.kind, decision, match, cwd, createdAt);
+    const row = this.db
+      .prepare(
+        `SELECT r.*, a.name AS agent_name
+         FROM approval_rules r
+         JOIN agents a ON a.id = r.agent_id
+         WHERE r.agent_id = ? AND r.kind = ? AND r.decision = ? AND r.match = ? AND r.cwd = ?`,
+      )
+      .get(input.agentId, input.kind, decision, match, cwd) as ApprovalRuleRow | undefined;
+    if (!row) throw new Error("Could not save the approval rule");
+    return mapApprovalRule(row);
+  }
+
+  listApprovalRules(agentId?: string): ApprovalRule[] {
+    const sql = `SELECT r.*, a.name AS agent_name
+      FROM approval_rules r
+      JOIN agents a ON a.id = r.agent_id
+      ${agentId ? "WHERE r.agent_id = ?" : ""}
+      ORDER BY a.name COLLATE NOCASE, r.created_at DESC`;
+    const statement = this.db.prepare(sql);
+    const rows = (agentId ? statement.all(agentId) : statement.all()) as ApprovalRuleRow[];
+    return rows.map(mapApprovalRule);
+  }
+
+  deleteApprovalRule(id: string): void {
+    this.db.prepare("DELETE FROM approval_rules WHERE id = ?").run(id);
+  }
+
   listRoutines(agentId: string): Routine[] {
     const rows = this.db
       .prepare("SELECT * FROM routines WHERE agent_id = ? ORDER BY enabled DESC, name COLLATE NOCASE")
@@ -730,6 +971,7 @@ function mapMessage(row: MessageRow): Message {
     role: row.role,
     content: row.content,
     createdAt: row.created_at,
+    turnId: row.turn_id ?? null,
   };
 }
 
@@ -761,6 +1003,15 @@ function mapTurn(row: TurnRow): TurnRecord {
   };
 }
 
+function clampLimit(value: number | undefined, fallback: number, max: number): number {
+  const numeric = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : fallback;
+  return Math.max(1, Math.min(max, numeric));
+}
+
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
 function mapFileChange(row: FileChangeRow): FileChangeRecord {
   return {
     id: row.id,
@@ -777,6 +1028,48 @@ function mapFileChange(row: FileChangeRow): FileChangeRecord {
     note: row.note,
     createdAt: row.created_at,
   };
+}
+
+function mapApproval(row: ApprovalRow): ApprovalRecord {
+  return {
+    id: row.id,
+    agentId: row.agent_id,
+    agentName: row.agent_name ?? "",
+    turnId: row.turn_id,
+    kind: readApprovalKind(row.kind),
+    command: row.command,
+    cwd: row.cwd,
+    reason: row.reason,
+    decision: readApprovalDecision(row.decision),
+    source: readApprovalSource(row.source),
+    createdAt: row.created_at,
+    decidedAt: row.decided_at,
+  };
+}
+
+function mapApprovalRule(row: ApprovalRuleRow): ApprovalRule {
+  return {
+    id: row.id,
+    agentId: row.agent_id,
+    agentName: row.agent_name ?? "",
+    kind: readApprovalKind(row.kind),
+    decision: row.decision === "deny" ? "deny" : "allow",
+    match: row.match,
+    cwd: row.cwd,
+    createdAt: row.created_at,
+  };
+}
+
+function readApprovalKind(value: string): ApprovalKind {
+  return value === "tool" ? "tool" : "shell";
+}
+
+function readApprovalDecision(value: string): "pending" | ApprovalDecision {
+  return value === "allow" || value === "deny" ? value : "pending";
+}
+
+function readApprovalSource(value: string | null): ApprovalSource | null {
+  return value === "user" || value === "rule" || value === "timeout" || value === "aborted" ? value : null;
 }
 
 function readPlanSteps(raw: string): PlanStep[] {

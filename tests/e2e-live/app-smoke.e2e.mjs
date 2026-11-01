@@ -71,7 +71,72 @@ try {
   await page.getByRole("button", { name: "Open settings" }).click();
   await page.waitForSelector("text=GitHub Copilot");
   console.log("SETTINGS\n" + (await page.locator(".settings-scroll").innerText()));
+  await page.getByRole("button", { name: "Safety", exact: true }).click();
+  await page.waitForSelector("text=Approval rules");
+  console.log("SAFETY\n" + (await page.locator(".settings-scroll").innerText()));
   await page.getByRole("button", { name: "Close settings" }).click();
+
+  await page.getByRole("button", { name: /JIRA Agent/ }).first().click();
+  const jiraAgent = await page.evaluate(async () => {
+    const agents = await window.fid.agents.list();
+    return agents.find((agent) => agent.name === "JIRA Agent") ?? null;
+  });
+  if (!jiraAgent) throw new Error("JIRA Agent missing");
+  await app.evaluate(({ BrowserWindow }, agent) => {
+    const window = BrowserWindow.getAllWindows()[0];
+    window?.webContents.send("chat:event", {
+      agentId: agent.id,
+      type: "approval-request",
+      approval: {
+        id: "smoke-approval",
+        agentId: agent.id,
+        agentName: agent.name,
+        turnId: "abcdef12-3456-4789-8abc-def012345678",
+        kind: "shell",
+        title: "Run a sensitive command?",
+        command: "git push origin main",
+        cwd: "D:\\repo",
+        reason: "This pushes commits to a remote repository.",
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+    });
+  }, jiraAgent);
+  await page.waitForSelector(".approval-card");
+  console.log("APPROVAL\n" + (await page.locator(".approval-card").innerText()));
+  await page.getByRole("button", { name: "Allow once" }).click();
+  await page.waitForSelector(".approval-card", { state: "detached" });
+
+  const gitAgent = await page.evaluate(async () => {
+    const agents = await window.fid.agents.list();
+    return agents.find((agent) => agent.name === "GIT PR Review") ?? null;
+  });
+  if (!gitAgent) throw new Error("GIT PR Review missing");
+  await app.evaluate(({ BrowserWindow }, agent) => {
+    const window = BrowserWindow.getAllWindows()[0];
+    window?.webContents.send("chat:event", {
+      agentId: agent.id,
+      type: "approval-request",
+      approval: {
+        id: "smoke-approval-2",
+        agentId: agent.id,
+        agentName: agent.name,
+        turnId: null,
+        kind: "shell",
+        title: "Run a sensitive command?",
+        command: "del notes.tmp",
+        cwd: "D:\\repo",
+        reason: "This deletes files or data.",
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+    });
+  }, gitAgent);
+  await page.waitForSelector(".approval-notice");
+  await page.getByRole("button", { name: /Approval needed for GIT PR Review/ }).click();
+  await page.waitForSelector(".approval-card");
+  await page.getByRole("button", { name: "Reject" }).click();
+  await page.waitForSelector(".approval-card", { state: "detached" });
 
   await page.getByRole("button", { name: /JIRA Agent/ }).first().click();
   const input = page.getByPlaceholder("Message JIRA Agent");

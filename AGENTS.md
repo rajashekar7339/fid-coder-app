@@ -23,6 +23,7 @@ src/
     db/index.ts
     chat/runner.ts
     browser/browser-manager.ts
+    history/        history.ts
     routines/       scheduler.ts, cron.ts, notify.ts
     workspace/      checkpoints.ts, explore-session.ts, workspace-brief.ts, workspace-rules.ts
   preload/
@@ -33,6 +34,7 @@ src/
     styles/index.css
     components/
       chat/         ChatView, MessageContent, PlanStrip
+      approvals/    ApprovalCard, ApprovalHistoryDialog
       agents/       AgentDialog, AgentAvatar
       sidebar/      Sidebar
       settings/     SettingsDialog
@@ -48,6 +50,7 @@ src/
     files/files.ts
     git/git.ts
     jira/           jira.ts, jira-format.ts
+    history/        history.ts
     shell/          shell.ts, shell-policy.ts
     explore/        explore.ts, explore-code.ts
 tests/
@@ -58,6 +61,7 @@ scripts/
   generate-guide-screenshots.mjs
 docs/
   guide/            in-app help
+  feature-enhancements.md
   memory.md
   build-exe.md
 ```

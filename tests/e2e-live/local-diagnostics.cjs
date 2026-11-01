@@ -156,18 +156,35 @@ app.whenReady().then(async () => {
 
     const deleteFile = path.join(workspace, "notes", "delete-me.txt");
     fs.writeFileSync(deleteFile, "delete me");
-    let needsConfirm = false;
+    let asked = null;
+    const denyContext = {
+      ...ctx,
+      requestApproval: async (request) => {
+        asked = request;
+        return { approved: false, decision: "deny", source: "user", reason: "test denial" };
+      },
+    };
+    let denied = false;
     try {
-      await tools.shell_run.handler({ command: "del notes\\delete-me.txt" }, ctx);
+      await tools.shell_run.handler({ command: "del notes\\delete-me.txt" }, denyContext);
     } catch (error) {
-      needsConfirm = /DELETE_CONFIRM_REQUIRED/.test(error.message);
+      denied = /Command not approved/.test(error.message);
     }
-    if (!needsConfirm || !fs.existsSync(deleteFile)) {
-      throw new Error("delete guard did not require confirmation");
+    if (!denied || !asked || !fs.existsSync(deleteFile)) {
+      throw new Error("delete guard did not ask for approval");
     }
-    await tools.shell_run.handler({ command: "del notes\\delete-me.txt", confirmed: true }, ctx);
+    const approveContext = {
+      ...ctx,
+      requestApproval: async () => ({
+        approved: true,
+        decision: "allow",
+        source: "user",
+        reason: "test approval",
+      }),
+    };
+    await tools.shell_run.handler({ command: "del notes\\delete-me.txt" }, approveContext);
     if (fs.existsSync(deleteFile)) throw new Error("delete guard did not delete after approval");
-    record("PASS", "delete-guard", "requires confirmed:true, then deletes");
+    record("PASS", "delete-guard", "asks out-of-band, denies, then deletes after approval");
 
     const formUrl = `http://127.0.0.1:${port}/form`;
     const nav = await tools.browser_navigate.handler({ url: formUrl }, ctx);

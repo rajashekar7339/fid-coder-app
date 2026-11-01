@@ -1,3 +1,5 @@
+import fs from "fs";
+import os from "os";
 import path from "path";
 import { app, BrowserWindow, nativeTheme } from "electron";
 import { BrowserManager } from "./browser/browser-manager";
@@ -13,9 +15,11 @@ import { channels } from "../shared/channels";
 
 app.setName("fid-coder");
 nativeTheme.themeSource = "dark";
-if (process.env.FID_CODER_USER_DATA) {
-  app.setPath("userData", process.env.FID_CODER_USER_DATA);
-}
+// Keep app data under the user's home folder by default. The environment
+// variable remains available for tests and portable/custom locations.
+const userData = path.resolve(process.env.FID_CODER_USER_DATA || path.join(os.homedir(), ".fid_coder_app"));
+fs.mkdirSync(userData, { recursive: true });
+app.setPath("userData", userData);
 if (process.platform === "win32") {
   app.setAppUserModelId("com.fidcoder.desktop");
 }
@@ -27,6 +31,7 @@ if (!gotLock) {
   let mainWindow: BrowserWindow | null = null;
   let db: AppDatabase | null = null;
   let scheduler: Scheduler | null = null;
+  let runner: Runner | null = null;
   const browser = new BrowserManager();
   let shuttingDown = false;
 
@@ -39,16 +44,17 @@ if (!gotLock) {
   app.whenReady().then(() => {
     db = new AppDatabase(databasePath());
     const checkpoints = new CheckpointStore(db, checkpointsDir());
-    const runner = new Runner(db, browser, checkpoints);
-    scheduler = new Scheduler(db, runner);
-    runner.setSink((event) => {
+    const activeRunner = new Runner(db, browser, checkpoints);
+    runner = activeRunner;
+    scheduler = new Scheduler(db, activeRunner);
+    activeRunner.setSink((event) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send(channels.chatEvent, event);
       }
     });
     registerIpc({
       db,
-      runner,
+      runner: activeRunner,
       scheduler,
       browser,
       checkpoints,
@@ -71,6 +77,7 @@ if (!gotLock) {
   });
 
   async function shutdown(): Promise<void> {
+    runner?.denyAllApprovals("The app closed before approval.");
     scheduler?.stop();
     await browser.closeAll();
     await stopClient();

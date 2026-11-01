@@ -7,18 +7,20 @@ import {
   Lock,
   LogOut,
   RefreshCw,
+  ShieldCheck,
   Sparkles,
   Ticket,
+  Trash2,
   X,
 } from "lucide-react";
 import { formatUsageCount, formatUsageReset, type CopilotUsageView } from "../../../shared/copilot-usage";
-import type { SettingsView } from "../../../shared/types";
+import type { ApprovalRule, SettingsView } from "../../../shared/types";
 import { errorText, fid } from "../../lib/fid";
 import { Modal } from "../ui/Modal";
 import { UsageBar, usageLevel } from "../ui/UsageBar";
 
 export type SignInNote = { tone: "progress" | "ok" | "error"; text: string };
-export type SettingsSection = "copilot" | "github" | "jira";
+export type SettingsSection = "copilot" | "github" | "jira" | "safety";
 
 type Props = {
   settings: SettingsView | null;
@@ -65,7 +67,17 @@ const SECTIONS: Array<{
     subtitle: "The site and personal access token used to read Jira. Without a token, agents use the browser.",
     Icon: Ticket,
   },
+  {
+    id: "safety",
+    label: "Safety",
+    title: "Approval rules",
+    subtitle: "Saved allow and deny rules for sensitive shell commands. Deny rules always win.",
+    Icon: ShieldCheck,
+  },
 ];
+
+const ACCOUNT_SECTIONS = SECTIONS.filter((item) => item.id !== "safety");
+const SAFETY_SECTION = SECTIONS.find((item) => item.id === "safety")!;
 
 export function SettingsDialog({
   settings,
@@ -162,7 +174,7 @@ export function SettingsDialog({
         <nav className="settings-nav" aria-label="Settings sections">
           <div className="settings-nav-head">Account</div>
           <div className="settings-nav-list">
-            {SECTIONS.map((item) => {
+            {ACCOUNT_SECTIONS.map((item) => {
               const Icon = item.Icon;
               const connected =
                 item.id === "copilot"
@@ -183,6 +195,17 @@ export function SettingsDialog({
                 </button>
               );
             })}
+          </div>
+          <div className="settings-nav-head settings-nav-head-spaced">Safety</div>
+          <div className="settings-nav-list">
+            <button
+              type="button"
+              className={`settings-nav-item ${section === "safety" ? "is-active" : ""}`}
+              onClick={() => onSectionChange("safety")}
+            >
+              <SAFETY_SECTION.Icon size={14} aria-hidden="true" />
+              {SAFETY_SECTION.label}
+            </button>
           </div>
           <div className="settings-nav-foot">Credentials stay on this machine.</div>
         </nav>
@@ -250,6 +273,8 @@ export function SettingsDialog({
               />
             ) : null}
 
+            {section === "safety" ? <SafetySection /> : null}
+
             {message ? (
               <p className="settings-message is-success" role="status">
                 {message}
@@ -267,8 +292,17 @@ export function SettingsDialog({
             ) : null}
 
             <div className="security-note">
-              <Lock size={12} aria-hidden="true" />
-              <span>Tokens are encrypted with Windows and never leave this machine.</span>
+              {section === "safety" ? (
+                <>
+                  <ShieldCheck size={12} aria-hidden="true" />
+                  <span>Rules stay in the local database. Delete a rule to ask again on the next command.</span>
+                </>
+              ) : (
+                <>
+                  <Lock size={12} aria-hidden="true" />
+                  <span>Tokens are encrypted with Windows and never leave this machine.</span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -562,6 +596,99 @@ function GitHubSection({
         </div>
       </div>
     </>
+  );
+}
+
+function SafetySection() {
+  const [rules, setRules] = useState<ApprovalRule[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      setRules(await fid().approvals.rules());
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function remove(rule: ApprovalRule) {
+    setDeleting(rule.id);
+    setError(null);
+    try {
+      await fid().approvals.deleteRule(rule.id);
+      setRules((current) => current.filter((item) => item.id !== rule.id));
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      setDeleting(null);
+    }
+  }
+
+  return (
+    <div className="connection-card">
+      <div className="connection-head">
+        <div className="connection-icon is-safety">
+          <ShieldCheck size={16} aria-hidden="true" />
+        </div>
+        <div className="connection-copy">
+          <div className="connection-name">Saved approval rules</div>
+          <div className="connection-note">Always allow and Always deny create these. Deny rules win over allow rules.</div>
+        </div>
+        <button type="button" className="text-button" disabled={loading} onClick={() => void load()}>
+          <RefreshCw size={11} className={loading ? "spin" : undefined} aria-hidden="true" />
+          Refresh
+        </button>
+      </div>
+
+      <div className="safety-body">
+        {loading ? (
+          <p className="safety-empty">Reading rules…</p>
+        ) : rules.length === 0 ? (
+          <p className="safety-empty">
+            No saved rules. Every sensitive command asks first. Create a rule with Always allow or Always deny on an
+            approval.
+          </p>
+        ) : (
+          <div className="approval-rule-list">
+            {rules.map((rule) => (
+              <div className="approval-rule" key={rule.id}>
+                <span className={`approval-decision is-${rule.decision}`}>{rule.decision}</span>
+                <div className="approval-rule-copy">
+                  <code>{rule.match}</code>
+                  <span>
+                    {rule.agentName || rule.agentId} · {rule.cwd || "Any folder"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="desk-icon-button"
+                  aria-label={`Delete ${rule.decision} rule for ${rule.match}`}
+                  disabled={deleting === rule.id}
+                  onClick={() => void remove(rule)}
+                >
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {error ? (
+          <p className="settings-message is-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

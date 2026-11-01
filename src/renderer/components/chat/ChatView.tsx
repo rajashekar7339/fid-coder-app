@@ -22,12 +22,12 @@ import {
 } from "lucide-react";
 import { groupToolCalls, liveTurnSettled, projectThread, userTurnAccepted, type LiveTool, type LiveTurn } from "../../../shared/chat-thread";
 import { summarizeTool } from "../../../shared/summary";
-import { DELETE_CONFIRM_MARKER } from "../../../shared/types";
-import type { Agent, ChatEvent, CopilotModel, Message, PlanStep } from "../../../shared/types";
+import type { Agent, ApprovalAction, ApprovalRequest, ChatEvent, CopilotModel, Message, PlanStep } from "../../../shared/types";
 import { agentSubtitle } from "../../lib/agent-display";
 import { errorText, fid } from "../../lib/fid";
 import { formatClock, formatDay, formatNextRun } from "../../lib/format";
 import { AgentAvatar } from "../agents/AgentAvatar";
+import { ApprovalCard } from "../approvals/ApprovalCard";
 import { MessageContent } from "./MessageContent";
 import { ModelSelect } from "../ui/ModelSelect";
 import { PlanStrip } from "./PlanStrip";
@@ -40,6 +40,10 @@ type Props = {
   signedIn: boolean;
   checkingSignIn: boolean;
   deskOpen: boolean;
+  approval: ApprovalRequest | null;
+  approvalBusy: boolean;
+  approvalError: string | null;
+  onApprovalDecision: (action: ApprovalAction) => void;
   onStartSignIn: () => void;
   onRetryModels: () => void;
   onToggleDesk: () => void;
@@ -70,6 +74,10 @@ const TOOL_META: Record<string, ToolMeta> = {
   gh_pr_diff: { label: "Read a pull request diff", active: "Reading a pull request diff", Icon: Terminal },
   explore_code: { label: "Explored the code", active: "Exploring the code", Icon: ScanSearch },
   set_plan: { label: "Updated the plan", active: "Updating the plan", Icon: ListChecks },
+  history_first: { label: "Read the first message", active: "Reading the first message", Icon: Clock3 },
+  history_search: { label: "Searched history", active: "Searching history", Icon: ScanSearch },
+  history_turn: { label: "Read an earlier turn", active: "Reading an earlier turn", Icon: FileText },
+  history_context: { label: "Loaded history", active: "Loading history", Icon: FileText },
 };
 
 const liveByAgent = new Map<string, LiveTurn>();
@@ -121,6 +129,10 @@ export function ChatView({
   signedIn,
   checkingSignIn,
   deskOpen,
+  approval,
+  approvalBusy,
+  approvalError,
+  onApprovalDecision,
   onStartSignIn,
   onRetryModels,
   onToggleDesk,
@@ -134,7 +146,6 @@ export function ChatView({
   const [draft, setDraft] = useState("");
   const [running, setRunning] = useState(() => liveByAgent.has(agent.id));
   const [error, setError] = useState<string | null>(null);
-  const [pendingConfirm, setPendingConfirm] = useState<string | null>(null);
   const [savingModel, setSavingModel] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
@@ -162,7 +173,6 @@ export function ChatView({
     const gen = ++generation.current;
     let cancelled = false;
     setError(null);
-    setPendingConfirm(null);
     const loadId = ++messageLoad.current;
     void fid()
       .messages.list(agent.id)
@@ -218,7 +228,6 @@ export function ChatView({
         });
       }
       if (event.type === "tool-start") {
-        if (event.toolName === "shell_run") setPendingConfirm(null);
         updateLive((current) => {
           const base = current ?? blankLive(Date.now());
           const tools = base.tools ?? [];
@@ -237,10 +246,6 @@ export function ChatView({
         });
       }
       if (event.type === "tool-end") {
-        if (!event.ok && event.text?.startsWith(DELETE_CONFIRM_MARKER)) {
-          const command = event.text.slice(DELETE_CONFIRM_MARKER.length).split("\n")[0].trim();
-          setPendingConfirm(command.length > 200 ? `${command.slice(0, 200)}…` : command);
-        }
         updateLive((current) => {
           if (!current) return current;
           const tools = finishLiveTool(current.tools ?? [], event.toolName, event.ok, event.text ?? "");
@@ -293,7 +298,7 @@ export function ChatView({
     const element = scroller.current;
     if (!element || !pinned.current) return;
     element.scrollTop = element.scrollHeight;
-  }, [projected.messages, projected.thinking, projected.pendingToolId, draft]);
+  }, [projected.messages, projected.thinking, projected.pendingToolId, approval?.id, draft]);
 
   useEffect(() => {
     const element = scroller.current;
@@ -338,7 +343,6 @@ export function ChatView({
     setShowJump(false);
     setDraft("");
     setError(null);
-    setPendingConfirm(null);
     setRunning(true);
     updateLive(() => blankLive(startedAt, { userText: text }));
     void fid()
@@ -390,7 +394,7 @@ export function ChatView({
     }
   }
 
-  const empty = projected.messages.length === 0 && !projected.thinking;
+  const empty = projected.messages.length === 0 && !projected.thinking && !approval;
   const items = groupToolCalls(projected.messages);
   const status = !settingsReady
     ? "Checking"
@@ -508,7 +512,15 @@ export function ChatView({
                 </Fragment>
               );
             })}
-            {projected.pendingToolId ? null : projected.thinking ? <TypingRow agent={agent} /> : null}
+            {approval ? (
+              <ApprovalCard
+                approval={approval}
+                busy={approvalBusy}
+                error={approvalError}
+                onDecide={onApprovalDecision}
+              />
+            ) : null}
+            {projected.pendingToolId || approval ? null : projected.thinking ? <TypingRow agent={agent} /> : null}
           </div>
         )}
       </div>
@@ -536,22 +548,6 @@ export function ChatView({
       ) : null}
 
       <PlanStrip steps={plan ?? []} running={running} />
-
-      {pendingConfirm && !running ? (
-        <div className="confirm-bar" role="group" aria-label="Command confirmation">
-          <span>
-            Allow this command? <code>{pendingConfirm}</code>
-          </span>
-          <div className="confirm-actions">
-            <button type="button" className="btn btn-quiet" onClick={() => sendText("No, do not run it.")}>
-              Reject
-            </button>
-            <button type="button" className="btn btn-destructive" onClick={() => sendText("Yes, I approve. Run it.")}>
-              Approve
-            </button>
-          </div>
-        </div>
-      ) : null}
 
       <form
         className="composer-dock"

@@ -1,6 +1,15 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type { FidApi } from "../shared/api";
-import type { AgentInput, ChatEvent, RoutineInput, RoutinePatch } from "../shared/types";
+import type {
+  AgentInput,
+  ApprovalAction,
+  ApprovalRecord,
+  ApprovalRequest,
+  ApprovalRule,
+  ChatEvent,
+  RoutineInput,
+  RoutinePatch,
+} from "../shared/types";
 
 // Sandboxed preloads cannot require sibling files, so these names are inlined.
 // They match src/shared/channels.ts.
@@ -15,6 +24,11 @@ const channels = {
   chatRunning: "chat:running",
   chatAbort: "chat:abort",
   chatEvent: "chat:event",
+  chatApproval: "chat:approval",
+  approvalsPending: "approvals:pending",
+  approvalsHistory: "approvals:history",
+  approvalsRules: "approvals:rules",
+  approvalsDeleteRule: "approvals:delete-rule",
   browserPreview: "browser:preview",
   browserFocus: "browser:focus",
   changesLatest: "changes:latest",
@@ -75,6 +89,17 @@ const api: FidApi = {
       ipcRenderer.removeListener(channels.chatEvent, listener);
       listeners.delete(id);
     },
+  },
+  approvals: {
+    decide: (approvalId: string, action: ApprovalAction) =>
+      ipcRenderer.invoke(channels.chatApproval, approvalId, action),
+    pending: (agentId?: string): Promise<ApprovalRequest[]> =>
+      ipcRenderer.invoke(channels.approvalsPending, agentId),
+    history: (agentId: string, limit?: number): Promise<ApprovalRecord[]> =>
+      ipcRenderer.invoke(channels.approvalsHistory, agentId, limit),
+    rules: (agentId?: string): Promise<ApprovalRule[]> =>
+      ipcRenderer.invoke(channels.approvalsRules, agentId),
+    deleteRule: (id: string) => ipcRenderer.invoke(channels.approvalsDeleteRule, id),
   },
   browser: {
     preview: (agentId: string) => ipcRenderer.invoke(channels.browserPreview, agentId),

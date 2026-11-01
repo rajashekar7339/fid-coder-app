@@ -13,8 +13,10 @@ import {
   RotateCcw,
   X,
 } from "lucide-react";
+import { approvalRecordLabel } from "../../../shared/approval";
 import type {
   Agent,
+  ApprovalRecord,
   BrowserPreview,
   ChangeSet,
   FileChangeSummary,
@@ -25,6 +27,7 @@ import type {
 import { errorText, fid } from "../../lib/fid";
 import { formatNextRun, formatRelativeTime } from "../../lib/format";
 import { scheduleLabel } from "../../lib/routine-schedule";
+import { ApprovalHistoryDialog } from "../approvals/ApprovalHistoryDialog";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { ContextDialog } from "./ContextDialog";
 import { DiffView } from "./DiffView";
@@ -61,6 +64,9 @@ export function AgentDesk({
   const [rulesError, setRulesError] = useState<string | null>(null);
   const [creatingRules, setCreatingRules] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
+  const [approvals, setApprovals] = useState<ApprovalRecord[]>([]);
+  const [approvalsError, setApprovalsError] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const shellEnabled = agent.toolProfile !== "browser";
   const workspaceNote = !shellEnabled
     ? "Browser and Jira"
@@ -96,6 +102,9 @@ export function AgentDesk({
     setConfirm(null);
     setContextOpen(false);
     setError(null);
+    setApprovals([]);
+    setApprovalsError(null);
+    setHistoryOpen(false);
   }, [agent.id]);
 
   useEffect(() => {
@@ -160,6 +169,30 @@ export function AgentDesk({
       cancelled = true;
     };
   }, [agent.id, agent.workspaceDir, changes?.turnId]);
+
+  useEffect(() => {
+    let stopped = false;
+    let timer = 0;
+    async function poll() {
+      if (document.visibilityState === "visible") {
+        try {
+          const next = await fid().approvals.history(agent.id, 6);
+          if (!stopped) {
+            setApprovals(next);
+            setApprovalsError(null);
+          }
+        } catch (caught) {
+          if (!stopped) setApprovalsError(errorText(caught));
+        }
+      }
+      if (!stopped) timer = window.setTimeout(() => void poll(), 5000);
+    }
+    void poll();
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
+  }, [agent.id]);
 
   async function openBrowser() {
     setError(null);
@@ -360,6 +393,39 @@ export function AgentDesk({
 
           <section className="desk-section">
             <div className="desk-section-head">
+              <span>Approvals</span>
+              <button type="button" className="text-button" onClick={() => setHistoryOpen(true)}>
+                History
+              </button>
+            </div>
+            {approvalsError ? (
+              <p className="desk-error" role="alert">
+                {approvalsError}
+              </p>
+            ) : null}
+            {approvals.length === 0 ? (
+              <p className="desk-empty-line">No approval requests yet.</p>
+            ) : (
+              <div className="approval-desk-list">
+                {approvals.map((record) => (
+                  <div className="approval-desk-row" key={record.id}>
+                    <span className={`approval-desk-dot is-${record.decision}`} />
+                    <div className="approval-desk-copy">
+                      <code className="approval-desk-command" title={record.command}>
+                        {record.command}
+                      </code>
+                      <span className="approval-desk-meta">
+                        {approvalRecordLabel(record)} · {formatRelativeTime(record.decidedAt ?? record.createdAt)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="desk-section">
+            <div className="desk-section-head">
               <span>Routines</span>
               <button type="button" className="desk-icon-button" aria-label="Manage routines" onClick={onOpenRoutines}>
                 <Plus size={12} />
@@ -521,6 +587,7 @@ export function AgentDesk({
       ) : null}
 
       {contextOpen ? <ContextDialog agent={agent} onClose={() => setContextOpen(false)} /> : null}
+      {historyOpen ? <ApprovalHistoryDialog agent={agent} onClose={() => setHistoryOpen(false)} /> : null}
 
       {confirm === "turn" ? (
         <ConfirmDialog

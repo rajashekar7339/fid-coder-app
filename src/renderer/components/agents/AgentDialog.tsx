@@ -161,9 +161,12 @@ export function AgentDialog({
             <textarea
               className="textarea agent-instructions"
               value={systemPrompt}
+              placeholder="You are a coding agent. Help with code changes, tests, and questions about this project."
               onChange={(event) => setSystemPrompt(event.target.value)}
             />
-            <span className="field-note">This becomes the agent's system prompt.</span>
+            <span className="field-note">
+              Sent with every message. Write standing instructions, not a one-time task.
+            </span>
           </label>
 
           <div className="field">

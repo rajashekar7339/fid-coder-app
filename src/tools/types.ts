@@ -1,4 +1,5 @@
-import type { PlanStep } from "../shared/types";
+import type { HistoryPort } from "../shared/history";
+import type { ApprovalKind, ApprovalOutcome, PlanStep } from "../shared/types";
 
 export interface BrowserControl {
   navigate(agentId: string, url: string): Promise<string>;
@@ -13,6 +14,14 @@ export type CheckpointPort = {
   capture(file: string, previous: Buffer | null, existed?: boolean): void;
 };
 
+export type ApprovalToolRequest = {
+  kind: ApprovalKind;
+  title: string;
+  command: string;
+  cwd: string;
+  reason: string;
+};
+
 export type ToolContext = {
   agentId: string;
   workspaceDir: string | null;
@@ -25,6 +34,8 @@ export type ToolContext = {
   explore?: (question: string) => Promise<string>;
   checkpoint?: CheckpointPort;
   onPlan?: (steps: PlanStep[]) => void;
+  requestApproval?: (request: ApprovalToolRequest) => Promise<ApprovalOutcome>;
+  history?: HistoryPort;
 };
 
 export type AppTool = {

@@ -2062,7 +2062,7 @@
     privacy: `
       <div class="mini-data">
         <div class="path-card">
-          <b><svg class="icon sm"><use href="#i-folder"/></svg> %APPDATA%\\fid-coder\\</b>
+          <b><svg class="icon sm"><use href="#i-folder"/></svg> %USERPROFILE%\\.fid_coder_app\\</b>
           <div class="path-row">fid-coder.sqlite <span>agents · messages · routines</span></div>
           <div class="path-row">browser-profiles\\ <span>per-agent cookies and logins</span></div>
           <div class="path-row">secrets.bin.json <span>Windows-encrypted tokens</span></div>
@@ -2218,7 +2218,7 @@
       id: "privacy", group: "Reference", title: "What stays on this PC", read: "3 min read", figure: "privacy",
       intro: "Fid Coder is local-first. Conversations, agents, routines, browser profiles, and credentials live under your Windows user profile.",
       steps: [
-        ["SQLite.", "Agents, messages, routines, and settings live in %APPDATA%\\fid-coder\\fid-coder.sqlite."],
+        ["SQLite.", "Agents, messages, routines, and settings live in %USERPROFILE%\\.fid_coder_app\\fid-coder.sqlite."],
         ["Browser profiles.", "Each agent has its own folder under browser-profiles, with its own cookies and logins."],
         ["Secrets.", "Tokens live in secrets.bin.json, encrypted with Windows safeStorage."],
         ["Chat memory.", "The saved transcript is the memory. A rebuilt session sends the last 30 messages, clipped to 12,000 characters."],

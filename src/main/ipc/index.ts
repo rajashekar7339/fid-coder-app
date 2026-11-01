@@ -1,8 +1,9 @@
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { channels } from "../../shared/channels";
+import { isApprovalAction } from "../../shared/approval";
 import { normalizeModelId } from "../../shared/model";
 import { normalizeToolProfile } from "../../shared/tool-profile";
-import type { AgentInput, RoutineInput, RoutinePatch } from "../../shared/types";
+import type { AgentInput, ApprovalAction, RoutineInput, RoutinePatch } from "../../shared/types";
 import type { BrowserManager } from "../browser/browser-manager";
 import type { CheckpointStore } from "../workspace/checkpoints";
 import { assertCron, nextRunIso } from "../routines/cron";
@@ -67,6 +68,20 @@ export function registerIpc(services: AppServices): void {
   ipcMain.handle(channels.chatAbort, async (_event, agentId: string) => {
     await runner.abort(agentId);
   });
+  ipcMain.handle(channels.chatApproval, (_event, approvalId: string, action: ApprovalAction) => {
+    if (!isApprovalAction(action)) throw new Error("Unknown approval action");
+    return runner.resolveApproval(String(approvalId ?? ""), action);
+  });
+  ipcMain.handle(channels.approvalsPending, (_event, agentId?: string) =>
+    runner.listPendingApprovals(agentId ? String(agentId) : undefined),
+  );
+  ipcMain.handle(channels.approvalsHistory, (_event, agentId: string, limit?: number) =>
+    db.listApprovals(String(agentId ?? ""), limit ?? 50),
+  );
+  ipcMain.handle(channels.approvalsRules, (_event, agentId?: string) =>
+    db.listApprovalRules(agentId ? String(agentId) : undefined),
+  );
+  ipcMain.handle(channels.approvalsDeleteRule, (_event, id: string) => db.deleteApprovalRule(String(id ?? "")));
 
   ipcMain.handle(channels.browserPreview, (_event, agentId: string) => browser.preview(String(agentId ?? "")));
   ipcMain.handle(channels.browserFocus, (_event, agentId: string) => browser.focus(String(agentId ?? "")));

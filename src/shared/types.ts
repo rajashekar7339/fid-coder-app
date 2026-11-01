@@ -1,5 +1,3 @@
-export const DELETE_CONFIRM_MARKER = "DELETE_CONFIRM_REQUIRED:";
-
 export type AgentToolProfile = "all" | "browser" | "developer";
 
 export type Agent = {
@@ -31,6 +29,7 @@ export type Message = {
   role: MessageRole;
   content: string;
   createdAt: string;
+  turnId?: string | null;
 };
 
 export type Routine = {
@@ -116,12 +115,84 @@ export type ContextView = {
   };
 };
 
+export type ApprovalKind = "shell" | "tool";
+
+export type ApprovalAction = "approve" | "reject" | "always-allow" | "always-deny";
+
+export type ApprovalDecision = "allow" | "deny";
+
+export type ApprovalSource = "user" | "rule" | "timeout" | "aborted";
+
+export type ApprovalRequest = {
+  id: string;
+  agentId: string;
+  agentName: string;
+  turnId: string | null;
+  kind: ApprovalKind;
+  title: string;
+  command: string;
+  cwd: string;
+  reason: string;
+  createdAt: string;
+  expiresAt: string;
+};
+
+export type ApprovalOutcome = {
+  approved: boolean;
+  decision: ApprovalDecision;
+  source: ApprovalSource;
+  reason: string;
+};
+
+export type ApprovalRecord = {
+  id: string;
+  agentId: string;
+  agentName: string;
+  turnId: string | null;
+  kind: ApprovalKind;
+  command: string;
+  cwd: string;
+  reason: string;
+  decision: "pending" | ApprovalDecision;
+  source: ApprovalSource | null;
+  createdAt: string;
+  decidedAt: string | null;
+};
+
+export type ApprovalRule = {
+  id: string;
+  agentId: string;
+  agentName: string;
+  kind: ApprovalKind;
+  decision: ApprovalDecision;
+  match: string;
+  cwd: string;
+  createdAt: string;
+};
+
+export type ApprovalRuleInput = {
+  agentId: string;
+  kind: ApprovalKind;
+  decision: ApprovalDecision;
+  match: string;
+  cwd: string;
+};
+
 export type ChatEvent =
   | { agentId: string; type: "user"; text: string }
   | { agentId: string; type: "text"; text: string }
   | { agentId: string; type: "tool-start"; toolName: string; text?: string }
   | { agentId: string; type: "tool-end"; toolName: string; ok: boolean; text?: string }
   | { agentId: string; type: "plan"; steps: PlanStep[]; turnId: string | null }
+  | { agentId: string; type: "approval-request"; approval: ApprovalRequest }
+  | {
+      agentId: string;
+      type: "approval-resolved";
+      approvalId: string;
+      decision: ApprovalDecision;
+      source: ApprovalSource;
+      reason: string;
+    }
   | { agentId: string; type: "done"; text: string }
   | { agentId: string; type: "error"; error: string };
 

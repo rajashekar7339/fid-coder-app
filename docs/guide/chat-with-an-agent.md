@@ -26,6 +26,16 @@ Press the square stop button while the agent is working. Any partial reply is ke
 
 ## Approve a command
 
-The shell tool pauses before a delete, a git push, or a download. When that happens, a confirmation bar appears above the composer and names the command. Choose **Reject** or **Approve**. The command does not run until you approve.
+The shell tool pauses before a delete, a git push, or a download. A compact approval card appears in the conversation with the command, working folder, and risk, plus an auto-deny countdown. Choose **Reject**, **Always deny**, **Always allow**, or **Allow once**.
+
+**Always allow** and **Always deny** save a rule for that exact command and folder. Deny rules win over allow rules. Ending the turn or ignoring the countdown rejects the command. Every request and decision appears in the Agent Desk approvals history, and saved rules are under **Settings → Safety**.
+
+## Recall an older issue
+
+Ask the agent what you worked on earlier, or name the issue. It can search the saved conversation by text or date, read only the matching turn, load a small date window, or read the first message. The full transcript stays on this PC; the agent loads what it needs instead of replaying the whole conversation.
+
+## Ask for a diagram
+
+Ask for a flow, process, or architecture picture. The agent answers with a Mermaid block, and the app draws it as a diagram with zoom, horizontal scroll, and a **Source** toggle. A reply that already contains ASCII art still shows as text under a **Diagram** label.
 
 > **Tip:** Hover a reply and choose **Copy**, or use the copy button on a code block or diagram.

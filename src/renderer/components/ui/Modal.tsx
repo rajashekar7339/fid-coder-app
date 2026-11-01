@@ -10,6 +10,8 @@ type Props = {
 const FOCUSABLE =
   'a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
+const modalStack: symbol[] = [];
+
 export function Modal({ label, onClose, children, className }: Props) {
   const panel = useRef<HTMLElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
@@ -20,6 +22,8 @@ export function Modal({ label, onClose, children, className }: Props) {
   }, [onClose]);
 
   useEffect(() => {
+    const token = Symbol("modal");
+    modalStack.push(token);
     previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const frame = window.requestAnimationFrame(() => {
       const element = panel.current;
@@ -27,6 +31,7 @@ export function Modal({ label, onClose, children, className }: Props) {
     });
 
     function onKey(event: KeyboardEvent) {
+      if (modalStack[modalStack.length - 1] !== token) return;
       if (event.key === "Escape") {
         close.current();
         return;
@@ -53,6 +58,8 @@ export function Modal({ label, onClose, children, className }: Props) {
 
     window.addEventListener("keydown", onKey);
     return () => {
+      const index = modalStack.indexOf(token);
+      if (index >= 0) modalStack.splice(index, 1);
       window.cancelAnimationFrame(frame);
       window.removeEventListener("keydown", onKey);
       if (previousFocus.current?.isConnected) previousFocus.current.focus();

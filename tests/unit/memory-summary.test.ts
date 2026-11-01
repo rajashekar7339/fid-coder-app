@@ -3,10 +3,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  MEMORY_MESSAGE_WINDOW,
+  MEMORY_RECENT_MESSAGES,
   MEMORY_SUMMARY_CHARS,
   buildSessionPrompt,
   clipMemorySummary,
   memoryTurns,
+  messageWindow,
   pendingMemoryTurns,
   summaryUpdatePrompt,
 } from "../../src/shared/memory-summary.ts";
@@ -49,6 +52,40 @@ test("a fresh session without memory keeps the previous transcript shape", () =>
     freshSession: true,
   });
   assert.equal(prompt, "This turn was started by a schedule.\n\nPrevious conversation:\nuser: Hello\n\nUser: Again");
+});
+
+test("a fresh session includes the current time and message timestamps", () => {
+  const prompt = buildSessionPrompt({
+    summary: "Project is a PowerShell benchmark harness.",
+    prior: [
+      {
+        role: "user",
+        content: "Read project and give me full description of it.",
+        createdAt: "2026-10-31T19:20:00.000Z",
+      },
+      {
+        role: "assistant",
+        content: "Project overview: the harness runs Ollama benchmarks.",
+        createdAt: "2026-10-31T19:21:00.000Z",
+      },
+    ],
+    latest: "hi",
+    routine: false,
+    freshSession: true,
+    now: "2026-10-31T19:30:00.000Z",
+  });
+  assert.match(prompt, /^Current time: 2026-10-31T19:30:00\.000Z/);
+  assert.match(prompt, /Last message: 2026-10-31T19:21:00\.000Z/);
+  assert.match(prompt, /\[2026-10-31T19:20:00\.000Z\] user: Read project/);
+  assert.match(prompt, /\[2026-10-31T19:21:00\.000Z\] assistant: Project overview/);
+  assert.match(prompt, /User: hi$/);
+});
+
+test("a summary shrinks the fresh-session transcript window", () => {
+  assert.equal(messageWindow(true), MEMORY_RECENT_MESSAGES);
+  assert.equal(messageWindow(false), MEMORY_MESSAGE_WINDOW);
+  assert.equal(MEMORY_RECENT_MESSAGES, 6);
+  assert.equal(MEMORY_MESSAGE_WINDOW, 30);
 });
 
 test("a fresh session with only a summary still includes it", () => {
