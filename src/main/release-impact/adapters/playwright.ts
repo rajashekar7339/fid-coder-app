@@ -10,8 +10,8 @@ export type ParsedTest = {
   signals: ChangeSignals;
 };
 
-const TEST_LINE = /\b(?:test|it)(?:\.(?:only|skip|fixme))?\(\s*(['"`])(.*)\1/;
-const DESCRIBE_LINE = /\b(?:test\.)?describe(?:\.(?:only|skip))?\(\s*(['"`])(.*)\1/;
+const TEST_LINE = /\b(?:test|it)(?:\.(?:only|skip|fixme))?\(\s*(['"`])(.*?)\1/;
+const DESCRIBE_LINE = /\b(?:test\.)?describe(?:\.(?:only|skip))?\(\s*(['"`])(.*?)\1/;
 
 export function parsePlaywright(content: string, caseIdPattern?: string): ParsedTest[] {
   const lines = content.split(/\r?\n/);

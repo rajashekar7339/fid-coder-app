@@ -1,7 +1,8 @@
-import type { ImpactRisk, NewScenario, SelectedTest, TestTier } from "./types";
+import type { ImpactRisk, NewScenario, RepoRole, SelectedTest, TestTier } from "./types";
 
 export const DEFAULT_MAX_CHANGED_FILES = 400;
 
+// Suggested safety paths. They apply only when policy.fullRegression lists them.
 export const DEFAULT_FULL_REGRESSION = [
   "**/auth/**",
   "**/security/**",
@@ -66,6 +67,7 @@ export type ScoreRule = {
 export type PolicyChange = {
   idPath: string;
   workspacePath: string;
+  role: RepoRole;
 };
 
 export type ScoreInput = {
@@ -107,26 +109,36 @@ export function matchGlob(glob: string, file: string): boolean {
   return globToRegExp(pattern).test(target);
 }
 
+const BROAD_MAP_TESTS = 40;
+const BROAD_MAP_SHARE = 0.25;
+
 export function scoreRelease(input: ScoreInput): ScoreOutput {
-  const globs = input.fullRegressionGlobs ?? DEFAULT_FULL_REGRESSION;
+  const globs = input.fullRegressionGlobs ?? [];
   const reasons: string[] = [];
   const unknowns: string[] = [];
   const policyChanges = input.policyChanges ?? input.changes;
-  if (input.changedFileCount > input.maxChangedFiles) {
-    reasons.push(`Changed files (${input.changedFileCount}) exceed the limit of ${input.maxChangedFiles}.`);
+  const sourcePolicyChanges = policyChanges.filter((change) => change.role !== "automation");
+  const changedFileCount = input.policyChanges ? sourcePolicyChanges.length : input.changedFileCount;
+  if (changedFileCount > input.maxChangedFiles) {
+    unknowns.push(
+      `Source/contract changed files (${changedFileCount}) exceed the review limit of ${input.maxChangedFiles}. The matched tests are still the selection.`,
+    );
   }
-  for (const change of policyChanges) {
-    if (globs.some((glob) => matchesPaths(glob, change))) {
-      reasons.push(`Full regression path changed: ${change.workspacePath}`);
-    }
-    if (input.contractPaths.some((glob) => matchesPaths(glob, change))) {
-      reasons.push(`Contract file changed: ${change.workspacePath}`);
-    }
+  reasons.push(...groupedPathReasons(sourcePolicyChanges, globs, "Full regression path"));
+  reasons.push(...groupedPathReasons(sourcePolicyChanges, input.contractPaths, "Contract file"));
+
+  const broadRules = input.explicit.filter((rule) => isBroadMap(rule, input.tests));
+  const broadKeys = new Set(broadRules.map(ruleKey));
+  for (const rule of broadRules) {
+    const reach = testsForRule(rule, input.tests).length;
+    unknowns.push(
+      `Mapping ${rule.match} matches ${reach} of ${input.tests.length} tests. Those tests are selected only when a signal also matches. Narrow the map to a folder.`,
+    );
   }
 
   const hits: Hit[] = [];
   for (const test of input.tests) {
-    const hit = scoreTest(test, input.changes, input.explicit);
+    const hit = scoreTest(test, input.changes, input.explicit, broadKeys);
     if (hit) hits.push(hit);
   }
   hits.sort((a, b) => b.score - a.score || a.test.workspacePath.localeCompare(b.test.workspacePath) || a.test.name.localeCompare(b.test.name));
@@ -140,9 +152,11 @@ export function scoreRelease(input: ScoreInput): ScoreOutput {
     hits.some((hit) => hit.tier === "must" && hit.evidence.some((item) => evidenceMatchesPath(item, change.workspacePath))),
   );
   const mappingCoverage = sourceChanges.length === 0 ? 1 : matched.length / sourceChanges.length;
+  const uncovered = uncoveredNote(sourceChanges, hits);
+  if (uncovered) unknowns.push(uncovered);
   if (input.minMappingCoverage != null && sourceChanges.length > 0 && mappingCoverage < input.minMappingCoverage) {
-    reasons.push(
-      `Mapping coverage ${mappingCoverage.toFixed(2)} is below ${input.minMappingCoverage.toFixed(2)}.`,
+    unknowns.push(
+      `Mapping coverage ${mappingCoverage.toFixed(2)} is below ${input.minMappingCoverage.toFixed(2)}. The must-run list is still the selection.`,
     );
   }
 
@@ -177,7 +191,52 @@ export function scoreRelease(input: ScoreInput): ScoreOutput {
   };
 }
 
-function scoreTest(test: ScoreTest, changes: ScoreChange[], explicit: ScoreRule[]): Hit | null {
+function groupedPathReasons(changes: PolicyChange[], globs: string[], label: string): string[] {
+  const reasons: string[] = [];
+  for (const glob of globs) {
+    const matched = changes.filter((change) => matchesPaths(glob, change));
+    if (matched.length === 0) continue;
+    const count = matched.length === 1 ? "" : ` (${matched.length} files)`;
+    reasons.push(`${label} ${glob} changed${count}: ${matched[0].workspacePath}`);
+  }
+  return reasons;
+}
+
+function isBroadMap(rule: ScoreRule, tests: ScoreTest[]): boolean {
+  if (tests.length === 0) return false;
+  const reach = testsForRule(rule, tests).length;
+  return reach > BROAD_MAP_TESTS && reach / tests.length > BROAD_MAP_SHARE;
+}
+
+function testsForRule(rule: ScoreRule, tests: ScoreTest[]): ScoreTest[] {
+  return tests.filter((test) => rule.tests.some((glob) => matchesTest(glob, test)));
+}
+
+function ruleKey(rule: ScoreRule): string {
+  return `${rule.match}\0${rule.tests.join("\0")}`;
+}
+
+function uncoveredNote(changes: ScoreChange[], hits: Hit[]): string | null {
+  const covered = new Set<string>();
+  for (const hit of hits) {
+    if (hit.tier !== "must") continue;
+    for (const item of hit.evidence) covered.add(item.replace(/:\d+$/, ""));
+  }
+  const folders = new Map<string, number>();
+  for (const change of changes) {
+    if (covered.has(change.workspacePath)) continue;
+    const folder = change.workspacePath.split("/").slice(0, -1).join("/") || ".";
+    folders.set(folder, (folders.get(folder) ?? 0) + 1);
+  }
+  if (folders.size === 0) return null;
+  const top = [...folders.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 6);
+  const text = top.map(([folder, count]) => `${folder} (${count})`).join(", ");
+  const rest = folders.size - top.length;
+  const more = rest > 0 ? `, and ${rest} more folders` : "";
+  return `Uncovered source folders: ${text}${more}.`;
+}
+
+function scoreTest(test: ScoreTest, changes: ScoreChange[], explicit: ScoreRule[], broadKeys: Set<string>): Hit | null {
   let score = 0;
   const reasons: string[] = [];
   const evidence: string[] = [];
@@ -193,6 +252,7 @@ function scoreTest(test: ScoreTest, changes: ScoreChange[], explicit: ScoreRule[
       remember(change.workspacePath, change.line);
     }
     for (const rule of explicit) {
+      if (broadKeys.has(ruleKey(rule))) continue;
       if (!matchesChange(rule.match, change)) continue;
       if (!rule.tests.some((glob) => matchesTest(glob, test))) continue;
       score = Math.max(score, 100);

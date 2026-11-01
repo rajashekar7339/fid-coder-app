@@ -256,7 +256,7 @@ A fixture MCP server's tools appear in an agent's Context view, a call shows up 
 
 ### 6. Configurable release impact analyst
 
-**Status:** v1 in the app. Custom adapters, Jira lookups, and a scheduled routine are not included.
+**Status:** v1 in the app. A large diff keeps the prioritized tests. Full regression is only for configured policy paths, contract files, a failed adapter, or an unreadable repo. Custom adapters, Jira lookups, and a scheduled routine are not included.
 **Size:** L, 2–3 weeks for a reusable v1
 **Depends on:** #2 for shell safety; multi-repo workspace support is recommended, but the standalone CLI works with a parent folder today
 **Track:** separate use-case track
@@ -423,12 +423,14 @@ Field reference:
 | `repos[].prod`, `repos[].candidate` | No | Git refs or SHAs; a release manifest can supply them |
 | `repos[].testGlobs` | Automation only | Files the adapter indexes |
 | `repos[].caseIdPattern` | No | Regex for stable test IDs such as `TC-1042` |
-| `ignore` | No | Diff paths the engine never analyzes |
+| `ignore` | No | Diff paths and automation test files the engine never scans. Folders named `Deprecated` in the automation repo are always skipped |
 | `mapping.explicit[]` | No | Team-owned code-to-test rules; highest confidence |
 | `mapping.contracts[]` | No | OpenAPI, GraphQL, or protobuf files used for contract checks |
-| `policy.fullRegression` | No | Paths that always force the full suite |
-| `policy.minMappingCoverage` | No | Below this coverage, recommend full regression |
-| `policy.maxChangedFiles` | No | Above this count, recommend full regression |
+| `policy.fullRegression` | No | Source or contract paths that always force the full suite; automation test changes do not trigger it |
+| `policy.minMappingCoverage` | No | Below this coverage, add a note. The selected tests stay |
+| `policy.maxChangedFiles` | No | Above this source/contract changed-file count, add a note. The selected tests stay; automation test changes do not count |
+| `policy.maxDetailFiles` | No | Changed files that get signal extraction; default 400 |
+| `policy.maxTestFiles` | No | Test files indexed from the automation repo; default 500 |
 | `policy.allowCustomAdapters` | No | Opt in to loading a team-provided adapter module |
 | `outputs.*` | Yes | Report and selection paths under `artifacts/`, and CI format |
 | `jira.*` | No | Turn commit/PR ticket keys into Jira lookups |
@@ -573,16 +575,11 @@ Selection formats:
 
 Full-regression triggers:
 
-- Auth, security, payments, shared/core libraries.
-- Database migrations or schema changes.
-- API contracts or event schemas.
-- Build, dependency, or runtime changes.
-- More than `policy.maxChangedFiles`.
-- Mapping coverage below `policy.minMappingCoverage`.
+- A path listed in `policy.fullRegression`.
+- A changed file listed in `mapping.contracts`.
 - Adapter failure or unreadable refs.
-- Agent confidence low or claims without evidence.
 
-The report must put a full-regression recommendation at the top, before the selected tests.
+The report names a full-regression trigger before the selected tests. The selected tests stay the list to run. File count and mapping coverage are notes, not full-regression triggers. A map that matches most of the suite selects a test only when a signal also matches.
 
 #### Fid Coder integration
 

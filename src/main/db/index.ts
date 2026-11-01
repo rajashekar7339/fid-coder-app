@@ -20,7 +20,7 @@ import type {
   RoutineInput,
   RoutinePatch,
 } from "../../shared/types";
-import { ANALYST_DESCRIPTION, ANALYST_NAME, ANALYST_PROMPT } from "../release-impact/preset";
+import { ANALYST_DESCRIPTION, ANALYST_NAME, ANALYST_PROMPT, PREVIOUS_ANALYST_PROMPTS } from "../release-impact/preset";
 
 type AgentRow = {
   id: string;
@@ -192,6 +192,7 @@ export class AppDatabase {
     this.migrate();
     this.seed();
     this.ensureReleaseAnalyst();
+    this.refreshAnalystPrompt();
   }
 
   close(): void {
@@ -397,6 +398,19 @@ export class AppDatabase {
         .run(crypto.randomUUID(), ANALYST_NAME, ANALYST_DESCRIPTION, ANALYST_PROMPT, AUTO_MODEL_ID, "analyst", now, now);
     }
     this.setSetting("seeded_release_analyst", "1");
+  }
+
+  private refreshAnalystPrompt(): void {
+    if (this.getSetting("analyst_prompt_rev") === "2") return;
+    const row = this.db.prepare("SELECT id, system_prompt FROM agents WHERE name = ?").get(ANALYST_NAME) as
+      | { id: string; system_prompt: string }
+      | undefined;
+    if (row && PREVIOUS_ANALYST_PROMPTS.includes(row.system_prompt)) {
+      this.db
+        .prepare("UPDATE agents SET system_prompt = ?, updated_at = ? WHERE id = ?")
+        .run(ANALYST_PROMPT, new Date().toISOString(), row.id);
+    }
+    this.setSetting("analyst_prompt_rev", "2");
   }
 
   private seed(): void {

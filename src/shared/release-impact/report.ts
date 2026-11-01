@@ -3,10 +3,10 @@ import type { SelectedTest, SelectedTests, SelectionFormat } from "./types";
 export function renderReport(selection: SelectedTests): string {
   const lines = ["# Release impact", "", "## Full regression", ""];
   if (selection.fullRegression) {
-    lines.push("Yes. Run the full suite.");
+    lines.push("Also run the full suite. The must-run and should-run tests below stay the first slice to review.");
     for (const reason of selection.fullRegressionReasons) lines.push(`- ${reason}`);
   } else {
-    lines.push("No. The selected tests cover this diff.");
+    lines.push("No. Run the selected tests. A large diff does not by itself require the full suite.");
   }
   lines.push("", "## Refs", "");
   for (const id of Object.keys(selection.release.candidate).sort()) {

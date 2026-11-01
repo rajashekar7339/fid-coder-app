@@ -5,8 +5,8 @@ import { renderReport, renderSelection } from "../../shared/release-impact/repor
 import { DEFAULT_MAX_CHANGED_FILES, scoreRelease } from "../../shared/release-impact/score";
 import type { ImpactConfig, ImpactSummary, SelectedTests } from "../../shared/release-impact/types";
 import { isInsideWorkspace } from "../../tools/workspace";
-import { indexAutomation } from "./adapters";
-import { collectRelease, type ResolvedRepo } from "./collect";
+import { DEFAULT_MAX_TEST_FILES, indexAutomation } from "./adapters";
+import { collectRelease, DEFAULT_MAX_DETAIL_FILES, type ResolvedRepo } from "./collect";
 import { loadImpactConfig, readManifest } from "./config";
 
 const SUMMARY_MUST = 20;
@@ -48,11 +48,16 @@ export async function analyzeRelease(request: AnalyzeRequest): Promise<AnalyzeRe
     manifest,
     manifest ? null : request.prod ?? null,
     manifest ? null : request.candidate ?? null,
+    config.policy?.maxDetailFiles ?? DEFAULT_MAX_DETAIL_FILES,
   );
   if (collected.missingGit) return failed(2, ["git was not found on PATH"]);
   const paths = outputPaths(config, request.outputDir);
   if (!paths) return failed(2, ["--output must stay inside the workspace"]);
-  const indexed = await indexAutomation(collected.repos);
+  const indexed = await indexAutomation(
+    collected.repos,
+    config.policy?.maxTestFiles ?? DEFAULT_MAX_TEST_FILES,
+    config.ignore ?? [],
+  );
   const contractPaths = contractGlobs(config);
   const scored = scoreRelease({
     changes: collected.changes,
@@ -69,14 +74,22 @@ export async function analyzeRelease(request: AnalyzeRequest): Promise<AnalyzeRe
   const reasons = [...scored.fullRegressionReasons];
   if (indexed.failed) reasons.push("The test adapter failed or found no tests, so the selection is incomplete.");
   if (collected.repos.some((repo) => repo.error)) reasons.push("One or more repos could not be diffed.");
-  const selection = buildSelection(config, collected.repos, scored, [...unknowns, ...collected.unknowns, ...indexed.unknowns, ...scored.unknowns], reasons);
+  const selection = buildSelection(config, collected.repos, scored, [...scored.unknowns, ...unknowns, ...collected.unknowns, ...indexed.unknowns], reasons);
   if (!request.dryRun) {
     const written = writeOutputs(request.workspaceDir, paths, selection, request.outputRoot);
     if (written) return failed(2, [written]);
   }
+  const sourceChangedFiles = collected.policyChanges.filter((change) => change.role !== "automation").length;
   return {
     exitCode: selection.fullRegression ? 3 : 0,
-    summary: toSummary(selection, collected.commits, collected.policyChanges.map((change) => change.workspacePath), paths, []),
+    summary: toSummary(
+      selection,
+      collected.commits,
+      collected.policyChanges.map((change) => change.workspacePath),
+      sourceChangedFiles,
+      paths,
+      [],
+    ),
     selection,
   };
 }
@@ -100,12 +113,23 @@ export async function doctorImpact(workspaceDir: string, configPath?: string | n
     }
     manifest = read.manifest;
   }
-  const collected = await collectRelease(workspaceDir, config, manifest, null, null);
+  const collected = await collectRelease(
+    workspaceDir,
+    config,
+    manifest,
+    null,
+    null,
+    config.policy?.maxDetailFiles ?? DEFAULT_MAX_DETAIL_FILES,
+  );
   if (collected.missingGit) {
     lines.push("error: git was not found on PATH");
     return { exitCode: 2, text: lines.join("\n") };
   }
-  const indexed = await indexAutomation(collected.repos);
+  const indexed = await indexAutomation(
+    collected.repos,
+    config.policy?.maxTestFiles ?? DEFAULT_MAX_TEST_FILES,
+    config.ignore ?? [],
+  );
   for (const unknown of indexed.unknowns) {
     lines.push(`${indexed.failed ? "error" : "warning"}: ${unknown}`);
   }
@@ -227,6 +251,7 @@ function toSummary(
   selection: SelectedTests,
   commits: string[],
   paths: string[],
+  sourceChangedFiles: number,
   outputs: { report: string; selection: string },
   errors: string[],
 ): ImpactSummary {
@@ -237,8 +262,10 @@ function toSummary(
     fullRegression: selection.fullRegression,
     fullRegressionReasons: selection.fullRegressionReasons.slice(0, 10),
     changedFiles: paths.length,
+    sourceChangedFiles,
     commits: commits.slice(0, 20),
     paths: paths.slice(0, 40),
+    areas: areasOf(selection),
     mustRun: selection.mustRun.slice(0, SUMMARY_MUST),
     mustRunTotal: selection.mustRun.length,
     shouldRun: selection.shouldRun.slice(0, SUMMARY_SHOULD),
@@ -252,6 +279,22 @@ function toSummary(
   };
 }
 
+function areasOf(selection: SelectedTests): ImpactSummary["areas"] {
+  const counts = new Map<string, { must: number; should: number }>();
+  const add = (file: string, tier: "must" | "should") => {
+    const folder = file.split("/").slice(0, -1).join("/") || ".";
+    const row = counts.get(folder) ?? { must: 0, should: 0 };
+    row[tier] += 1;
+    counts.set(folder, row);
+  };
+  for (const test of selection.mustRun) add(test.file, "must");
+  for (const test of selection.shouldRun) add(test.file, "should");
+  return [...counts.entries()]
+    .map(([folder, row]) => ({ folder, must: row.must, should: row.should }))
+    .sort((a, b) => b.must - a.must || b.should - a.should || a.folder.localeCompare(b.folder))
+    .slice(0, 8);
+}
+
 function failed(exitCode: 2, errors: string[]): AnalyzeResult {
   return {
     exitCode,
@@ -263,8 +306,10 @@ function failed(exitCode: 2, errors: string[]): AnalyzeResult {
       fullRegression: false,
       fullRegressionReasons: [],
       changedFiles: 0,
+      sourceChangedFiles: 0,
       commits: [],
       paths: [],
+      areas: [],
       mustRun: [],
       mustRunTotal: 0,
       shouldRun: [],

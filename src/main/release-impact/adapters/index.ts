@@ -1,10 +1,11 @@
 import { matchGlob, type ScoreTest } from "../../../shared/release-impact/score";
+import { isDeprecatedPath } from "../../../shared/release-impact/paths";
 import type { ResolvedRepo } from "../collect";
 import { gitOutput } from "../git";
 import { parseGeneric } from "./generic";
 import { parsePlaywright } from "./playwright";
 
-const FILE_LIMIT = 200;
+export const DEFAULT_MAX_TEST_FILES = 500;
 const inventoryCache = new Map<string, ScoreTest[]>();
 
 const DEFAULT_GLOBS: Record<string, string[]> = {
@@ -26,7 +27,11 @@ export type IndexResult = {
   counts: Record<string, number>;
 };
 
-export async function indexAutomation(repos: ResolvedRepo[]): Promise<IndexResult> {
+export async function indexAutomation(
+  repos: ResolvedRepo[],
+  fileLimit: number = DEFAULT_MAX_TEST_FILES,
+  ignoreGlobs: string[] = [],
+): Promise<IndexResult> {
   const tests: ScoreTest[] = [];
   const unknowns: string[] = [];
   const counts: Record<string, number> = {};
@@ -44,7 +49,7 @@ export async function indexAutomation(repos: ResolvedRepo[]): Promise<IndexResul
     }
     const framework = (repo.framework || "generic").toLowerCase();
     const globs = repo.testGlobs?.length ? repo.testGlobs : DEFAULT_GLOBS[framework] ?? DEFAULT_GLOBS.generic;
-    const cacheKey = `${repo.id}:${repo.absolute}:${repo.candidateSha}:${framework}:${globs.join("|")}:${repo.caseIdPattern ?? ""}`;
+    const cacheKey = `${repo.id}:${repo.absolute}:${repo.candidateSha}:${framework}:${fileLimit}:${globs.join("|")}:${repo.caseIdPattern ?? ""}:${ignoreGlobs.join("|")}`;
     const cached = inventoryCache.get(cacheKey);
     if (cached) {
       counts[repo.id] = cached.length;
@@ -60,14 +65,20 @@ export async function indexAutomation(repos: ResolvedRepo[]): Promise<IndexResul
     const files = listed.text
       .split("\n")
       .map((line) => line.trim().replace(/\\/g, "/"))
-      .filter((file) => file && globs.some((glob) => matchGlob(glob, file)));
+      .filter(
+        (file) =>
+          file &&
+          !isDeprecatedPath(file) &&
+          !ignoreGlobs.some((glob) => matchGlob(glob, file)) &&
+          globs.some((glob) => matchGlob(glob, file)),
+      );
     if (files.length === 0) {
       failed = true;
       unknowns.push(`${repo.id} adapter found no test files.`);
       continue;
     }
     const indexed: ScoreTest[] = [];
-    for (const file of files.slice(0, FILE_LIMIT)) {
+    for (const file of files.slice(0, fileLimit)) {
       const shown = await gitOutput(repo.absolute, ["show", `${repo.candidateSha}:${file}`]);
       if (!shown.ok) continue;
       if (shown.text.includes("…truncated")) unknowns.push(`${repo.id} ${file} was truncated while indexing.`);
@@ -88,7 +99,11 @@ export async function indexAutomation(repos: ResolvedRepo[]): Promise<IndexResul
         });
       }
     }
-    if (files.length > FILE_LIMIT) unknowns.push(`${repo.id} indexed the first ${FILE_LIMIT} of ${files.length} test files.`);
+    if (files.length > fileLimit) {
+      unknowns.push(
+        `${repo.id} indexed the first ${fileLimit} of ${files.length} test files. Raise policy.maxTestFiles to index more.`,
+      );
+    }
     if (indexed.length === 0) {
       failed = true;
       unknowns.push(`${repo.id} adapter could not read any tests.`);

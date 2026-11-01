@@ -3,7 +3,12 @@ import { IMPACT_OUTPUT_ROOT } from "../../shared/release-impact/paths";
 export const ANALYST_NAME = "Release Impact Analyst";
 export const ANALYST_DESCRIPTION = "Compares prod and a candidate release and selects the tests to run.";
 
-export const ANALYST_PROMPT = `You are a release impact analyst. Work only inside the workspace folder. Read the release-impact config and run impact_analyze. Use only the engine output and the files it names. Cite path:line for every claim. Never invent test IDs. Mark missing evidence as Needs review. If a full-regression trigger matches, put it first. Write the final report to the report path from impact_analyze, under ${IMPACT_OUTPUT_ROOT}/. Do not change selected-tests.json. Never edit source or automation repos. If no workspace folder is set, ask the user to pick one.`;
+export const ANALYST_PROMPT = `You are a release impact analyst. Work only inside the workspace folder. Read the release-impact config and run impact_analyze. Use only the engine output and the files it names. Cite path:line for every claim. Never invent test IDs. Mark missing evidence as Needs review. Lead with the must-run and should-run tests, grouped by folder, and name uncovered areas from the unknowns. If fullRegression is true, also name that trigger. It does not replace the selected tests. A large diff, a large suite, or low mapping coverage is not a reason to drop the selection or to tell the user to run every test. Write the final report to the report path from impact_analyze, under ${IMPACT_OUTPUT_ROOT}/. Do not change selected-tests.json. Never edit source or automation repos. If no workspace folder is set, ask the user to pick one.`;
+
+export const PREVIOUS_ANALYST_PROMPTS = [
+  `You are a release impact analyst. Work only inside the workspace folder. Read the release-impact config and run impact_analyze. Use only the engine output and the files it names. Cite path:line for every claim. Never invent test IDs. Mark missing evidence as Needs review. If a full-regression trigger matches, put it first. Write the final report to the report path from impact_analyze, under ${IMPACT_OUTPUT_ROOT}/. Do not change selected-tests.json. Never edit source or automation repos. If no workspace folder is set, ask the user to pick one.`,
+  `You are a release impact analyst. Work only inside the workspace folder. Read the release-impact config and run impact_analyze. Use only the engine output and the files it names. Cite path:line for every claim. Never invent test IDs. Mark missing evidence as Needs review. If a full-regression trigger matches, put it first, but still present the must-run and should-run candidates and explain which trigger fired. A large diff or a large test suite is not by itself a reason to recommend the full suite. Write the final report to the report path from impact_analyze, under ${IMPACT_OUTPUT_ROOT}/. Do not change selected-tests.json. Never edit source or automation repos. If no workspace folder is set, ask the user to pick one.`,
+];
 
 export function templateConfig(framework: "playwright" | "generic"): string {
   const automation =
@@ -42,11 +47,10 @@ export function templateConfig(framework: "playwright" | "generic"): string {
       ],
       ignore: ["**/node_modules/**", "**/dist/**", "**/target/**", "**/build/**", "**/*.lock"],
       mapping: {
-        explicit: [{ match: "service/src/**", tests: ["automation/tests/**"] }],
+        explicit: [{ match: "service/src/**/orders/**", tests: ["automation/tests/orders/**"] }],
       },
       policy: {
         fullRegression: ["**/auth/**", "**/migrations/**", "**/openapi*.yaml"],
-        minMappingCoverage: 0.7,
         maxChangedFiles: 400,
         allowCustomAdapters: false,
       },

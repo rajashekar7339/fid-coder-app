@@ -104,6 +104,18 @@ export function ImpactReport({ selection, error }: Props) {
               </ul>
             </>
           ) : null}
+          {selection.unknowns.length > 0 ? (
+            <>
+              <p className="desk-note">Notes</p>
+              <ul className="impact-list">
+                {selection.unknowns.slice(0, 5).map((unknown) => (
+                  <li key={unknown}>
+                    <span className="impact-name">{unknown}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
           {(selection.optionalRun?.length ?? 0) > 0 ? (
             <p className="desk-note">{selection.optionalRun.length} optional tests are in the selection file.</p>
           ) : null}

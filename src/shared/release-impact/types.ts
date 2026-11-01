@@ -38,6 +38,8 @@ export type ImpactPolicy = {
   fullRegression?: string[];
   minMappingCoverage?: number;
   maxChangedFiles?: number;
+  maxDetailFiles?: number;
+  maxTestFiles?: number;
   allowCustomAdapters?: boolean;
 };
 
@@ -107,6 +109,12 @@ export type SelectedTests = {
   selectionText: string;
 };
 
+export type ImpactArea = {
+  folder: string;
+  must: number;
+  should: number;
+};
+
 export type ImpactSummary = {
   ok: boolean;
   exitCode: 0 | 2 | 3;
@@ -114,8 +122,10 @@ export type ImpactSummary = {
   fullRegression: boolean;
   fullRegressionReasons: string[];
   changedFiles: number;
+  sourceChangedFiles: number;
   commits: string[];
   paths: string[];
+  areas: ImpactArea[];
   mustRun: SelectedTest[];
   mustRunTotal: number;
   shouldRun: SelectedTest[];

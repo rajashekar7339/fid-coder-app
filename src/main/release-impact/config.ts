@@ -38,7 +38,14 @@ const REPO_KEYS = new Set([
 const MAPPING_KEYS = new Set(["explicit", "contracts"]);
 const RULE_KEYS = new Set(["match", "tests"]);
 const CONTRACT_KEYS = new Set(["repo", "type", "path"]);
-const POLICY_KEYS = new Set(["fullRegression", "minMappingCoverage", "maxChangedFiles", "allowCustomAdapters"]);
+const POLICY_KEYS = new Set([
+  "fullRegression",
+  "minMappingCoverage",
+  "maxChangedFiles",
+  "maxDetailFiles",
+  "maxTestFiles",
+  "allowCustomAdapters",
+]);
 const OUTPUT_KEYS = new Set(["report", "selection", "selectionFormat"]);
 const JIRA_KEYS = new Set(["enabled", "projectKeys"]);
 const ROLES = new Set<RepoRole>(["source", "automation", "contract"]);
@@ -295,6 +302,16 @@ function readPolicy(value: unknown, errors: string[]): ImpactConfig["policy"] | 
     if (typeof value.maxChangedFiles !== "number" || !Number.isInteger(value.maxChangedFiles) || value.maxChangedFiles < 1) {
       errors.push("policy.maxChangedFiles must be a positive integer");
     } else policy.maxChangedFiles = value.maxChangedFiles;
+  }
+  if (value.maxDetailFiles != null) {
+    if (typeof value.maxDetailFiles !== "number" || !Number.isInteger(value.maxDetailFiles) || value.maxDetailFiles < 1) {
+      errors.push("policy.maxDetailFiles must be a positive integer");
+    } else policy.maxDetailFiles = value.maxDetailFiles;
+  }
+  if (value.maxTestFiles != null) {
+    if (typeof value.maxTestFiles !== "number" || !Number.isInteger(value.maxTestFiles) || value.maxTestFiles < 1) {
+      errors.push("policy.maxTestFiles must be a positive integer");
+    } else policy.maxTestFiles = value.maxTestFiles;
   }
   if (value.allowCustomAdapters != null) {
     if (typeof value.allowCustomAdapters !== "boolean") errors.push("policy.allowCustomAdapters must be a boolean");

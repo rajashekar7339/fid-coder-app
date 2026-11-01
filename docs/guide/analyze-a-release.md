@@ -130,6 +130,8 @@ node D:\fid-coder-desktop-app\dist\cli\release-impact.js analyze --dry-run
 
 `doctor` validates the config, refs, test discovery, and adapter. Fix every error before continuing. `--dry-run` runs the deterministic pipeline without writing files.
 
+The automation adapter always skips any folder named `Deprecated` (case-insensitive). Add other exclusions to `ignore`; that list now applies to automation test discovery as well as the source diff.
+
 ## Run the analysis
 
 ```powershell
@@ -159,7 +161,30 @@ The agent calls `impact_analyze`, reads the files named in the result, and write
 
 ## Full regression
 
-A full-regression recommendation is shown before the selected tests. The engine triggers it for policy paths, contract changes, too many changed files, low mapping coverage, an adapter failure, or an unreadable repo. When it fires, run the full suite and use the selected tests as the first evidence to review.
+Full regression is extra. The must-run and should-run lists are still the selection. The engine recommends the full suite only for a path in `policy.fullRegression`, a changed contract file, an adapter that found no tests, or a repo that could not be diffed. A large diff, a large suite, and low mapping coverage stay in the notes.
+
+## Large releases
+
+For a release with 100+ source files or 300+ automation tests, the report names the matched tests by folder and lists source folders that no must-run test covers.
+
+1. Map a source folder to the tests for that folder, for example `service/src/**/orders/**` to `automation/tests/orders/**`. A map that matches most of the suite does not mark every test must-run. Tests in that map are selected when an endpoint, selector, symbol, or module name also matches.
+2. Put only safety paths in `policy.fullRegression`, such as `**/auth/**` and `**/migrations/**`. Leave out `**/package.json`, `**/pom.xml`, and `**/*.proto` unless a change there should run the whole suite.
+3. If the report says it analyzed or indexed only a prefix, raise `policy.maxDetailFiles` or `policy.maxTestFiles`.
+4. `policy.maxChangedFiles` and `policy.minMappingCoverage` add a note. They do not replace the selected tests.
+
+```json
+"mapping": {
+  "explicit": [
+    { "match": "service/src/**/orders/**", "tests": ["automation/tests/orders/**"] },
+    { "match": "service/src/**/billing/**", "tests": ["automation/tests/billing/**"] }
+  ]
+},
+"policy": {
+  "fullRegression": ["**/auth/**", "**/migrations/**"],
+  "maxDetailFiles": 800,
+  "maxTestFiles": 1000
+}
+```
 
 ## Selection formats
 

@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import type { ImpactConfig, RepoRole } from "../../shared/release-impact/types";
+import { isDeprecatedPath } from "../../shared/release-impact/paths";
 import { matchGlob, type ChangeSignals, type PolicyChange, type ScoreChange } from "../../shared/release-impact/score";
 import { isInsideWorkspace } from "../../tools/workspace";
 import type { ReleaseManifest } from "./config";
@@ -17,7 +18,7 @@ const ALWAYS_IGNORE = [
   "**/yarn.lock",
 ];
 const BINARY = /\.(png|jpe?g|gif|webp|ico|pdf|zip|jar|dll|exe|woff2?|ttf|mp[34]|bin)$/i;
-const DETAIL_LIMIT = 40;
+export const DEFAULT_MAX_DETAIL_FILES = 400;
 const TICKET = /\b[A-Z][A-Z0-9]+-\d+\b/g;
 const ENDPOINT = /["'`](\/(?:api|v\d+)\/[A-Za-z0-9_./{}:-]+)["'`]/g;
 const SELECTOR = /data-testid\s*=\s*["']([^"']+)["']|getByTestId\(\s*["']([^"']+)["']/g;
@@ -53,6 +54,7 @@ export async function collectRelease(
   manifest: ReleaseManifest | null,
   prodOverride: string | null,
   candidateOverride: string | null,
+  detailLimit: number = DEFAULT_MAX_DETAIL_FILES,
 ): Promise<CollectResult> {
   const repos: ResolvedRepo[] = [];
   const unknowns: string[] = [];
@@ -146,7 +148,8 @@ export async function collectRelease(
     for (const item of parsed) {
       const idPath = `${repo.id}/${item.path}`;
       const workspacePath = repo.relative === "." ? item.path : `${repo.relative}/${item.path}`;
-      policyChanges.push({ idPath, workspacePath });
+      if (repo.role === "automation" && isDeprecatedPath(item.path)) continue;
+      policyChanges.push({ idPath, workspacePath, role: repo.role });
       if (ignored(idPath, workspacePath, ignore) || BINARY.test(item.path)) continue;
       changes.push({
         idPath,
@@ -159,9 +162,11 @@ export async function collectRelease(
     }
   }
 
-  const detailed = changes.slice(0, DETAIL_LIMIT);
-  if (changes.length > DETAIL_LIMIT) {
-    unknowns.push(`Signal extraction covered the first ${DETAIL_LIMIT} of ${changes.length} analyzed changed files.`);
+  const detailed = changes.slice(0, detailLimit);
+  if (changes.length > detailLimit) {
+    unknowns.push(
+      `Signal extraction covered the first ${detailLimit} of ${changes.length} analyzed changed files. Raise policy.maxDetailFiles to analyze more.`,
+    );
   }
   for (const change of detailed) {
     const repo = repos.find((item) => change.idPath.startsWith(`${item.id}/`));

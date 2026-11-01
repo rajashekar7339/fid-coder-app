@@ -53,10 +53,13 @@ async function analyze(workspace: string): Promise<number> {
   const summary = result.summary;
   console.log(`Full regression: ${summary.fullRegression ? "yes" : "no"}`);
   console.log(`Changed files: ${summary.changedFiles}`);
+  console.log(`Source/contract changed files: ${summary.sourceChangedFiles}`);
   console.log(`Must run: ${summary.mustRunTotal}`);
   console.log(`Should run: ${summary.shouldRunTotal}`);
+  for (const area of summary.areas) console.log(`Area: ${area.folder} must ${area.must} should ${area.should}`);
   if (summary.selectionText) console.log(`Selection: ${summary.selectionText}`);
   for (const reason of summary.fullRegressionReasons) console.log(`- ${reason}`);
+  for (const unknown of summary.unknowns) console.log(`note: ${unknown}`);
   if (process.argv.includes("--dry-run")) console.log("Dry run. No files written.");
   else {
     console.log(`Wrote ${summary.report}`);
