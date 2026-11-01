@@ -457,7 +457,7 @@ function UsageCard({
   loading: boolean;
   onRefresh: (force?: boolean) => Promise<void>;
 }) {
-  const percent = usage?.remainingPercent ?? null;
+  const percent = usage?.usedPercent ?? null;
   const level = usageLevel(percent, usage?.blocked ?? false);
   const reset = formatUsageReset(usage?.resetsAt);
   const note = usage?.blocked
@@ -511,7 +511,7 @@ function UsageCard({
                 <UsageBar
                   percent={percent}
                   blocked={usage.blocked}
-                  label={`${usage.label}: ${formatUsageCount(percent)}% remaining`}
+                  label={`${usage.label}: ${formatUsageCount(percent)}% used`}
                 />
                 <span className={`usage-percent is-${level}`}>{formatUsageCount(percent)}%</span>
               </div>

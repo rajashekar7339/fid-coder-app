@@ -16,7 +16,7 @@ import { agentSubtitle, isRecentlyActive } from "../../lib/agent-display";
 import { formatRelativeTime } from "../../lib/format";
 import { AgentAvatar } from "../agents/AgentAvatar";
 import { BrandMark } from "../ui/BrandMark";
-import { UsageBar } from "../ui/UsageBar";
+import { UsageBar, usageLevel } from "../ui/UsageBar";
 
 export type CopilotPresence = "unknown" | "checking" | "ready" | "out";
 
@@ -281,14 +281,21 @@ export function Sidebar({
               <span className={`presence-dot ${signedIn ? "is-ready" : "is-off"}`} />
               {copilotLabel(copilotPresence)}
             </span>
-            {usage && !usage.unlimited && usage.remainingPercent !== null ? (
-              <UsageBar
-                percent={usage.remainingPercent}
-                blocked={usage.blocked}
-                label={`Copilot ${usage.label.toLowerCase()}: ${formatUsageCount(usage.remainingPercent)}% remaining`}
-                title={usageTitle(usage)}
-                className="is-compact"
-              />
+            {usage && !usage.unlimited && usage.usedPercent !== null ? (
+              <span className="account-usage">
+                <UsageBar
+                  percent={usage.usedPercent}
+                  blocked={usage.blocked}
+                  label={`Copilot ${usage.label.toLowerCase()}: ${formatUsageCount(usage.usedPercent)}% used`}
+                  title={usageTitle(usage)}
+                  className="is-compact"
+                />
+                <span
+                  className={`usage-percent is-compact is-${usageLevel(usage.usedPercent, usage.blocked)}`}
+                >
+                  {formatUsageCount(usage.usedPercent)}%
+                </span>
+              </span>
             ) : null}
           </span>
           <Settings size={14} aria-hidden="true" className="account-settings" />

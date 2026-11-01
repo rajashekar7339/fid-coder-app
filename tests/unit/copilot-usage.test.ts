@@ -35,6 +35,7 @@ test("premium requests win over a finite chat snapshot", () => {
   assert.equal(usage.included, 300);
   assert.equal(usage.remaining, 158);
   assert.equal(usage.remainingPercent, 52.7);
+  assert.equal(usage.usedPercent, 47.3);
   assert.equal(usage.overage, 0);
   assert.equal(usage.blocked, false);
   assert.equal(usage.resetsAt, "2026-11-01");
@@ -60,6 +61,7 @@ test("an unlimited premium snapshot stays the primary view", () => {
   assert.equal(usage.included, null);
   assert.equal(usage.remaining, null);
   assert.equal(usage.remainingPercent, null);
+  assert.equal(usage.usedPercent, null);
   assert.equal(usage.used, 4);
   assert.equal(usage.blocked, false);
 });
@@ -88,10 +90,33 @@ test("reports remaining, overage, and a blocked allowance", () => {
   });
   assert.ok(usage);
   assert.equal(usage.remaining, 0);
+  assert.equal(usage.usedPercent, 100);
   assert.equal(usage.overage, 12);
   assert.equal(usage.blocked, true);
   assert.equal(usage.resetsAt, "2026-11-01T00:00:00.000Z");
   assert.equal(formatUsageReset("2026-11-01"), "1 Nov 2026");
+});
+
+test("a fresh allowance reports zero percent used", () => {
+  const usage = normalizeCopilotUsage({
+    premium_interactions: {
+      entitlementRequests: 10_000,
+      usedRequests: 0,
+      remainingPercentage: 100,
+    },
+  });
+  assert.ok(usage);
+  assert.equal(usage.remainingPercent, 100);
+  assert.equal(usage.usedPercent, 0);
+});
+
+test("derives used percent from the reported remaining percentage", () => {
+  const usage = normalizeCopilotUsage({
+    premium_interactions: { usedRequests: 0, remainingPercentage: 63 },
+  });
+  assert.ok(usage);
+  assert.equal(usage.remainingPercent, 63);
+  assert.equal(usage.usedPercent, 37);
 });
 
 test("uses the first finite snapshot when premium requests are absent", () => {
@@ -127,6 +152,7 @@ test("keeps one decimal on fractional usage", () => {
   assert.ok(usage);
   assert.equal(usage.used, 1.3);
   assert.equal(usage.remaining, 8.7);
+  assert.equal(usage.usedPercent, 13);
   assert.equal(usage.overage, 0.2);
   assert.equal(formatUsageCount(usage.used), "1.3");
   assert.equal(formatUsageCount(2), "2");
@@ -149,6 +175,7 @@ test("reads snake_case quota fields and ignores a bad reset date", () => {
   assert.equal(usage.used, 40);
   assert.equal(usage.included, 100);
   assert.equal(usage.remainingPercent, 60);
+  assert.equal(usage.usedPercent, 40);
   assert.equal(usage.overage, 1);
   assert.equal(usage.resetsAt, null);
   assert.equal(formatUsageReset("not-a-date"), null);

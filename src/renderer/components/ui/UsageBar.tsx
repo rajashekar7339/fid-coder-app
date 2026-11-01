@@ -1,8 +1,9 @@
 export type UsageLevel = "ok" | "low" | "critical";
 
+// The bar fills with quota used, so a high percentage is the warning state.
 export function usageLevel(percent: number | null, blocked = false): UsageLevel {
-  if (blocked || (percent !== null && percent < 10)) return "critical";
-  if (percent !== null && percent < 30) return "low";
+  if (blocked || (percent !== null && percent > 90)) return "critical";
+  if (percent !== null && percent > 70) return "low";
   return "ok";
 }
 

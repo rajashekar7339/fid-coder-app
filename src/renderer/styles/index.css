@@ -1123,6 +1123,17 @@ kbd {
   margin-top: 1px;
 }
 
+.account-usage {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.account-usage .usage-bar {
+  flex: 1;
+  margin-top: 0;
+}
+
 .account-settings {
   flex: none;
   color: var(--faint);
@@ -3715,6 +3726,11 @@ kbd {
 
 .usage-percent.is-critical {
   color: var(--danger);
+}
+
+.usage-percent.is-compact {
+  min-width: 30px;
+  font-size: 9px;
 }
 
 .usage-meta {
