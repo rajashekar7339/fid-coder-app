@@ -692,7 +692,6 @@ function MessageRow({
 
 function ToolGroup({ calls, pendingId }: { calls: Message[]; pendingId: string | null }) {
   const live = calls.some((call) => call.id.startsWith("live-tool-"));
-  const card = useRef<HTMLDetailsElement>(null);
   const names = calls.map((call) => {
     const split = splitTool(call.content);
     const meta = toolMeta(split.name);
@@ -700,12 +699,8 @@ function ToolGroup({ calls, pendingId }: { calls: Message[]; pendingId: string |
   });
   const summary = pendingId ? names.slice(-2).join(" · ") : names.slice(0, 2).join(" · ");
 
-  useEffect(() => {
-    if (live) card.current?.setAttribute("open", "");
-  }, [live]);
-
   return (
-    <details ref={card} className={live ? "tool-card is-live" : "tool-card"}>
+    <details className={live ? "tool-card is-live" : "tool-card"}>
       <summary>
         <span className="tool-check">
           {pendingId && live ? <Loader2 size={11} className="spin" aria-hidden="true" /> : <Wrench size={11} aria-hidden="true" />}
