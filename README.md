@@ -18,10 +18,13 @@ npm run dev
 
 `npm run dev` builds the main and preload processes, starts Vite on `127.0.0.1:5173`, and launches Electron. Set `FID_CODER_DEVTOOLS=1` to open DevTools, or `FID_CODER_USER_DATA=<folder>` to run against an isolated profile.
 
+`build:node` clears `dist` first. Without that, compiled files from an older source layout (`dist/main/ipc.js`) shadow the current modules (`dist/main/ipc/index.js`) and Electron runs old handlers.
+
 ## Scripts
 
 | Command | What it does |
 |---|---|
+| `npm run clean` | Delete `dist` |
 | `npm run dev` | Build main/preload, start Vite, and launch Electron |
 | `npm run build` | Build main, preload, and renderer |
 | `npm start` | Launch Electron against the Vite dev server on port 5173 |
