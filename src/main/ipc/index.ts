@@ -20,6 +20,7 @@ import type { AppDatabase } from "../db";
 import type { Runner } from "../chat/runner";
 import type { Scheduler } from "../routines/scheduler";
 import { clearSecret, secretKeys, setSecret } from "../secrets";
+import { readImpactSelection } from "../release-impact/index";
 import { createAgentsFile, ruleFilePath, workspaceRules } from "../workspace/workspace-rules";
 
 type AppServices = {
@@ -91,7 +92,12 @@ export function registerIpc(services: AppServices): void {
   ipcMain.handle(channels.changesRevert, (_event, changeId: string) => checkpoints.revert(String(changeId ?? "")));
   ipcMain.handle(channels.changesRevertTurn, (_event, turnId: string) => checkpoints.revertTurn(String(turnId ?? "")));
 
-  ipcMain.handle(channels.plansGet, (_event, agentId: string) => db.getPlan(String(agentId ?? "")));
+  ipcMain.handle(channels.impactLatest, (_event, agentId: string) => {
+    const agent = db.getAgent(String(agentId ?? ""));
+    if (!agent?.workspaceDir) return null;
+    return readImpactSelection(agent.workspaceDir);
+  });
+
   ipcMain.handle(channels.contextPreview, (_event, agentId: string) =>
     runner.previewContext(String(agentId ?? "")),
   );

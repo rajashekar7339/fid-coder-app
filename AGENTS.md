@@ -26,6 +26,9 @@ src/
     history/        history.ts
     routines/       scheduler.ts, cron.ts, notify.ts
     workspace/      checkpoints.ts, explore-session.ts, workspace-brief.ts, workspace-rules.ts
+    release-impact/ config, collect, adapters, and the analyze engine
+  cli/
+    release-impact.ts
   preload/
     index.ts
   renderer/
@@ -33,19 +36,21 @@ src/
     main.tsx
     styles/index.css
     components/
-      chat/         ChatView, MessageContent, PlanStrip
+      chat/         ChatView, MessageContent
       approvals/    ApprovalCard, ApprovalHistoryDialog
       agents/       AgentDialog, AgentAvatar
       sidebar/      Sidebar
       settings/     SettingsDialog
-      desk/         AgentDesk, ContextDialog, DiffView
+      desk/         AgentDesk, ContextDialog, DiffView, ImpactReport
       routines/     RoutinesDialog
       help/         HelpDialog, GuideContent
       ui/           Modal, Switch, ConfirmDialog, BrandMark, UsageBar, ModelSelect
     lib/            fid, format, guide, markdown, schedule, highlight
   shared/           types, channels, api, and other pure helpers
+    release-impact/ config types, paths, scoring, and report text
   tools/
-    registry.ts     args.ts, process.ts, types.ts, workspace.ts, plan.ts
+    registry.ts     args.ts, process.ts, types.ts, workspace.ts
+    release/impact.ts
     browser/browser.ts
     files/files.ts
     git/git.ts
@@ -70,6 +75,7 @@ docs/
 |---|---|
 | Types and channel names | `src/shared` |
 | A Copilot tool | `src/tools/<area>/<file>.ts` |
+| Release impact engine | `src/main/release-impact` and `src/shared/release-impact`. No Electron imports. |
 | Rows in SQLite | `src/main/db/index.ts` |
 | An IPC handler | `src/main/ipc/index.ts` |
 | The preload method | the existing list in `src/preload/index.ts` |

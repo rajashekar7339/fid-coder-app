@@ -16,12 +16,11 @@ import type {
   FileChangeKind,
   Message,
   MessageRole,
-  PlanStep,
-  PlanView,
   Routine,
   RoutineInput,
   RoutinePatch,
 } from "../../shared/types";
+import { ANALYST_DESCRIPTION, ANALYST_NAME, ANALYST_PROMPT } from "../release-impact/preset";
 
 type AgentRow = {
   id: string;
@@ -82,13 +81,6 @@ type FileChangeRow = {
   deletions: number;
   note: string | null;
   created_at: string;
-};
-
-type PlanRow = {
-  agent_id: string;
-  turn_id: string | null;
-  steps: string;
-  updated_at: string;
 };
 
 type ApprovalRow = {
@@ -199,6 +191,7 @@ export class AppDatabase {
     this.db.exec("PRAGMA foreign_keys = ON");
     this.migrate();
     this.seed();
+    this.ensureReleaseAnalyst();
   }
 
   close(): void {
@@ -287,13 +280,6 @@ export class AppDatabase {
         UNIQUE(turn_id, path)
       );
       CREATE INDEX IF NOT EXISTS idx_file_changes_agent ON file_changes(agent_id);
-
-      CREATE TABLE IF NOT EXISTS plans (
-        agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
-        turn_id TEXT,
-        steps TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
 
       CREATE TABLE IF NOT EXISTS approvals (
         id TEXT PRIMARY KEY,
@@ -396,6 +382,21 @@ export class AppDatabase {
       if (!/^[0-9a-f-]{36}$/i.test(row.id)) continue;
       fs.rmSync(path.join(path.dirname(this.file), "browser-profiles", row.id), { recursive: true, force: true });
     }
+  }
+
+  private ensureReleaseAnalyst(): void {
+    if (this.getSetting("seeded_release_analyst") === "1") return;
+    const existing = this.db.prepare("SELECT id FROM agents WHERE name = ?").get(ANALYST_NAME);
+    if (!existing) {
+      const now = new Date().toISOString();
+      this.db
+        .prepare(
+          `INSERT INTO agents (id, name, description, system_prompt, workspace_dir, model, tool_profile, created_at, updated_at)
+           VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+        )
+        .run(crypto.randomUUID(), ANALYST_NAME, ANALYST_DESCRIPTION, ANALYST_PROMPT, AUTO_MODEL_ID, "analyst", now, now);
+    }
+    this.setSetting("seeded_release_analyst", "1");
   }
 
   private seed(): void {
@@ -715,33 +716,6 @@ export class AppDatabase {
       throw error;
     }
     return rows.map((row) => ({ id: row.id, agentId: row.agent_id }));
-  }
-
-  getPlan(agentId: string): PlanView | null {
-    const row = this.db.prepare("SELECT * FROM plans WHERE agent_id = ?").get(agentId) as PlanRow | undefined;
-    if (!row) return null;
-    return {
-      agentId,
-      turnId: row.turn_id,
-      steps: readPlanSteps(row.steps),
-      updatedAt: row.updated_at,
-    };
-  }
-
-  setPlan(agentId: string, turnId: string | null, steps: PlanStep[]): PlanView {
-    const updatedAt = new Date().toISOString();
-    this.db
-      .prepare(
-        `INSERT INTO plans (agent_id, turn_id, steps, updated_at)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(agent_id) DO UPDATE SET turn_id = excluded.turn_id, steps = excluded.steps, updated_at = excluded.updated_at`,
-      )
-      .run(agentId, turnId, JSON.stringify(steps), updatedAt);
-    return { agentId, turnId, steps, updatedAt };
-  }
-
-  clearPlan(agentId: string): void {
-    this.db.prepare("DELETE FROM plans WHERE agent_id = ?").run(agentId);
   }
 
   createApproval(input: {
@@ -1070,24 +1044,6 @@ function readApprovalDecision(value: string): "pending" | ApprovalDecision {
 
 function readApprovalSource(value: string | null): ApprovalSource | null {
   return value === "user" || value === "rule" || value === "timeout" || value === "aborted" ? value : null;
-}
-
-function readPlanSteps(raw: string): PlanStep[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return [];
-  }
-  if (!Array.isArray(parsed)) return [];
-  return parsed.filter((item): item is PlanStep => {
-    if (!item || typeof item !== "object") return false;
-    const step = item as { text?: unknown; status?: unknown };
-    return (
-      typeof step.text === "string" &&
-      (step.status === "pending" || step.status === "in_progress" || step.status === "done")
-    );
-  });
 }
 
 function readModel(value: string | null | undefined): string {

@@ -1,4 +1,4 @@
-// Live end-to-end test for the plan strip, turn changes/revert, workspace rules,
+// Live end-to-end test for turn changes/revert, workspace rules,
 // and the context inspector.
 //
 // Usage:
@@ -171,8 +171,7 @@ async function main() {
         window.fid.agents.create({
           name: "Live Test Agent",
           description: "Temporary agent for UI verification",
-          systemPrompt:
-            "You are a careful coding agent. Use tools when asked. For every task with multiple steps, call set_plan first and update it as you go. Keep replies short.",
+          systemPrompt: "You are a careful coding agent. Use tools when asked. Keep replies short.",
           workspaceDir: folder,
           model: "auto",
           toolProfile: "developer",
@@ -195,35 +194,20 @@ async function main() {
       return;
     }
 
-    // ---- Turn 1: plan + file changes ----
+    // ---- Turn 1: file changes ----
     await sendAndWait(
       page,
       [
-        "Use set_plan for this task before doing anything.",
         "Steps:",
         "1. Read demo.ts with file_read.",
         "2. Use apply_patch to change \"export const greeting = 'hello';\" to \"export const greeting = 'hi';\".",
         "3. Use file_write to create notes.md containing exactly: first note",
-        "Do not use shell_run. Mark each plan step done as you finish it. Keep the final reply to one short sentence.",
+        "Do not use shell_run. Keep the final reply to one short sentence.",
       ].join("\n"),
     );
 
     const reply1 = await lastAssistantText(page);
     check("turn 1 produced an assistant reply", reply1.trim().length > 0, reply1.replace(/\s+/g, " ").slice(0, 120));
-
-    const planCount = await page.locator(".plan-strip").count();
-    check("plan strip is visible", planCount > 0);
-    if (planCount > 0) {
-      await page.locator(".plan-head").click();
-      await page.waitForTimeout(300);
-      const planText = await page.locator(".plan-strip").innerText();
-      check(
-        "plan lists the requested steps",
-        /demo\.ts|file_read|hello|notes\.md/i.test(planText),
-        planText.replace(/\s+/g, " ").slice(0, 160),
-      );
-      await shot(page, "02-plan");
-    }
 
     const demoAfterTurn = fs.readFileSync(path.join(workspace, "demo.ts"), "utf8");
     const notesPath = path.join(workspace, "notes.md");
@@ -302,25 +286,10 @@ async function main() {
     await page.waitForSelector(".rule-row", { timeout: 15_000 });
     const ruleRows = await page.locator(".rule-row").allInnerTexts();
     check("project rules lists AGENTS.md", ruleRows.some((row) => row.includes("AGENTS.md")), JSON.stringify(ruleRows));
-    check("plan persisted across reload", (await page.locator(".plan-strip").count()) > 0);
 
     await sendAndWait(page, "What is 2 + 2? Answer in one short sentence.");
     const reply2 = await lastAssistantText(page);
     check("rules were applied to the turn", /banana/i.test(reply2), reply2.replace(/\s+/g, " ").slice(0, 160));
-
-    const planAfterTurn2 = await page.locator(".plan-strip").count();
-    check("plan stays visible on a second message", planAfterTurn2 > 0);
-    if (planAfterTurn2 > 0) {
-      const planHead = page.locator(".plan-head");
-      if ((await planHead.getAttribute("aria-expanded")) !== "true") await planHead.click();
-      await page.locator(".plan-steps").waitFor({ state: "visible", timeout: 5_000 });
-      const planText2 = await page.locator(".plan-steps").innerText();
-      check(
-        "plan keeps the first turn's steps",
-        /demo\.ts|notes\.md/i.test(planText2),
-        planText2.replace(/\s+/g, " ").slice(0, 160),
-      );
-    }
 
     await page.locator('.agent-desk button:has-text("Context")').click();
     await page.waitForSelector(".context-modal", { timeout: 15_000 });
@@ -328,7 +297,6 @@ async function main() {
     await page.waitForTimeout(400);
     const contextText = await page.locator(".context-modal .context-body").innerText();
     check("context shows project rules", /Project rules/.test(contextText) && /BANANA/.test(contextText));
-    check("context shows the set_plan tool", /set_plan/.test(contextText));
     check("context shows the workspace brief", /Workspace brief/.test(contextText));
     await shot(page, "07-context");
   } finally {

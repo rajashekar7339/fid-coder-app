@@ -10,7 +10,6 @@ import {
   Folder,
   Globe2,
   Keyboard,
-  ListChecks,
   Loader2,
   MousePointerClick,
   PanelRight,
@@ -22,7 +21,7 @@ import {
 } from "lucide-react";
 import { groupToolCalls, liveTurnSettled, projectThread, userTurnAccepted, type LiveTool, type LiveTurn } from "../../../shared/chat-thread";
 import { summarizeTool } from "../../../shared/summary";
-import type { Agent, ApprovalAction, ApprovalRequest, ChatEvent, CopilotModel, Message, PlanStep } from "../../../shared/types";
+import type { Agent, ApprovalAction, ApprovalRequest, ChatEvent, CopilotModel, Message } from "../../../shared/types";
 import { agentSubtitle } from "../../lib/agent-display";
 import { errorText, fid } from "../../lib/fid";
 import { formatClock, formatDay, formatNextRun } from "../../lib/format";
@@ -30,7 +29,6 @@ import { AgentAvatar } from "../agents/AgentAvatar";
 import { ApprovalCard } from "../approvals/ApprovalCard";
 import { MessageContent } from "./MessageContent";
 import { ModelSelect } from "../ui/ModelSelect";
-import { PlanStrip } from "./PlanStrip";
 
 type Props = {
   agent: Agent;
@@ -73,11 +71,11 @@ const TOOL_META: Record<string, ToolMeta> = {
   gh_pr_view: { label: "Read a pull request", active: "Reading a pull request", Icon: Terminal },
   gh_pr_diff: { label: "Read a pull request diff", active: "Reading a pull request diff", Icon: Terminal },
   explore_code: { label: "Explored the code", active: "Exploring the code", Icon: ScanSearch },
-  set_plan: { label: "Updated the plan", active: "Updating the plan", Icon: ListChecks },
   history_first: { label: "Read the first message", active: "Reading the first message", Icon: Clock3 },
   history_search: { label: "Searched history", active: "Searching history", Icon: ScanSearch },
   history_turn: { label: "Read an earlier turn", active: "Reading an earlier turn", Icon: FileText },
   history_context: { label: "Loaded history", active: "Loading history", Icon: FileText },
+  impact_analyze: { label: "Analyzed the release", active: "Analyzing the release", Icon: ScanSearch },
 };
 
 const liveByAgent = new Map<string, LiveTurn>();
@@ -142,7 +140,6 @@ export function ChatView({
 }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [live, setLiveState] = useState<LiveTurn | null>(() => liveByAgent.get(agent.id) ?? null);
-  const [plan, setPlan] = useState<PlanStep[] | null>(null);
   const [draft, setDraft] = useState("");
   const [running, setRunning] = useState(() => liveByAgent.has(agent.id));
   const [error, setError] = useState<string | null>(null);
@@ -199,14 +196,6 @@ export function ChatView({
         if (!cancelled && generation.current === gen) setError(errorText(caught));
       });
 
-    void fid()
-      .plans.get(agent.id)
-      .then((next) => {
-        if (cancelled || generation.current !== gen) return;
-        setPlan(next && next.steps.length > 0 ? next.steps : null);
-      })
-      .catch(() => undefined);
-
     const id = fid().chat.onEvent((event: ChatEvent) => {
       if (event.agentId !== agent.id || generation.current !== gen) return;
       if (event.type === "user") {
@@ -251,9 +240,6 @@ export function ChatView({
           const tools = finishLiveTool(current.tools ?? [], event.toolName, event.ok, event.text ?? "");
           return { ...current, tools };
         });
-      }
-      if (event.type === "plan") {
-        setPlan(event.steps.length > 0 ? event.steps : null);
       }
       if (event.type === "done" || event.type === "error") {
         if (event.type === "error") {
@@ -546,8 +532,6 @@ export function ChatView({
           {error}
         </p>
       ) : null}
-
-      <PlanStrip steps={plan ?? []} running={running} />
 
       <form
         className="composer-dock"

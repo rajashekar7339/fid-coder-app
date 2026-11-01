@@ -12,7 +12,6 @@ import type {
   CopilotModel,
   FileDiff,
   Message,
-  PlanView,
   Routine,
   RoutineInput,
   RoutinePatch,
@@ -20,6 +19,7 @@ import type {
   WorkspaceRuleFile,
 } from "./types";
 import type { CopilotUsageResult } from "./copilot-usage";
+import type { SelectedTests } from "./release-impact/types";
 
 export interface FidApi {
   agents: {
@@ -56,11 +56,11 @@ export interface FidApi {
     revert: (changeId: string) => Promise<void>;
     revertTurn: (turnId: string) => Promise<void>;
   };
-  plans: {
-    get: (agentId: string) => Promise<PlanView | null>;
-  };
   context: {
     preview: (agentId: string) => Promise<ContextView>;
+  };
+  impact: {
+    latest: (agentId: string) => Promise<SelectedTests | null>;
   };
   workspace: {
     rules: (agentId: string) => Promise<WorkspaceRuleFile[]>;

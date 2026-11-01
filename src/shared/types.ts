@@ -1,4 +1,4 @@
-export type AgentToolProfile = "all" | "browser" | "developer";
+export type AgentToolProfile = "all" | "browser" | "developer" | "analyst";
 
 export type Agent = {
   id: string;
@@ -44,20 +44,6 @@ export type Routine = {
   nextRunAt: string | null;
   lastStatus: string | null;
   createdAt: string;
-  updatedAt: string;
-};
-
-export type PlanStepStatus = "pending" | "in_progress" | "done";
-
-export type PlanStep = {
-  text: string;
-  status: PlanStepStatus;
-};
-
-export type PlanView = {
-  agentId: string;
-  turnId: string | null;
-  steps: PlanStep[];
   updatedAt: string;
 };
 
@@ -183,7 +169,6 @@ export type ChatEvent =
   | { agentId: string; type: "text"; text: string }
   | { agentId: string; type: "tool-start"; toolName: string; text?: string }
   | { agentId: string; type: "tool-end"; toolName: string; ok: boolean; text?: string }
-  | { agentId: string; type: "plan"; steps: PlanStep[]; turnId: string | null }
   | { agentId: string; type: "approval-request"; approval: ApprovalRequest }
   | {
       agentId: string;

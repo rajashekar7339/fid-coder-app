@@ -4487,129 +4487,6 @@ kbd {
   }
 }
 
-/* ---------- Plan strip ---------- */
-
-.plan-strip {
-  flex: none;
-  width: calc(100% - 56px);
-  max-width: 650px;
-  margin: 0 auto;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  background: rgba(255, 255, 255, 0.022);
-}
-
-.plan-head {
-  width: 100%;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 7px 10px;
-  color: var(--faint);
-  text-align: left;
-}
-
-.plan-head:hover {
-  background: rgba(255, 255, 255, 0.022);
-}
-
-.plan-head > svg:first-child {
-  flex: none;
-  color: var(--lime);
-}
-
-.plan-title {
-  flex: none;
-  color: var(--text);
-  font-size: 10px;
-  font-weight: 540;
-}
-
-.plan-count {
-  flex: none;
-  color: var(--faint);
-  font-family: var(--font-mono);
-  font-size: 9px;
-}
-
-.plan-current {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--faint);
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.plan-chevron {
-  flex: none;
-  color: var(--faint-2);
-  transition: transform 120ms ease;
-}
-
-.plan-chevron.is-open {
-  transform: rotate(180deg);
-}
-
-.plan-steps {
-  max-height: 190px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  margin: 0;
-  padding: 7px 10px 9px;
-  overflow-y: auto;
-  border-top: 1px solid var(--line);
-  list-style: none;
-}
-
-.plan-step {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  color: var(--muted);
-  font-size: 10.4px;
-  line-height: 1.4;
-}
-
-.plan-step.is-done {
-  color: var(--faint);
-}
-
-.plan-step.is-in_progress {
-  color: var(--text);
-}
-
-.plan-mark {
-  width: 12px;
-  height: 14px;
-  flex: none;
-  display: inline-grid;
-  place-items: center;
-  color: var(--faint-2);
-}
-
-.plan-step.is-done .plan-mark {
-  color: var(--success);
-}
-
-.plan-step.is-in_progress .plan-mark {
-  color: var(--lime);
-}
-
-.plan-step-text {
-  min-width: 0;
-}
-
-@media (max-width: 1024px) {
-  .plan-strip {
-    width: calc(100% - 44px);
-  }
-}
-
 /* ---------- Changes ---------- */
 
 .desk-section-head .text-button {
@@ -4695,6 +4572,47 @@ kbd {
   color: var(--faint-2);
   font-size: 9.4px;
   line-height: 1.45;
+}
+
+.impact-banner {
+  margin: 8px 0 0;
+  padding: 7px 8px;
+  border-radius: 6px;
+  background: rgba(155, 216, 133, 0.08);
+  color: var(--success);
+  font-size: 12px;
+}
+
+.impact-banner.is-full {
+  background: rgba(242, 146, 134, 0.1);
+  color: var(--danger);
+}
+
+.impact-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.impact-list li + li {
+  margin-top: 6px;
+}
+
+.impact-id {
+  display: block;
+  color: var(--lime);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.impact-name,
+.impact-file {
+  display: block;
+}
+
+.impact-file {
+  color: var(--faint-2);
+  font-size: 11px;
 }
 
 /* ---------- Approvals ---------- */

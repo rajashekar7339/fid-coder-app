@@ -35,8 +35,8 @@ const channels = {
   changesDiff: "changes:diff",
   changesRevert: "changes:revert",
   changesRevertTurn: "changes:revert-turn",
-  plansGet: "plans:get",
   contextPreview: "context:preview",
+  impactLatest: "impact:latest",
   workspaceRules: "workspace:rules",
   workspaceCreateRules: "workspace:create-rules",
   workspaceOpenRule: "workspace:open-rule",
@@ -111,11 +111,11 @@ const api: FidApi = {
     revert: (changeId: string) => ipcRenderer.invoke(channels.changesRevert, changeId),
     revertTurn: (turnId: string) => ipcRenderer.invoke(channels.changesRevertTurn, turnId),
   },
-  plans: {
-    get: (agentId: string) => ipcRenderer.invoke(channels.plansGet, agentId),
-  },
   context: {
     preview: (agentId: string) => ipcRenderer.invoke(channels.contextPreview, agentId),
+  },
+  impact: {
+    latest: (agentId: string) => ipcRenderer.invoke(channels.impactLatest, agentId),
   },
   workspace: {
     rules: (agentId: string) => ipcRenderer.invoke(channels.workspaceRules, agentId),

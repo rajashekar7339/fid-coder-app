@@ -1,5 +1,5 @@
 import type { HistoryPort } from "../shared/history";
-import type { ApprovalKind, ApprovalOutcome, PlanStep } from "../shared/types";
+import type { ApprovalKind, ApprovalOutcome } from "../shared/types";
 
 export interface BrowserControl {
   navigate(agentId: string, url: string): Promise<string>;
@@ -25,6 +25,7 @@ export type ApprovalToolRequest = {
 export type ToolContext = {
   agentId: string;
   workspaceDir: string | null;
+  writeRoot?: string;
   model?: string;
   turnId?: string;
   browser: BrowserControl;
@@ -33,7 +34,6 @@ export type ToolContext = {
   jiraSite: string | null;
   explore?: (question: string) => Promise<string>;
   checkpoint?: CheckpointPort;
-  onPlan?: (steps: PlanStep[]) => void;
   requestApproval?: (request: ApprovalToolRequest) => Promise<ApprovalOutcome>;
   history?: HistoryPort;
 };
