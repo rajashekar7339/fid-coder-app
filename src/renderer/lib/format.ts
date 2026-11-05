@@ -58,6 +58,15 @@ export function formatCount(count: number): string {
   return Math.round(count).toLocaleString();
 }
 
+export function formatCredits(nanoAiu: number): string {
+  const credits = Math.max(0, nanoAiu) / 1_000_000_000;
+  if (!Number.isFinite(credits) || credits === 0) return "0";
+  if (credits < 0.001) return "<0.001";
+  if (credits < 0.01) return credits.toFixed(4);
+  if (credits < 1) return credits.toFixed(3);
+  return credits.toFixed(2);
+}
+
 function sameDay(left: Date, right: Date): boolean {
   return (
     left.getFullYear() === right.getFullYear() &&

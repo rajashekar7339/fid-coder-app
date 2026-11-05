@@ -24,6 +24,8 @@ export type CopilotModel = {
 
 export type MessageRole = "user" | "assistant" | "tool";
 
+export type CreditStatus = "complete" | "partial" | "unavailable";
+
 export type TokenUsage = {
   inputTokens: number;
   outputTokens: number;
@@ -32,6 +34,10 @@ export type TokenUsage = {
   reasoningTokens: number;
   modelCalls: number;
   model: string | null;
+  isAuto: boolean;
+  nanoAiu: number;
+  creditCalls: number;
+  creditStatus: CreditStatus;
 };
 
 export type Message = {
@@ -90,10 +96,24 @@ export type FileDiff = {
   note: string | null;
 };
 
+export type SkillSource = "workspace" | "app" | "copilot" | "builtin";
+
 export type SkillInfo = {
   id: string;
   name: string;
   description: string;
+  source: SkillSource;
+  chars: number;
+};
+
+export type SkillContent = SkillInfo & {
+  path: string;
+  body: string;
+};
+
+export type SkillCatalog = {
+  skills: SkillInfo[];
+  warnings: string[];
 };
 
 export type WorkspaceRuleFile = {
@@ -221,7 +241,7 @@ export type AgentInput = {
   model: string;
   toolProfile: AgentToolProfile;
   memoryEnabled: boolean;
-  skillIds?: string[];
+  skillIds: string[];
 };
 
 export type BrowserPreview = {

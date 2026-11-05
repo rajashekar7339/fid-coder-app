@@ -1,9 +1,11 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { FolderOpen, X } from "lucide-react";
 import { AUTO_MODEL_ID } from "../../../shared/model";
+import { MAX_SKILLS, MAX_SKILL_CHARS, MAX_SKILLS_CHARS } from "../../../shared/skills";
 import { DEFAULT_TOOL_PROFILE } from "../../../shared/tool-profile";
-import type { Agent, AgentToolProfile, CopilotModel, SkillInfo } from "../../../shared/types";
+import type { Agent, AgentToolProfile, CopilotModel, SkillContent, SkillInfo, SkillSource } from "../../../shared/types";
 import { errorText, fid } from "../../lib/fid";
+import { formatCount } from "../../lib/format";
 import { AgentAvatar } from "./AgentAvatar";
 import { Modal } from "../ui/Modal";
 import { ModelSelect } from "../ui/ModelSelect";
@@ -23,6 +25,13 @@ type Props = {
 const DEFAULT_INSTRUCTIONS = "You are a helpful local assistant. Use tools when they help the user.";
 const MEMORY_PREVIEW_CHARS = 320;
 const MEMORY_PREVIEW_LINES = 4;
+
+const SOURCE_LABELS: Record<SkillSource, string> = {
+  workspace: "Workspace",
+  app: "Your skills",
+  copilot: "Copilot",
+  builtin: "Built-in",
+};
 
 function memoryPreview(text: string): string {
   const first = text.split(/\r?\n/).slice(0, MEMORY_PREVIEW_LINES).join("\n");
@@ -55,25 +64,36 @@ export function AgentDialog({
   const [clearingMemory, setClearingMemory] = useState(false);
   const [skillIds, setSkillIds] = useState<string[]>(agent?.skillIds ?? []);
   const [catalog, setCatalog] = useState<SkillInfo[]>([]);
-  const [pick, setPick] = useState("");
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [catalogNote, setCatalogNote] = useState<string | null>(null);
+  const [catalogVersion, setCatalogVersion] = useState(0);
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    fid()
-      .skills.list()
-      .then((skills) => {
-        if (!cancelled) setCatalog(skills);
-      })
-      .catch((caught: unknown) => {
-        if (!cancelled) setCatalogNote(errorText(caught));
-      });
+    const timer = window.setTimeout(() => {
+      setCatalogNote(null);
+      void fid()
+        .skills.list(workspaceDir.trim() || null)
+        .then((result) => {
+          if (cancelled) return;
+          setCatalog(result.skills);
+          setWarnings(result.warnings);
+        })
+        .catch((caught: unknown) => {
+          if (!cancelled) setCatalogNote(errorText(caught));
+        })
+        .finally(() => {
+          if (!cancelled) setCatalogLoaded(true);
+        });
+    }, 250);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, []);
+  }, [workspaceDir, catalogVersion]);
 
   async function clearMemory() {
     if (!agent || clearingMemory || saving) return;
@@ -232,14 +252,23 @@ export function AgentDialog({
           </div>
 
           <SkillsField
+            key={workspaceDir}
+            workspaceDir={workspaceDir.trim() || null}
             catalog={catalog}
             catalogNote={catalogNote}
+            catalogLoaded={catalogLoaded}
+            warnings={warnings}
             skillIds={skillIds}
-            pick={pick}
             disabled={saving}
-            onPick={setPick}
-            onAdd={(id) => setSkillIds((current) => (current.includes(id) ? current : [...current, id]))}
-            onRemove={(id) => setSkillIds((current) => current.filter((item) => item !== id))}
+            onToggle={(id, checked) =>
+              setSkillIds((current) => {
+                if (!checked) return current.filter((item) => item !== id);
+                if (current.includes(id) || current.length >= MAX_SKILLS) return current;
+                return [...current, id];
+              })
+            }
+            onRefresh={() => setCatalogVersion((version) => version + 1)}
+            onError={setError}
           />
 
           <div className="field">
@@ -350,81 +379,196 @@ export function AgentDialog({
 }
 
 function SkillsField({
+  workspaceDir,
   catalog,
   catalogNote,
+  catalogLoaded,
+  warnings,
   skillIds,
-  pick,
   disabled,
-  onPick,
-  onAdd,
-  onRemove,
+  onToggle,
+  onRefresh,
+  onError,
 }: {
+  workspaceDir: string | null;
   catalog: SkillInfo[];
   catalogNote: string | null;
+  catalogLoaded: boolean;
+  warnings: string[];
   skillIds: string[];
-  pick: string;
   disabled: boolean;
-  onPick: (id: string) => void;
-  onAdd: (id: string) => void;
-  onRemove: (id: string) => void;
+  onToggle: (id: string, checked: boolean) => void;
+  onRefresh: () => void;
+  onError: (message: string) => void;
 }) {
-  const available = catalog.filter((skill) => !skillIds.includes(skill.id));
-  const selected = available.some((skill) => skill.id === pick) ? pick : (available[0]?.id ?? "");
+  const limitReached = skillIds.length >= MAX_SKILLS;
+  const missing = catalogLoaded ? skillIds.filter((id) => !catalog.some((skill) => skill.id === id)) : [];
+  const selectedChars = catalog.reduce((sum, skill) => sum + (skillIds.includes(skill.id) ? skill.chars : 0), 0);
+  const overBudget = selectedChars > MAX_SKILLS_CHARS;
+  const [previewKey, setPreviewKey] = useState<string | null>(null);
+  const [preview, setPreview] = useState<SkillContent | null>(null);
+  const [previewNote, setPreviewNote] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const previewRequest = useRef(0);
+
+  async function togglePreview(skill: SkillInfo) {
+    const key = `${skill.source}:${skill.id}`;
+    if (previewKey === key) {
+      setPreviewKey(null);
+      setPreview(null);
+      setPreviewNote(null);
+      return;
+    }
+    const request = ++previewRequest.current;
+    setPreviewKey(key);
+    setPreview(null);
+    setPreviewNote(null);
+    setPreviewLoading(true);
+    try {
+      const content = await fid().skills.read(workspaceDir, skill.id, skill.source);
+      if (previewRequest.current !== request) return;
+      setPreview(content);
+      if (!content) setPreviewNote("The skill file could not be found.");
+    } catch (caught) {
+      if (previewRequest.current === request) setPreviewNote(errorText(caught));
+    } finally {
+      if (previewRequest.current === request) setPreviewLoading(false);
+    }
+  }
+
+  function refresh() {
+    setPreviewKey(null);
+    setPreview(null);
+    setPreviewNote(null);
+    onRefresh();
+  }
+
   return (
     <div className="field">
-      <label className="field-label" htmlFor="agent-skills">
+      <span className="field-label">
         Skills
-      </label>
-      <span className="field-inline">
-        <select
-          id="agent-skills"
-          className="select"
-          value={selected}
-          disabled={disabled || available.length === 0}
-          onChange={(event) => onPick(event.target.value)}
-        >
-          {available.length === 0 ? (
-            <option value="">{catalog.length === 0 ? "No skills installed" : "All skills added"}</option>
-          ) : (
-            available.map((skill) => (
-              <option key={skill.id} value={skill.id}>
-                {skill.name}
-              </option>
-            ))
-          )}
-        </select>
+        {skillIds.length > 0 ? (
+          <span className="field-optional">
+            {skillIds.length}/{MAX_SKILLS}
+          </span>
+        ) : null}
+      </span>
+      <div className="skill-options">
+        {catalog.map((skill) => {
+          const checked = skillIds.includes(skill.id);
+          const atLimit = limitReached && !checked;
+          const key = `${skill.source}:${skill.id}`;
+          return (
+            <div key={key} className="skill-option-wrap">
+              <label
+                className={`skill-option ${checked ? "is-selected" : ""} ${disabled || atLimit ? "is-disabled" : ""}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={disabled || atLimit}
+                  onChange={(event) => onToggle(skill.id, event.target.checked)}
+                />
+                <span className="skill-option-copy">
+                  <span className="skill-name">{skill.name}</span>
+                  <span className="skill-note">{skill.description}</span>
+                  <span className="skill-meta">
+                    <span>{SOURCE_LABELS[skill.source]}</span>
+                    <span>{formatCount(skill.chars)} chars</span>
+                    {skill.chars > MAX_SKILL_CHARS ? <span className="skill-warning">will be truncated</span> : null}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className="text-button skill-view"
+                  disabled={disabled}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void togglePreview(skill);
+                  }}
+                >
+                  {previewKey === key ? "Hide" : "View"}
+                </button>
+              </label>
+              {previewKey === key ? (
+                <div className="skill-preview">
+                  {previewLoading ? <span className="field-note">Loading…</span> : null}
+                  {previewNote ? <span className="field-note">{previewNote}</span> : null}
+                  {preview ? (
+                    <>
+                      <div className="skill-preview-head">
+                        <span>{SOURCE_LABELS[preview.source]}</span>
+                        <span className="skill-preview-path">{preview.path}</span>
+                      </div>
+                      <pre>{preview.body}</pre>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+        {missing.map((id) => (
+          <div key={id} className="skill-option is-missing">
+            <span className="skill-option-copy">
+              <span className="skill-name">{id}</span>
+              <span className="skill-note">This skill is no longer installed.</span>
+            </span>
+            <button type="button" className="text-button" disabled={disabled} onClick={() => onToggle(id, false)}>
+              Remove
+            </button>
+          </div>
+        ))}
+        {!catalogLoaded && !catalogNote ? <span className="field-note">Loading skills…</span> : null}
+        {catalogLoaded && catalog.length === 0 && skillIds.length === 0 ? (
+          <span className="field-note">
+            No skills installed. Add a SKILL.md under skills/, .github/skills, or your Copilot skills folder.
+          </span>
+        ) : null}
+      </div>
+      {warnings.length > 0 ? (
+        <div className="skill-warnings">
+          <span className="field-note">Some skill files were skipped:</span>
+          <ul>
+            {warnings.map((warning, index) => (
+              <li key={`${index}-${warning}`}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {catalogNote ? <span className="field-note">{catalogNote}</span> : null}
+      {selectedChars > 0 ? (
+        <span className={overBudget ? "field-note skill-warning-note" : "field-note"}>
+          Selected: {formatCount(selectedChars)} / {formatCount(MAX_SKILLS_CHARS)} chars
+          {overBudget ? " — later skills will be truncated or omitted." : ""}
+        </span>
+      ) : null}
+      {limitReached ? (
+        <span className="field-note">{`Up to ${MAX_SKILLS} skills per agent. Clear one to add another.`}</span>
+      ) : null}
+      <span className="field-note">
+        Checked skills are sent on every message for this agent. Other agents do not receive them.
+      </span>
+      <div className="skill-actions">
+        <button type="button" className="text-button" disabled={disabled} onClick={refresh}>
+          Refresh
+        </button>
         <button
           type="button"
-          className="btn btn-secondary"
-          disabled={disabled || !selected}
-          onClick={() => onAdd(selected)}
+          className="text-button"
+          disabled={disabled}
+          onClick={() => {
+            void fid()
+              .skills.openFolder()
+              .catch((caught: unknown) => onError(errorText(caught)));
+          }}
         >
-          Add skill
+          Open skills folder
         </button>
-      </span>
-      {skillIds.length === 0 ? (
-        <span className="field-note">No skills. This agent follows only its instructions.</span>
-      ) : (
-        <ul className="skill-list">
-          {skillIds.map((id) => {
-            const skill = catalog.find((item) => item.id === id);
-            return (
-              <li key={id} className="skill-row">
-                <div>
-                  <div className="skill-name">{skill?.name ?? id}</div>
-                  <div className="skill-note">{skill?.description ?? "This skill is no longer installed."}</div>
-                </div>
-                <button type="button" className="text-button" disabled={disabled} onClick={() => onRemove(id)}>
-                  Remove
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      {catalogNote ? <span className="field-note">{catalogNote}</span> : null}
+      </div>
       <span className="field-note">
-        Added skills are sent on every message for this agent. Other agents do not receive them.
+        Workspace and Copilot skills are files on this PC. Open a skill to read it before checking it.
       </span>
     </div>
   );

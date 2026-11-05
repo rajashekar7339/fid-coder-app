@@ -30,8 +30,8 @@ const SOURCES: GuideSource[] = [
     id: "chat-with-an-agent",
     title: "Chat with an agent",
     group: "Using Fid Coder",
-    summary: "Send messages, follow tool steps, switch models, stop a turn, and approve deletes, pushes, and downloads.",
-    readMinutes: 4,
+    summary: "Send messages, follow tool steps, read token and credit usage, switch models, stop a turn, and approve deletes, pushes, and downloads.",
+    readMinutes: 5,
     file: "chat-with-an-agent.md",
   },
   {
@@ -49,6 +49,14 @@ const SOURCES: GuideSource[] = [
     summary: "Give a developer agent a folder, native file and git tools, and a workspace brief.",
     readMinutes: 5,
     file: "work-in-a-workspace.md",
+  },
+  {
+    id: "use-skills",
+    title: "Add skills to an agent",
+    group: "Using Fid Coder",
+    summary: "Enable per-agent instructions from built-in, workspace, app, or Copilot skill folders.",
+    readMinutes: 4,
+    file: "use-skills.md",
   },
   {
     id: "analyze-a-release",

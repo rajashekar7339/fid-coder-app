@@ -14,7 +14,7 @@
 // port 5173 if one is running; otherwise it starts and stops its own.
 // Screenshots and logs stay under the printed ARTIFACTS directory.
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -28,6 +28,8 @@ const workspace = path.join(root, "workspace");
 const shots = path.join(root, "shots");
 const agentName = "Live Test Agent";
 const skipTurns = process.env.FID_SKIP_TURNS === "1";
+const runReview = process.env.FID_RUN_REVIEW === "1";
+const runDiagram = process.env.FID_RUN_DIAGRAM === "1";
 const clean = process.env.FID_CLEAN === "1";
 
 const results = [];
@@ -39,11 +41,28 @@ function check(name, ok, detail = "") {
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? `  (${detail})` : ""}`);
 }
 
+function git(args) {
+  execFileSync("git", ["-c", "commit.gpgsign=false", ...args], {
+    cwd: workspace,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "E2E",
+      GIT_AUTHOR_EMAIL: "e2e@example.com",
+      GIT_COMMITTER_NAME: "E2E",
+      GIT_COMMITTER_EMAIL: "e2e@example.com",
+    },
+    stdio: "ignore",
+  });
+}
+
 function prepare() {
   fs.mkdirSync(userData, { recursive: true });
   fs.mkdirSync(workspace, { recursive: true });
   fs.mkdirSync(shots, { recursive: true });
   fs.writeFileSync(path.join(workspace, "demo.ts"), "export const greeting = 'hello';\n", "utf8");
+  git(["init"]);
+  git(["add", "demo.ts"]);
+  git(["commit", "-m", "baseline"]);
 }
 
 async function sleep(ms) {
@@ -208,6 +227,45 @@ async function main() {
 
     const reply1 = await lastAssistantText(page);
     check("turn 1 produced an assistant reply", reply1.trim().length > 0, reply1.replace(/\s+/g, " ").slice(0, 120));
+    await page.waitForSelector(".token-usage", { timeout: 15_000 });
+    const usageText = await page.locator(".token-usage").last().innerText();
+    check(
+      "reply shows token usage",
+      /\d[\d,]* tokens/.test(usageText),
+      usageText.replace(/\s+/g, " ").slice(0, 120),
+    );
+
+    if (runReview) {
+      await sendAndWait(page, "/review ");
+      const review = await lastAssistantText(page);
+      const reviewSteps = await page.locator(".tool-step code", { hasText: "/review" }).count();
+      check(
+        "review command returned a report",
+        reviewSteps > 0 && /verdict|what this change does|looks good|must fix/i.test(review),
+        `${reviewSteps} /review step(s); ${review.replace(/\s+/g, " ").slice(0, 140)}`,
+      );
+    }
+
+    if (runDiagram) {
+      await sendAndWait(
+        page,
+        "Draw a two-step login flow as one mermaid flowchart code block. Do not write anything outside the code block.",
+      );
+      await page.waitForSelector(".is-mermaid .mermaid-canvas svg", { timeout: 30_000 });
+      await page.getByRole("button", { name: "Copy diagram as image" }).last().click();
+      const copyState = await page
+        .waitForFunction(
+          () => {
+            const buttons = [...document.querySelectorAll('button[aria-label="Copy diagram as image"]')];
+            const last = buttons[buttons.length - 1];
+            const text = last?.textContent ?? "";
+            return /Copied|Copy failed/.test(text) ? text : null;
+          },
+          { timeout: 15_000 },
+        )
+        .then((handle) => handle.jsonValue());
+      check("diagram copy image responds", /Copied|Copy failed/.test(copyState), copyState);
+    }
 
     const demoAfterTurn = fs.readFileSync(path.join(workspace, "demo.ts"), "utf8");
     const notesPath = path.join(workspace, "notes.md");

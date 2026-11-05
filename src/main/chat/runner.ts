@@ -9,6 +9,7 @@ import {
 } from "../../shared/memory-summary";
 import { AUTO_MODEL_ID } from "../../shared/model";
 import { approvalActionDecision, approvalActionRemembers, normalizeApprovalMatch } from "../../shared/approval";
+import { commandAvailability, parseCommand } from "../../shared/commands";
 import type {
   Agent,
   ApprovalAction,
@@ -30,9 +31,9 @@ import type { CheckpointStore } from "../workspace/checkpoints";
 import { completeOnce, detach, getCopilotStatus, openSession, readAssistantText, type LiveSession } from "../copilot";
 import type { AppDatabase } from "../db";
 import { runCodeExplore } from "../workspace/explore-session";
+import { runCodeReview } from "../workspace/review-session";
 import { getSecret, hasSecret, secretKeys } from "../secrets";
-import { skillsDir } from "../paths";
-import { skillsForAgent } from "../skills";
+import { skillRoots, skillsForAgent } from "../skills";
 import { workspaceBrief } from "../workspace/workspace-brief";
 import { workspaceRules, type WorkspaceRules } from "../workspace/workspace-rules";
 import { IMPACT_OUTPUT_ROOT } from "../../shared/release-impact/paths";
@@ -70,11 +71,22 @@ function emptyUsage(): TokenUsage {
     reasoningTokens: 0,
     modelCalls: 0,
     model: null,
+    isAuto: false,
+    nanoAiu: 0,
+    creditCalls: 0,
+    creditStatus: "unavailable",
   };
 }
 
 function tokenCount(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
+}
+
+function creditNanoAiu(value: unknown): number | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = (value as { totalNanoAiu?: unknown }).totalNanoAiu;
+  const amount = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
+  return Number.isFinite(amount) ? Math.max(0, amount) : null;
 }
 
 function usageOrNull(agentId: string): TokenUsage | null {
@@ -199,6 +211,21 @@ export class Runner {
     this.sink({ agentId: agent.id, type: "user", text: visible });
 
     try {
+      const parsed = parseCommand(text);
+      if (parsed) {
+        if (parsed.command.ui) {
+          throw new Error(`${parsed.command.usage} is a composer command. Use it from the chat composer.`);
+        }
+        if (parsed.command.id === "review") {
+          const unavailable = commandAvailability(
+            parsed.command,
+            agent.toolProfile,
+            Boolean(agent.workspaceDir),
+          );
+          if (unavailable) throw new Error(unavailable);
+          return await this.runReviewTurn(agent, parsed.args, turnId);
+        }
+      }
       const systemMessage = await this.systemMessage(agent);
       const opened = await this.sessionFor(agent, systemMessage);
       const prior = this.db
@@ -246,6 +273,33 @@ export class Runner {
     }
   }
 
+  private async runReviewTurn(agent: Agent, target: string, turnId: string): Promise<string> {
+    this.sink({
+      agentId: agent.id,
+      type: "tool-start",
+      toolName: "review_code",
+      text: target || "uncommitted changes",
+    });
+    try {
+      const report = await runCodeReview(this.context(agent.id), target);
+      const preview = report.length > 2000 ? `${report.slice(0, 2000)}…` : report;
+      this.db.addMessage(agent.id, "tool", summarizeTool("review_code", true, preview), turnId);
+      this.sink({ agentId: agent.id, type: "tool-end", toolName: "review_code", ok: true, text: preview });
+      this.db.addMessage(agent.id, "assistant", report, turnId);
+      this.db.finishTurn(turnId, "ok");
+      this.sink({ agentId: agent.id, type: "done", text: report });
+      await this.dropSession(agent.id);
+      void this.refreshMemory(agent.id).catch((error: unknown) => {
+        console.error("Failed to update agent memory", error);
+      });
+      return report;
+    } catch (error) {
+      const message = explainCopilotError(error instanceof Error ? error.message : String(error));
+      this.sink({ agentId: agent.id, type: "tool-end", toolName: "review_code", ok: false, text: message });
+      throw new Error(message);
+    }
+  }
+
   private async sessionFor(agent: Agent, systemMessage: string): Promise<{ live: LiveSession; fresh: boolean }> {
     const signature = JSON.stringify([agent.model, systemMessage, agent.toolProfile]);
     const existing = this.sessions.get(agent.id);
@@ -281,6 +335,25 @@ export class Runner {
         usage.reasoningTokens += tokenCount(event.data?.reasoningTokens);
         usage.modelCalls += 1;
         if (typeof event.data?.model === "string") usage.model = event.data.model;
+        if (event.data?.isAuto === true) usage.isAuto = true;
+        const cost = creditNanoAiu(event.data?.copilotUsage);
+        if (cost !== null) {
+          usage.nanoAiu += cost;
+          usage.creditCalls += 1;
+        }
+        const callCreditStatus = event.data?.aiCreditsStatus;
+        if (usage.creditCalls === 0) {
+          usage.creditStatus = "unavailable";
+        } else if (
+          usage.creditCalls === usage.modelCalls &&
+          callCreditStatus !== "partial" &&
+          callCreditStatus !== "unavailable" &&
+          usage.creditStatus !== "partial"
+        ) {
+          usage.creditStatus = "complete";
+        } else {
+          usage.creditStatus = "partial";
+        }
         this.sink({ agentId: agent.id, type: "usage", usage: { ...usage } });
         return;
       }
@@ -319,6 +392,10 @@ export class Runner {
       explore:
         shellEnabled && workspaceDir
           ? (question) => runCodeExplore(this.context(agentId), question)
+          : undefined,
+      review:
+        shellEnabled && workspaceDir
+          ? (target) => runCodeReview(this.context(agentId), target)
           : undefined,
       checkpoint:
         turnId === null
@@ -457,7 +534,7 @@ export class Runner {
     const lines = [agent.systemPrompt];
     let skillNames: string[] = [];
     try {
-      const skills = skillsForAgent(skillsDir(), agent.skillIds);
+      const skills = skillsForAgent(skillRoots(agent.workspaceDir), agent.skillIds);
       skillNames = skills.names;
       if (skills.prompt) lines.push(skills.prompt);
     } catch (error) {

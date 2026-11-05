@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } f
 import {
   ArrowDown,
   ArrowUp,
+  BookOpen,
   Check,
   ChevronDown,
   Clock3,
@@ -14,14 +15,24 @@ import {
   MousePointerClick,
   PanelRight,
   ScanSearch,
+  Slash,
   Square,
   Terminal,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
 import { groupToolCalls, liveTurnSettled, projectThread, userTurnAccepted, type LiveTool, type LiveTurn } from "../../../shared/chat-thread";
+import { COMMANDS, commandAvailability, filterCommands, type CommandInfo } from "../../../shared/commands";
 import { summarizeTool } from "../../../shared/summary";
-import type { Agent, ApprovalAction, ApprovalRequest, ChatEvent, CopilotModel, Message } from "../../../shared/types";
+import type {
+  Agent,
+  ApprovalAction,
+  ApprovalRequest,
+  ChatEvent,
+  CopilotModel,
+  Message,
+  SkillInfo,
+} from "../../../shared/types";
 import { agentSubtitle } from "../../lib/agent-display";
 import { errorText, fid } from "../../lib/fid";
 import { formatClock, formatDay, formatNextRun } from "../../lib/format";
@@ -46,12 +57,14 @@ type Props = {
   onStartSignIn: () => void;
   onRetryModels: () => void;
   onToggleDesk: () => void;
+  onEditAgent: () => void;
+  onOpenHelp: () => void;
   onUpdated: (agent: Agent) => void;
   onActivity: () => void;
   onAuthRequired: () => void;
 };
 
-type ToolMeta = { label: string; active: string; Icon: LucideIcon };
+type ToolMeta = { label: string; active: string; Icon: LucideIcon; command?: string };
 
 const TOOL_META: Record<string, ToolMeta> = {
   browser_navigate: { label: "Opened a page", active: "Opening a page", Icon: Globe2 },
@@ -72,11 +85,18 @@ const TOOL_META: Record<string, ToolMeta> = {
   gh_pr_view: { label: "Read a pull request", active: "Reading a pull request", Icon: Terminal },
   gh_pr_diff: { label: "Read a pull request diff", active: "Reading a pull request diff", Icon: Terminal },
   explore_code: { label: "Explored the code", active: "Exploring the code", Icon: ScanSearch },
+  review_code: { label: "Reviewed a change", active: "Reviewing a change", Icon: ScanSearch, command: "review" },
   history_first: { label: "Read the first message", active: "Reading the first message", Icon: Clock3 },
   history_search: { label: "Searched history", active: "Searching history", Icon: ScanSearch },
   history_turn: { label: "Read an earlier turn", active: "Reading an earlier turn", Icon: FileText },
   history_context: { label: "Loaded history", active: "Loading history", Icon: FileText },
   impact_analyze: { label: "Analyzed the release", active: "Analyzing the release", Icon: ScanSearch },
+};
+
+const COMMAND_ICONS: Record<string, LucideIcon> = {
+  review: ScanSearch,
+  skills: Wrench,
+  help: BookOpen,
 };
 
 const liveByAgent = new Map<string, LiveTurn>();
@@ -135,6 +155,8 @@ export function ChatView({
   onStartSignIn,
   onRetryModels,
   onToggleDesk,
+  onEditAgent,
+  onOpenHelp,
   onUpdated,
   onActivity,
   onAuthRequired,
@@ -147,6 +169,9 @@ export function ChatView({
   const [savingModel, setSavingModel] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
+  const [skillCatalog, setSkillCatalog] = useState<SkillInfo[]>([]);
+  const [commandsOpen, setCommandsOpen] = useState(false);
+  const [commandIndex, setCommandIndex] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
   const pinned = useRef(true);
@@ -166,6 +191,64 @@ export function ChatView({
   );
 
   const projected = projectThread(messages, live, agent.id);
+  const skillNames = new Map(skillCatalog.map((skill) => [skill.id, skill.name]));
+  const agentSkills = agent.skillIds.map((id) => ({ id, name: skillNames.get(id) ?? id }));
+  const commandQuery = draft.startsWith("/") ? draft.slice(1).split(/\s/)[0] : "";
+  const commandMatches = filterCommands(commandQuery);
+  const activeCommand = commandMatches[commandIndex] ?? null;
+  const commandDraft = draft.startsWith("/")
+    ? COMMANDS.find(
+        (command) => draft.trim() === `/${command.id}` || draft.trim().startsWith(`/${command.id} `),
+      )
+    : null;
+  const commandHint = !commandsOpen && commandDraft ? commandDraft.description : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    void fid()
+      .skills.list(agent.workspaceDir)
+      .then((catalog) => {
+        if (!cancelled) setSkillCatalog(catalog.skills);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [agent.workspaceDir]);
+
+  useEffect(() => {
+    setCommandIndex(0);
+  }, [commandQuery, commandsOpen]);
+
+  useEffect(() => {
+    if (!commandsOpen) return;
+    const close = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".composer")) return;
+      setCommandsOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [commandsOpen]);
+
+  function commandUnavailable(command: CommandInfo): string | null {
+    if (command.id === "review" && !signedIn) return "Sign in to Copilot first.";
+    return commandAvailability(command, agent.toolProfile, Boolean(agent.workspaceDir));
+  }
+
+  function chooseCommand(command: CommandInfo) {
+    if (commandUnavailable(command)) return;
+    setCommandsOpen(false);
+    setCommandIndex(0);
+    if (command.ui) {
+      setDraft("");
+      if (command.id === "skills") onEditAgent();
+      if (command.id === "help") onOpenHelp();
+      return;
+    }
+    setDraft(`/${command.id} `);
+    window.requestAnimationFrame(() => composer.current?.focus());
+  }
 
   useEffect(() => {
     const gen = ++generation.current;
@@ -323,6 +406,12 @@ export function ChatView({
   function sendText(raw: string) {
     const text = raw.trim();
     if (!text || running || sendLock.current) return;
+    const uiCommand = COMMANDS.find((command) => command.ui && text === `/${command.id}`);
+    if (uiCommand) {
+      chooseCommand(uiCommand);
+      return;
+    }
+    setCommandsOpen(false);
     sendLock.current = true;
     queueMicrotask(() => {
       sendLock.current = false;
@@ -432,6 +521,18 @@ export function ChatView({
         </div>
       </header>
 
+      {agentSkills.length > 0 ? (
+        <div className="chat-skillbar" aria-label="Active skills">
+          <BookOpen size={11} aria-hidden="true" />
+          <span className="chat-skillbar-label">Skills</span>
+          {agentSkills.map((skill) => (
+            <span key={skill.id} className="chat-skill">
+              {skill.name}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
       {settingsReady && !signedIn ? (
         <div className="sign-in-banner">
           <span>{checkingSignIn ? "Checking Copilot sign-in…" : "Sign in to Copilot before messaging this agent."}</span>
@@ -462,6 +563,20 @@ export function ChatView({
                 </span>
               ) : null}
             </div>
+            {COMMANDS.some((command) => !commandUnavailable(command)) ? (
+              <div className="empty-commands">
+                {COMMANDS.filter((command) => !commandUnavailable(command)).map((command) => (
+                  <button
+                    key={command.id}
+                    type="button"
+                    className="empty-command"
+                    onClick={() => chooseCommand(command)}
+                  >
+                    /{command.id}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <p className="empty-hint">
               {!settingsReady
                 ? "Checking Copilot…"
@@ -546,6 +661,45 @@ export function ChatView({
         }}
       >
         <div className="composer">
+          {commandsOpen ? (
+            <div id="composer-commands" className="command-menu" role="listbox" aria-label="Commands">
+              <div className="command-menu-head">
+                <span>Commands</span>
+                <span>type / to filter</span>
+              </div>
+              {commandMatches.length === 0 ? (
+                <div className="command-empty">No commands match.</div>
+              ) : (
+                commandMatches.map((command, index) => {
+                  const unavailable = commandUnavailable(command);
+                  const Icon = COMMAND_ICONS[command.id] ?? Wrench;
+                  return (
+                    <button
+                      key={command.id}
+                      type="button"
+                      role="option"
+                      aria-selected={index === commandIndex}
+                      className={`command-row ${index === commandIndex ? "is-active" : ""} ${unavailable ? "is-disabled" : ""}`}
+                      disabled={Boolean(unavailable)}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => chooseCommand(command)}
+                    >
+                      <Icon size={13} className="command-icon" aria-hidden="true" />
+                      <span className="command-copy">
+                        <span className="command-title">
+                          <span className="command-name">/{command.id}</span>
+                          <span className="command-label">{command.label}</span>
+                        </span>
+                        <span className="command-description">{unavailable ?? command.description}</span>
+                        {!unavailable ? <span className="command-usage">{command.usage}</span> : null}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+              <div className="command-foot">↑↓ move · Enter select · Esc close</div>
+            </div>
+          ) : null}
           <textarea
             ref={composer}
             rows={1}
@@ -562,9 +716,47 @@ export function ChatView({
             }
             disabled={!settingsReady || !signedIn}
             aria-label={`Message ${agent.name}`}
+            aria-expanded={commandsOpen}
+            aria-controls={commandsOpen ? "composer-commands" : undefined}
             title="Enter to send. Shift+Enter for a new line."
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              const value = event.target.value;
+              setDraft(value);
+              setCommandsOpen(/^\/[a-z-]*$/i.test(value));
+            }}
             onKeyDown={(event) => {
+              if (commandsOpen) {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setCommandIndex((index) =>
+                    commandMatches.length === 0 ? 0 : (index + 1) % commandMatches.length,
+                  );
+                  return;
+                }
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setCommandIndex((index) =>
+                    commandMatches.length === 0
+                      ? 0
+                      : (index - 1 + commandMatches.length) % commandMatches.length,
+                  );
+                  return;
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setCommandsOpen(false);
+                  return;
+                }
+                if (
+                  (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey)) &&
+                  !event.nativeEvent.isComposing &&
+                  activeCommand
+                ) {
+                  event.preventDefault();
+                  chooseCommand(activeCommand);
+                  return;
+                }
+              }
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 send();
@@ -579,6 +771,21 @@ export function ChatView({
               className="model-picker-compact"
               onChange={(model) => void changeModel(model)}
             />
+            <button
+              type="button"
+              className="composer-command"
+              aria-label="Show commands"
+              aria-expanded={commandsOpen}
+              aria-controls="composer-commands"
+              title="Show commands (type /)"
+              onClick={() => {
+                setCommandsOpen((open) => !open);
+                window.requestAnimationFrame(() => composer.current?.focus());
+              }}
+            >
+              <Slash size={11} aria-hidden="true" />
+              Commands
+            </button>
             {agent.nextRoutineAt ? (
               <span className="composer-context">
                 <Clock3 size={10} aria-hidden="true" />
@@ -615,6 +822,7 @@ export function ChatView({
             )}
           </div>
         </div>
+        {commandHint ? <p className="command-hint">{commandHint}</p> : null}
       </form>
     </main>
   );
@@ -716,7 +924,7 @@ function ToolGroup({ calls, pendingId }: { calls: Message[]; pendingId: string |
                   <Icon size={12} className="tool-step-icon" aria-hidden="true" />
                 )}
                 <span className="tool-step-label">{pending ? meta.active : meta.label}</span>
-                <code>{split.name}</code>
+                <code>{meta.command ? `/${meta.command}` : split.name}</code>
                 <span className="tool-step-time">{formatClock(call.createdAt)}</span>
                 <ChevronDown size={10} className="tool-step-chevron" aria-hidden="true" />
               </summary>

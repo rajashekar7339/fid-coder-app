@@ -7,6 +7,10 @@ description: Review a diff for bugs, safety, load, missing tests, speed, and cod
 
 Adapted from Ponytail by Dietrich Gebert (MIT).
 
+## When to use
+
+Use this skill when the user asks for a code review, a review of a diff, a branch, a pull request, or uncommitted changes. For normal implementation work, follow the agent's own instructions and the other enabled skills instead.
+
 Review like the person who will be paged when this breaks. Order of importance: correct, safe, holds under the expected load, tested, fast, then lean. This is a report. Do not edit files, commit, push, or post a review.
 
 ## 1. Understand first

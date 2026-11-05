@@ -23,6 +23,8 @@
   --danger: #f29286;
   --font-sans: "Geist Variable", "Segoe UI", sans-serif;
   --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+  /* Chat and composer cap; both stay fluid below this width. */
+  --chat-column: 1180px;
   --shadow-lg: 0 24px 72px rgba(0, 0, 0, 0.45), 0 2px 14px rgba(0, 0, 0, 0.24);
   color-scheme: dark;
 }
@@ -1271,6 +1273,44 @@ kbd {
   color: var(--faint-2);
 }
 
+.chat-skillbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 7px 19px 7px 22px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.chat-skillbar > svg {
+  flex: none;
+  color: var(--lime);
+}
+
+.chat-skillbar-label {
+  margin-right: 2px;
+  color: var(--faint-2);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chat-skill {
+  display: inline-flex;
+  height: 20px;
+  align-items: center;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text);
+  font-size: 9.8px;
+  line-height: 1;
+}
+
 .chat-actions {
   margin-left: auto;
   flex: none;
@@ -1313,7 +1353,7 @@ kbd {
 
 .thread {
   width: 100%;
-  max-width: 650px;
+  max-width: var(--chat-column);
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -1486,6 +1526,11 @@ kbd {
   overflow: hidden;
   color: var(--faint);
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.token-usage-credits {
+  color: var(--muted);
   white-space: nowrap;
 }
 
@@ -2026,7 +2071,9 @@ kbd {
 
 .code-bar-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 2px;
 }
 
@@ -2062,11 +2109,6 @@ kbd {
 }
 
 .mermaid-canvas {
-  --diagram-blue: #8bb8ff;
-  --diagram-mint: #7fdcc4;
-  --diagram-violet: #c0a8ff;
-  --diagram-amber: #ecc77c;
-  --diagram-rose: #f0a2b3;
   overflow-x: auto;
   padding: 18px;
   background:
@@ -2090,52 +2132,6 @@ kbd {
 .nodeLabel p {
   font-size: 11.5px !important;
   line-height: 1.35 !important;
-}
-
-.mermaid-canvas svg g.nodes > g.node:nth-child(5n + 1) :is(rect, polygon, circle, ellipse) {
-  fill: rgba(108, 156, 255, 0.16) !important;
-  stroke: var(--diagram-blue) !important;
-}
-
-.mermaid-canvas svg g.nodes > g.node:nth-child(5n + 2) :is(rect, polygon, circle, ellipse) {
-  fill: rgba(88, 214, 180, 0.14) !important;
-  stroke: var(--diagram-mint) !important;
-}
-
-.mermaid-canvas svg g.nodes > g.node:nth-child(5n + 3) :is(rect, polygon, circle, ellipse) {
-  fill: rgba(178, 145, 255, 0.16) !important;
-  stroke: var(--diagram-violet) !important;
-}
-
-.mermaid-canvas svg g.nodes > g.node:nth-child(5n + 4) :is(rect, polygon, circle, ellipse) {
-  fill: rgba(235, 187, 99, 0.14) !important;
-  stroke: var(--diagram-amber) !important;
-}
-
-.mermaid-canvas svg g.nodes > g.node:nth-child(5n + 5) :is(rect, polygon, circle, ellipse) {
-  fill: rgba(238, 137, 159, 0.14) !important;
-  stroke: var(--diagram-rose) !important;
-}
-
-.mermaid-canvas svg g.nodes > g.node :is(rect, polygon, circle, ellipse) {
-  stroke-width: 1.25px !important;
-}
-
-.mermaid-canvas svg .edgePaths path,
-.mermaid-canvas svg .edgePath path,
-.mermaid-canvas svg path.flowchart-link {
-  stroke: var(--diagram-blue) !important;
-  stroke-width: 1.55px !important;
-}
-
-.mermaid-canvas svg marker path {
-  fill: var(--diagram-blue) !important;
-  stroke: var(--diagram-blue) !important;
-}
-
-.mermaid-canvas svg .cluster rect {
-  fill: rgba(139, 184, 255, 0.045) !important;
-  stroke: rgba(139, 184, 255, 0.34) !important;
 }
 
 .mermaid-loading {
@@ -2415,6 +2411,31 @@ kbd {
   font-size: 9.8px;
 }
 
+.empty-commands {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.empty-command {
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  cursor: pointer;
+}
+
+.empty-command:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
 .chat-empty .empty-hint {
   margin-top: 18px;
   color: var(--faint-2);
@@ -2432,8 +2453,9 @@ kbd {
 }
 
 .composer {
+  position: relative;
   width: 100%;
-  max-width: 650px;
+  max-width: var(--chat-column);
   margin: 0 auto;
   padding: 12px 12px 9px 14px;
   border: 1px solid var(--line-strong);
@@ -2480,6 +2502,171 @@ kbd {
   align-items: center;
   gap: 7px;
   margin-top: 6px;
+}
+
+.composer-command {
+  display: inline-flex;
+  flex: none;
+  height: 24px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+  font-size: 9.8px;
+  cursor: pointer;
+}
+
+.composer-command:hover,
+.composer-command[aria-expanded="true"] {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.composer-command svg {
+  color: var(--faint-2);
+}
+
+.command-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  max-height: 360px;
+  flex-direction: column;
+  overflow-y: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--panel-raised);
+  box-shadow: var(--shadow-lg);
+}
+
+.command-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--faint-2);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.command-menu-head span:last-child {
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.command-row {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.command-row:hover,
+.command-row.is-active {
+  background: rgba(216, 248, 120, 0.06);
+}
+
+.command-row.is-disabled {
+  cursor: default;
+  opacity: 0.52;
+}
+
+.command-row.is-disabled:hover {
+  background: transparent;
+}
+
+.command-icon {
+  flex: none;
+  margin-top: 1px;
+  color: var(--faint);
+}
+
+.command-row.is-active .command-icon {
+  color: var(--lime);
+}
+
+.command-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.command-title {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.command-name {
+  flex: none;
+  color: var(--lime);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.command-label {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-description {
+  color: var(--faint);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.command-usage {
+  color: var(--faint-2);
+  font-family: var(--font-mono);
+  font-size: 8.8px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.command-foot {
+  padding: 6px 12px;
+  color: var(--faint-2);
+  font-family: var(--font-mono);
+  font-size: 8.2px;
+}
+
+.command-empty {
+  padding: 12px;
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.command-hint {
+  max-width: var(--chat-column);
+  margin: 6px auto 0;
+  padding: 0 4px;
+  color: var(--faint-2);
+  font-size: 9.8px;
+  line-height: 1.4;
 }
 
 .composer-context {
@@ -3265,39 +3452,154 @@ kbd {
   min-height: 148px;
 }
 
-.skill-list {
+.skill-options {
   display: flex;
+  max-height: 250px;
   flex-direction: column;
   gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
-.skill-row {
+.skill-option {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 9px;
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
+  background: rgba(255, 255, 255, 0.018);
+  cursor: pointer;
+}
+
+.skill-option:hover {
+  border-color: var(--line-strong);
+}
+
+.skill-option.is-selected {
+  border-color: rgba(216, 248, 120, 0.26);
+  background: rgba(216, 248, 120, 0.045);
+}
+
+.skill-option.is-disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.skill-option.is-disabled:hover {
+  border-color: var(--line);
+}
+
+.skill-option.is-missing {
+  border-style: dashed;
+  cursor: default;
+}
+
+.skill-option input {
+  flex: none;
+  margin: 2px 0 0;
+  accent-color: var(--lime);
+}
+
+.skill-option-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.skill-option .text-button {
+  flex: none;
+  margin-left: auto;
 }
 
 .skill-name {
-  color: var(--text);
+  color: var(--ink);
   font-size: 11px;
 }
 
 .skill-note {
-  margin-top: 2px;
   color: var(--faint);
   font-size: 10px;
   line-height: 1.4;
 }
 
-.skill-row .text-button {
-  flex: none;
+.skill-option-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.skill-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  color: var(--faint-2);
+  font-family: var(--font-mono);
+  font-size: 8.8px;
+  letter-spacing: 0.02em;
+}
+
+.skill-warning {
+  color: var(--warning);
+}
+
+.skill-preview {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--code);
+}
+
+.skill-preview-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: var(--faint-2);
+  font-family: var(--font-mono);
+  font-size: 8.8px;
+}
+
+.skill-preview-path {
+  overflow-wrap: anywhere;
+}
+
+.skill-preview pre {
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 10.2px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.skill-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 2px;
+}
+
+.skill-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.skill-warnings ul {
+  margin: 3px 0 0;
+  padding-left: 16px;
+  color: var(--warning);
+  font-size: 9.8px;
+  line-height: 1.45;
+}
+
+.skill-warning-note {
+  color: var(--warning);
 }
 
 .memory-toggle {

@@ -33,6 +33,7 @@ export type ToolContext = {
   jiraToken: string | null;
   jiraSite: string | null;
   explore?: (question: string) => Promise<string>;
+  review?: (target: string) => Promise<string>;
   checkpoint?: CheckpointPort;
   requestApproval?: (request: ApprovalToolRequest) => Promise<ApprovalOutcome>;
   history?: HistoryPort;

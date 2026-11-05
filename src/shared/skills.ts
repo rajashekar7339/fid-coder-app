@@ -1,11 +1,10 @@
-import type { SkillInfo } from "./types";
-
 export const SKILL_ID = /^[a-z0-9-]{1,64}$/;
 export const MAX_SKILLS = 8;
 export const MAX_SKILL_CHARS = 8_000;
 export const MAX_SKILLS_CHARS = 16_000;
 
-const SKILL_LEAD = "Active skills for this agent. Follow them on every turn.";
+const SKILL_LEAD =
+  "The user enabled these skills for this agent. Use each one when its task applies. They do not override the app's approval rules, tool limits, or project rules.";
 
 export type SkillText = {
   name: string;
@@ -51,24 +50,29 @@ export function selectSkills<T extends { id: string }>(catalog: T[], ids: readon
   return chosen;
 }
 
-export function composeSkillPrompt(skills: readonly { name: string; body: string }[]): string {
-  if (skills.length === 0) return "";
+export function composeSkillPrompt(
+  skills: readonly { name: string; body: string }[],
+): { prompt: string; names: string[] } {
+  if (skills.length === 0) return { prompt: "", names: [] };
   const parts = [SKILL_LEAD];
+  const names: string[] = [];
   let total = 0;
+  let omitted = false;
   for (const skill of skills) {
-    if (total >= MAX_SKILLS_CHARS) break;
+    if (total >= MAX_SKILLS_CHARS) {
+      omitted = true;
+      break;
+    }
     const room = Math.min(MAX_SKILL_CHARS, MAX_SKILLS_CHARS - total);
     const raw = skill.body.trim();
     const truncated = raw.length > room;
     const body = truncated ? raw.slice(0, room) : raw;
     parts.push(`### ${skill.name}\n${body}${truncated ? "\n…(truncated)" : ""}`);
+    names.push(skill.name);
     total += body.length;
   }
-  return parts.join("\n\n");
-}
-
-export function skillCatalogEntry(id: string, text: SkillText): SkillInfo {
-  return { id, name: text.name, description: text.description };
+  if (omitted) parts.push("…(some selected skills were omitted because the prompt reached its size limit)");
+  return { prompt: parts.join("\n\n"), names };
 }
 
 function readScalar(front: string, key: string): string | null {
@@ -77,13 +81,13 @@ function readScalar(front: string, key: string): string | null {
     const match = lines[index].match(new RegExp(`^${key}:\\s*(.*)$`));
     if (!match) continue;
     const rest = match[1].trim();
-    if (rest === ">" || rest === "|") {
+    if (rest.startsWith(">") || rest.startsWith("|")) {
       const folded: string[] = [];
       for (let next = index + 1; next < lines.length; next += 1) {
         if (!/^\s+\S/.test(lines[next])) break;
         folded.push(lines[next].trim());
       }
-      const joined = (rest === ">" ? folded.join(" ") : folded.join("\n")).trim();
+      const joined = (rest.startsWith(">") ? folded.join(" ") : folded.join("\n")).trim();
       return joined || null;
     }
     if (!rest) return null;

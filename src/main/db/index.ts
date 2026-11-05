@@ -1015,6 +1015,15 @@ function parseUsage(raw: string | null): TokenUsage | null {
       reasoningTokens: value.reasoningTokens ?? 0,
       modelCalls: value.modelCalls ?? 1,
       model: value.model ?? null,
+      isAuto: value.isAuto === true,
+      nanoAiu: typeof value.nanoAiu === "number" ? Math.max(0, value.nanoAiu) : 0,
+      creditCalls: typeof value.creditCalls === "number" ? Math.max(0, value.creditCalls) : 0,
+      creditStatus:
+        value.creditStatus === "complete" ||
+        value.creditStatus === "partial" ||
+        value.creditStatus === "unavailable"
+          ? value.creditStatus
+          : "unavailable",
     };
   } catch {
     return null;

@@ -57,6 +57,8 @@ const channels = {
   dialogPickFolder: "dialog:pick-folder",
   modelsList: "models:list",
   skillsList: "skills:list",
+  skillsRead: "skills:read",
+  skillsOpenFolder: "skills:open-folder",
 } as const;
 
 const listeners = new Map<number, (event: IpcRendererEvent, payload: ChatEvent) => void>();
@@ -148,7 +150,10 @@ const api: FidApi = {
     list: () => ipcRenderer.invoke(channels.modelsList),
   },
   skills: {
-    list: () => ipcRenderer.invoke(channels.skillsList),
+    list: (workspaceDir?: string | null) => ipcRenderer.invoke(channels.skillsList, workspaceDir ?? null),
+    read: (workspaceDir: string | null, id: string, source) =>
+      ipcRenderer.invoke(channels.skillsRead, workspaceDir, id, source),
+    openFolder: () => ipcRenderer.invoke(channels.skillsOpenFolder),
   },
 };
 

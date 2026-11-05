@@ -1,10 +1,11 @@
+import fs from "fs";
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { channels } from "../../shared/channels";
 import { isApprovalAction } from "../../shared/approval";
 import { normalizeModelId } from "../../shared/model";
 import { normalizeSkillIds } from "../../shared/skills";
 import { normalizeToolProfile } from "../../shared/tool-profile";
-import type { AgentInput, ApprovalAction, RoutineInput, RoutinePatch } from "../../shared/types";
+import type { AgentInput, ApprovalAction, RoutineInput, RoutinePatch, SkillSource } from "../../shared/types";
 import type { BrowserManager } from "../browser/browser-manager";
 import type { CheckpointStore } from "../workspace/checkpoints";
 import { assertCron, nextRunIso } from "../routines/cron";
@@ -22,8 +23,8 @@ import type { Runner } from "../chat/runner";
 import type { Scheduler } from "../routines/scheduler";
 import { clearSecret, secretKeys, setSecret } from "../secrets";
 import { readImpactSelection } from "../release-impact/index";
-import { listSkillInfo } from "../skills";
-import { skillsDir } from "../paths";
+import { listSkillInfo, readSkill, skillRoots } from "../skills";
+import { userSkillsDir } from "../paths";
 import { createAgentsFile, ruleFilePath, workspaceRules } from "../workspace/workspace-rules";
 
 type AppServices = {
@@ -204,7 +205,20 @@ export function registerIpc(services: AppServices): void {
   });
 
   ipcMain.handle(channels.modelsList, () => listCopilotModels());
-  ipcMain.handle(channels.skillsList, () => listSkillInfo(skillsDir()));
+  ipcMain.handle(channels.skillsList, (_event, workspaceDir?: string | null) =>
+    listSkillInfo(skillRoots(cleanWorkspace(workspaceDir))),
+  );
+  ipcMain.handle(
+    channels.skillsRead,
+    (_event, workspaceDir: string | null, id: string, source?: SkillSource) =>
+      readSkill(skillRoots(cleanWorkspace(workspaceDir)), String(id ?? ""), source),
+  );
+  ipcMain.handle(channels.skillsOpenFolder, async () => {
+    const dir = userSkillsDir();
+    fs.mkdirSync(dir, { recursive: true });
+    const error = await shell.openPath(dir);
+    if (error) throw new Error(error);
+  });
 
   ipcMain.handle(channels.dialogPickFolder, async () => {
     const parent = services.getWindow();
@@ -214,6 +228,10 @@ export function registerIpc(services: AppServices): void {
     if (result.canceled) return null;
     return result.filePaths[0] ?? null;
   });
+}
+
+function cleanWorkspace(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function cleanAgent(input: AgentInput): AgentInput {

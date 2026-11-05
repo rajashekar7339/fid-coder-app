@@ -446,6 +446,10 @@ export function App() {
               onStartSignIn={startSignInFromChat}
               onRetryModels={() => void refreshModels()}
               onToggleDesk={() => setDeskOpen((open) => !open)}
+              onEditAgent={() => {
+                if (selected) openEdit(selected);
+              }}
+              onOpenHelp={openHelp}
               onUpdated={(agent) => {
                 setAgents((current) => current.map((item) => (item.id === agent.id ? agent : item)));
               }}

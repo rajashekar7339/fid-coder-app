@@ -4,6 +4,10 @@ import type { Agent, ContextView } from "../../../shared/types";
 import { errorText, fid } from "../../lib/fid";
 import { Modal } from "../ui/Modal";
 
+const TOOL_LABELS: Record<string, string> = {
+  review_code: "/review",
+};
+
 export function ContextDialog({ agent, onClose }: { agent: Agent; onClose: () => void }) {
   const [view, setView] = useState<ContextView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -67,7 +71,7 @@ export function ContextDialog({ agent, onClose }: { agent: Agent; onClose: () =>
               </div>
             </div>
             <p className="context-tools">
-              {view.toolProfile} profile · {view.tools.join(", ")}
+              {view.toolProfile} profile · {view.tools.map((tool) => TOOL_LABELS[tool] ?? tool).join(", ")}
             </p>
             <p className="context-note">Credentials are never included in the system message.</p>
 

@@ -24,8 +24,9 @@ src/
     chat/runner.ts
     browser/browser-manager.ts
     history/        history.ts
+    skills/         index.ts
     routines/       scheduler.ts, cron.ts, notify.ts
-    workspace/      checkpoints.ts, explore-session.ts, workspace-brief.ts, workspace-rules.ts
+    workspace/      checkpoints.ts, explore-session.ts, review-session.ts, workspace-brief.ts, workspace-rules.ts
     release-impact/ config, collect, adapters, and the analyze engine
   cli/
     release-impact.ts
@@ -46,7 +47,7 @@ src/
       help/         HelpDialog, GuideContent
       ui/           Modal, Switch, ConfirmDialog, BrandMark, UsageBar, ModelSelect
     lib/            fid, format, guide, markdown, schedule, highlight
-  shared/           types, channels, api, and other pure helpers
+  shared/           types, channels, api, skills, commands, and other pure helpers
     release-impact/ config types, paths, scoring, and report text
   tools/
     registry.ts     args.ts, process.ts, types.ts, workspace.ts
@@ -58,12 +59,14 @@ src/
     history/        history.ts
     shell/          shell.ts, shell-policy.ts
     explore/        explore.ts, explore-code.ts
+    review/         review.ts
 tests/
   unit/              source-level .test.ts files
   integration/       .test.cjs and .test.mjs files against dist
   e2e-live/          Electron/Playwright .e2e.mjs harnesses and manual diagnostics
 scripts/
   generate-guide-screenshots.mjs
+skills/             review-change/SKILL.md, write-lean/SKILL.md
 docs/
   guide/            in-app help
   feature-enhancements.md
@@ -74,6 +77,11 @@ docs/
 | Piece | Where it goes |
 |---|---|
 | Types and channel names | `src/shared` |
+| A built-in skill | `skills/<skill-id>/SKILL.md` |
+| Skill parsing, selection, and prompt text | `src/shared/skills.ts` |
+| Skill discovery | `src/main/skills/index.ts` |
+| A composer command | `src/shared/commands.ts` and the menu in `src/renderer/components/chat/ChatView.tsx` |
+| A read-only review | `src/tools/review/review.ts` and `src/main/workspace/review-session.ts` |
 | A Copilot tool | `src/tools/<area>/<file>.ts` |
 | Release impact engine | `src/main/release-impact` and `src/shared/release-impact`. No Electron imports. |
 | Rows in SQLite | `src/main/db/index.ts` |
@@ -81,6 +89,8 @@ docs/
 | The preload method | the existing list in `src/preload/index.ts` |
 | A screen | `src/renderer/components/<screen>` |
 | Its CSS | a section in `src/renderer/styles/index.css` |
+
+Skills are discovered from `skills/`, the workspace `.github/skills`, `.agents/skills`, and `.claude/skills`, `~/.copilot/skills`, `~/.agents/skills`, and the app data `skills/` folder. The workspace copy wins, then the app data copy, then Copilot, then built-in. `skills/<id>/SKILL.md` needs `name` and `description` frontmatter.
 
 Import a tool by its file name, for example `./browser/browser`. TypeScript resolves `./db` to `db/index.ts`. It does not resolve `./browser` to `browser/browser.ts`.
 

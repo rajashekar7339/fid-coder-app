@@ -284,6 +284,10 @@ test("messages keep token usage and add the column on an older database", () => 
       reasoningTokens: 40,
       modelCalls: 2,
       model: "gpt-5",
+      isAuto: false,
+      nanoAiu: 12_000_000,
+      creditCalls: 2,
+      creditStatus: "complete",
     };
     const saved = db.addMessage(agent.id, "assistant", "Hello", null, usage);
     assert.deepEqual(saved.usage, usage);

@@ -42,4 +42,6 @@ export const channels = {
   dialogPickFolder: "dialog:pick-folder",
   modelsList: "models:list",
   skillsList: "skills:list",
+  skillsRead: "skills:read",
+  skillsOpenFolder: "skills:open-folder",
 } as const;

@@ -24,6 +24,8 @@ test("parses a skill file and a folded description", () => {
   );
   assert.equal(folded?.description, "Read the diff and the callers.");
   assert.equal(folded?.body, "Report only.");
+  const stripped = parseSkillMarkdown("---\nname: Review\ndescription: >-\n  Read the diff.\n---\n\nReport only.\n");
+  assert.equal(stripped?.description, "Read the diff.");
   assert.equal(parseSkillMarkdown("# No frontmatter\n"), null);
   assert.equal(parseSkillMarkdown("---\nname: Only name\n---\n\nBody\n"), null);
 });
@@ -46,17 +48,19 @@ test("selects imported skills and skips ones that are not installed", () => {
 });
 
 test("composes the prompt in order and truncates at the cap", () => {
-  assert.equal(composeSkillPrompt([]), "");
-  const text = composeSkillPrompt([
+  assert.deepEqual(composeSkillPrompt([]), { prompt: "", names: [] });
+  const { prompt: text, names } = composeSkillPrompt([
     { name: "One", body: `${"a".repeat(MAX_SKILL_CHARS)}EXTRA` },
     { name: "Two", body: "b".repeat(MAX_SKILL_CHARS) },
     { name: "Three", body: "should not appear" },
   ]);
-  assert.match(text, /^Active skills for this agent\. Follow them on every turn\./);
+  assert.deepEqual(names, ["One", "Two"]);
+  assert.match(text, /^The user enabled these skills for this agent\./);
   assert.match(text, /### One\na+\n…\(truncated\)/);
   assert.doesNotMatch(text, /EXTRA/);
-  assert.match(text, /### Two\nb+$/);
+  assert.match(text, /### Two\nb+/);
   assert.doesNotMatch(text, /Three/);
+  assert.match(text, /some selected skills were omitted/);
 });
 
 test("shipped skills parse and fit in one prompt", () => {
@@ -66,7 +70,7 @@ test("shipped skills parse and fit in one prompt", () => {
     assert.ok(parsed, id);
     return { id, ...parsed };
   });
-  const prompt = composeSkillPrompt(selectSkills(chosen, ["write-lean", "review-change"]));
+  const { prompt } = composeSkillPrompt(selectSkills(chosen, ["write-lean", "review-change"]));
   assert.match(prompt, /### Write lean/);
   assert.match(prompt, /### Review a change/);
   assert.match(prompt, /smallest complete change/i);

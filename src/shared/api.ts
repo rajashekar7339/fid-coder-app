@@ -16,7 +16,9 @@ import type {
   RoutineInput,
   RoutinePatch,
   SettingsView,
-  SkillInfo,
+  SkillCatalog,
+  SkillContent,
+  SkillSource,
   WorkspaceRuleFile,
 } from "./types";
 import type { CopilotUsageResult } from "./copilot-usage";
@@ -93,6 +95,8 @@ export interface FidApi {
     list: () => Promise<CopilotModel[]>;
   };
   skills: {
-    list: () => Promise<SkillInfo[]>;
+    list: (workspaceDir?: string | null) => Promise<SkillCatalog>;
+    read: (workspaceDir: string | null, id: string, source: SkillSource) => Promise<SkillContent | null>;
+    openFolder: () => Promise<void>;
   };
 }
