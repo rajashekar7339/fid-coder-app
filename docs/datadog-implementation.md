@@ -243,7 +243,6 @@ export type AgentToolProfile = "all" | "browser" | "developer" | "datadog";
 - `explore`, `list_dir`, `glob_files`, `search_text`, `file_read`
 - `git_status`, `git_diff`, `git_log`
 - Jira read-only tools
-- plan tools
 
 No shell. No file writes. No patch. That is what makes prompt injection from log content much less dangerous.
 

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { groupToolCalls, liveTurnSettled, projectThread, userTurnAccepted, type LiveTurn } from "../../src/shared/chat-thread.ts";
-import type { Message, MessageRole } from "../../src/shared/types.ts";
+import type { Message, MessageRole, TokenUsage } from "../../src/shared/types.ts";
 
 function message(id: string, role: MessageRole, content: string, createdAt: string): Message {
   return { id, agentId: "agent-1", role, content, createdAt };
@@ -72,6 +72,25 @@ test("streams the assistant under the user message", () => {
   assert.equal(projected.messages.at(-1)?.content, "Working");
   assert.equal(projected.streaming, true);
   assert.equal(projected.thinking, false);
+});
+
+test("carries live token usage onto the streaming assistant", () => {
+  const usage: TokenUsage = {
+    inputTokens: 1200,
+    outputTokens: 300,
+    cacheReadTokens: 640,
+    cacheWriteTokens: 0,
+    reasoningTokens: 0,
+    modelCalls: 2,
+    model: "gpt-5",
+    isAuto: false,
+    nanoAiu: 12_000_000,
+    creditCalls: 2,
+    creditStatus: "complete",
+  };
+  const saved = [message("u1", "user", "Hello", "2026-10-24T12:00:00.100Z")];
+  const projected = projectThread(saved, live({ assistant: "Working", usage }), "agent-1");
+  assert.deepEqual(projected.messages.at(-1)?.usage, usage);
 });
 
 test("folds consecutive tool calls into one group", () => {

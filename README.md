@@ -1,6 +1,6 @@
 # Fid Coder
 
-Fid Coder is a Windows desktop app for local AI agents. Each agent chats through GitHub Copilot, uses tools for files, shell, git, Jira, and a local browser, and can run on a schedule. Agents, transcripts, plans, file checkpoints, and settings stay on this machine.
+Fid Coder is a Windows desktop app for local AI agents. Each agent chats through GitHub Copilot, uses tools for files, shell, git, Jira, and a local browser, and can run on a schedule. Agents, transcripts, file checkpoints, and settings stay on this machine.
 
 ## Requirements
 
@@ -32,7 +32,9 @@ npm run dev
 | `npm test` | Unit and integration tests |
 | `npm run test:unit` | Fast tests against source files |
 | `npm run test:integration` | Tests against compiled `dist` output; builds first |
-| `npm run test:features` | Live Electron harness for plans, changes/revert, rules, and the context inspector. Needs Copilot sign-in and runs against a temporary profile. |
+| `npm run test:features` | Live Electron harness for changes/revert, rules, and the context inspector. Needs Copilot sign-in and runs against a temporary profile. |
+| `npm run test:release-impact` | Live Electron harness for the analyst desk and release-impact CLI. Pauses 3 seconds before each UI click; set `FID_RUN_AGENT=1` to send one real Copilot turn. |
+| `npm run release-impact -- <command>` | Run the release-impact CLI (`init`, `doctor`, `analyze`, `explain`) |
 | `npm run dist:win` | Build the portable Windows app into `release/` |
 
 ## Project layout
@@ -47,6 +49,27 @@ src/
 ```
 
 `AGENTS.md` has the detailed folder map and the rules for adding a tool, IPC handler, screen, or database method.
+
+## Release impact analysis
+
+The release-impact engine compares prod and candidate git refs and selects the tests that should run. A team supplies one `.release-impact/config.json`; the engine contains no repo or team names. The app also seeds a **Release Impact Analyst** agent with the analyst tool profile.
+
+```powershell
+# Build the CLI in the app folder.
+cd D:\fid-coder-desktop-app
+npm run build:node
+
+# Run the CLI from the team workspace, not from the app folder.
+cd C:\work\release-workspace
+node D:\fid-coder-desktop-app\dist\cli\release-impact.js init --template playwright
+# edit .release-impact/config.json
+node D:\fid-coder-desktop-app\dist\cli\release-impact.js doctor
+node D:\fid-coder-desktop-app\dist\cli\release-impact.js analyze --dry-run
+node D:\fid-coder-desktop-app\dist\cli\release-impact.js analyze
+node D:\fid-coder-desktop-app\dist\cli\release-impact.js explain TC-1042
+```
+
+The app limits an analyst's file writes and engine outputs to `artifacts/`. Keep `outputs.report` and `outputs.selection` under that folder. The CLI can use `--output <dir>` to move both files when run outside the app.
 
 ## Data
 

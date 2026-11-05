@@ -12,14 +12,17 @@ import type {
   CopilotModel,
   FileDiff,
   Message,
-  PlanView,
   Routine,
   RoutineInput,
   RoutinePatch,
   SettingsView,
+  SkillCatalog,
+  SkillContent,
+  SkillSource,
   WorkspaceRuleFile,
 } from "./types";
 import type { CopilotUsageResult } from "./copilot-usage";
+import type { SelectedTests } from "./release-impact/types";
 
 export interface FidApi {
   agents: {
@@ -56,11 +59,11 @@ export interface FidApi {
     revert: (changeId: string) => Promise<void>;
     revertTurn: (turnId: string) => Promise<void>;
   };
-  plans: {
-    get: (agentId: string) => Promise<PlanView | null>;
-  };
   context: {
     preview: (agentId: string) => Promise<ContextView>;
+  };
+  impact: {
+    latest: (agentId: string) => Promise<SelectedTests | null>;
   };
   workspace: {
     rules: (agentId: string) => Promise<WorkspaceRuleFile[]>;
@@ -90,5 +93,10 @@ export interface FidApi {
   };
   models: {
     list: () => Promise<CopilotModel[]>;
+  };
+  skills: {
+    list: (workspaceDir?: string | null) => Promise<SkillCatalog>;
+    read: (workspaceDir: string | null, id: string, source: SkillSource) => Promise<SkillContent | null>;
+    openFolder: () => Promise<void>;
   };
 }

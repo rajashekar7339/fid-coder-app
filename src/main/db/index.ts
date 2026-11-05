@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { DatabaseSync } from "node:sqlite";
 import { AUTO_MODEL_ID, normalizeModelId } from "../../shared/model";
+import { normalizeSkillIds } from "../../shared/skills";
 import { normalizeToolProfile } from "../../shared/tool-profile";
 import { normalizeApprovalMatch } from "../../shared/approval";
 import type {
@@ -16,12 +17,12 @@ import type {
   FileChangeKind,
   Message,
   MessageRole,
-  PlanStep,
-  PlanView,
   Routine,
   RoutineInput,
   RoutinePatch,
+  TokenUsage,
 } from "../../shared/types";
+import { ANALYST_DESCRIPTION, ANALYST_NAME, ANALYST_PROMPT, PREVIOUS_ANALYST_PROMPTS } from "../release-impact/preset";
 
 type AgentRow = {
   id: string;
@@ -33,6 +34,7 @@ type AgentRow = {
   tool_profile: string | null;
   memory_summary: string | null;
   memory_enabled: number;
+  skill_ids: string | null;
   last_activity_at: string | null;
   next_routine_at: string | null;
   created_at: string;
@@ -57,6 +59,7 @@ type MessageRow = {
   content: string;
   created_at: string;
   turn_id: string | null;
+  usage: string | null;
 };
 
 type TurnRow = {
@@ -82,13 +85,6 @@ type FileChangeRow = {
   deletions: number;
   note: string | null;
   created_at: string;
-};
-
-type PlanRow = {
-  agent_id: string;
-  turn_id: string | null;
-  steps: string;
-  updated_at: string;
 };
 
 type ApprovalRow = {
@@ -199,6 +195,8 @@ export class AppDatabase {
     this.db.exec("PRAGMA foreign_keys = ON");
     this.migrate();
     this.seed();
+    this.ensureReleaseAnalyst();
+    this.refreshAnalystPrompt();
   }
 
   close(): void {
@@ -218,6 +216,7 @@ export class AppDatabase {
         memory_summary TEXT NOT NULL DEFAULT '',
         memory_turn_count INTEGER NOT NULL DEFAULT 0,
         memory_enabled INTEGER NOT NULL DEFAULT 1,
+        skill_ids TEXT NOT NULL DEFAULT '[]',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -227,7 +226,8 @@ export class AppDatabase {
         agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
         role TEXT NOT NULL,
         content TEXT NOT NULL,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        usage TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_messages_agent ON messages(agent_id, created_at);
 
@@ -288,13 +288,6 @@ export class AppDatabase {
       );
       CREATE INDEX IF NOT EXISTS idx_file_changes_agent ON file_changes(agent_id);
 
-      CREATE TABLE IF NOT EXISTS plans (
-        agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
-        turn_id TEXT,
-        steps TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
       CREATE TABLE IF NOT EXISTS approvals (
         id TEXT PRIMARY KEY,
         agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -328,7 +321,9 @@ export class AppDatabase {
     this.ensureAgentModelColumn();
     this.ensureAgentDescriptionColumn();
     this.ensureAgentMemoryColumns();
+    this.ensureAgentSkillIdsColumn();
     this.ensureMessageTurnColumn();
+    this.ensureMessageUsageColumn();
     const addedToolProfile = this.ensureAgentToolProfileColumn();
     const now = new Date().toISOString();
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(JIRA_NAME, now, OLD_JIRA_NAME);
@@ -372,6 +367,12 @@ export class AppDatabase {
     }
   }
 
+  private ensureAgentSkillIdsColumn(): void {
+    const columns = this.db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+    if (columns.some((column) => column.name === "skill_ids")) return;
+    this.db.exec("ALTER TABLE agents ADD COLUMN skill_ids TEXT NOT NULL DEFAULT '[]'");
+  }
+
   private ensureAgentToolProfileColumn(): boolean {
     const columns = this.db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
     if (columns.some((column) => column.name === "tool_profile")) return false;
@@ -385,6 +386,12 @@ export class AppDatabase {
     this.db.exec("ALTER TABLE messages ADD COLUMN turn_id TEXT");
   }
 
+  private ensureMessageUsageColumn(): void {
+    const columns = this.db.prepare("PRAGMA table_info(messages)").all() as { name: string }[];
+    if (columns.some((column) => column.name === "usage")) return;
+    this.db.exec("ALTER TABLE messages ADD COLUMN usage TEXT");
+  }
+
   private removeSeededTodo(): void {
     const placeholders = SEEDED_TODO_PROMPTS.map(() => "?").join(", ");
     const rows = this.db
@@ -396,6 +403,34 @@ export class AppDatabase {
       if (!/^[0-9a-f-]{36}$/i.test(row.id)) continue;
       fs.rmSync(path.join(path.dirname(this.file), "browser-profiles", row.id), { recursive: true, force: true });
     }
+  }
+
+  private ensureReleaseAnalyst(): void {
+    if (this.getSetting("seeded_release_analyst") === "1") return;
+    const existing = this.db.prepare("SELECT id FROM agents WHERE name = ?").get(ANALYST_NAME);
+    if (!existing) {
+      const now = new Date().toISOString();
+      this.db
+        .prepare(
+          `INSERT INTO agents (id, name, description, system_prompt, workspace_dir, model, tool_profile, created_at, updated_at)
+           VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+        )
+        .run(crypto.randomUUID(), ANALYST_NAME, ANALYST_DESCRIPTION, ANALYST_PROMPT, AUTO_MODEL_ID, "analyst", now, now);
+    }
+    this.setSetting("seeded_release_analyst", "1");
+  }
+
+  private refreshAnalystPrompt(): void {
+    if (this.getSetting("analyst_prompt_rev") === "2") return;
+    const row = this.db.prepare("SELECT id, system_prompt FROM agents WHERE name = ?").get(ANALYST_NAME) as
+      | { id: string; system_prompt: string }
+      | undefined;
+    if (row && PREVIOUS_ANALYST_PROMPTS.includes(row.system_prompt)) {
+      this.db
+        .prepare("UPDATE agents SET system_prompt = ?, updated_at = ? WHERE id = ?")
+        .run(ANALYST_PROMPT, new Date().toISOString(), row.id);
+    }
+    this.setSetting("analyst_prompt_rev", "2");
   }
 
   private seed(): void {
@@ -436,8 +471,8 @@ export class AppDatabase {
     this.db
       .prepare(
         `INSERT INTO agents (
-          id, name, description, system_prompt, workspace_dir, model, tool_profile, memory_enabled, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, name, description, system_prompt, workspace_dir, model, tool_profile, memory_enabled, skill_ids, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -448,6 +483,7 @@ export class AppDatabase {
         normalizeModelId(input.model),
         normalizeToolProfile(input.toolProfile),
         input.memoryEnabled ? 1 : 0,
+        JSON.stringify(normalizeSkillIds(input.skillIds)),
         now,
         now,
       );
@@ -460,7 +496,7 @@ export class AppDatabase {
       .prepare(
         `UPDATE agents
          SET name = ?, description = ?, system_prompt = ?, workspace_dir = ?, model = ?, tool_profile = ?,
-             memory_enabled = ?, updated_at = ?
+             memory_enabled = ?, skill_ids = ?, updated_at = ?
          WHERE id = ?`,
       )
       .run(
@@ -471,6 +507,7 @@ export class AppDatabase {
         normalizeModelId(input.model),
         normalizeToolProfile(input.toolProfile),
         input.memoryEnabled ? 1 : 0,
+        JSON.stringify(normalizeSkillIds(input.skillIds)),
         now,
         id,
       );
@@ -584,13 +621,19 @@ export class AppDatabase {
     return rows.map(mapMessage);
   }
 
-  addMessage(agentId: string, role: MessageRole, content: string, turnId: string | null = null): Message {
+  addMessage(
+    agentId: string,
+    role: MessageRole,
+    content: string,
+    turnId: string | null = null,
+    usage: TokenUsage | null = null,
+  ): Message {
     const id = crypto.randomUUID();
     const createdAt = new Date().toISOString();
     this.db
-      .prepare("INSERT INTO messages (id, agent_id, role, content, created_at, turn_id) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(id, agentId, role, content, createdAt, turnId);
-    return { id, agentId, role, content, createdAt, turnId };
+      .prepare("INSERT INTO messages (id, agent_id, role, content, created_at, turn_id, usage) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(id, agentId, role, content, createdAt, turnId, usage ? JSON.stringify(usage) : null);
+    return { id, agentId, role, content, createdAt, turnId, usage };
   }
 
   createTurn(agentId: string, source: string): string {
@@ -715,33 +758,6 @@ export class AppDatabase {
       throw error;
     }
     return rows.map((row) => ({ id: row.id, agentId: row.agent_id }));
-  }
-
-  getPlan(agentId: string): PlanView | null {
-    const row = this.db.prepare("SELECT * FROM plans WHERE agent_id = ?").get(agentId) as PlanRow | undefined;
-    if (!row) return null;
-    return {
-      agentId,
-      turnId: row.turn_id,
-      steps: readPlanSteps(row.steps),
-      updatedAt: row.updated_at,
-    };
-  }
-
-  setPlan(agentId: string, turnId: string | null, steps: PlanStep[]): PlanView {
-    const updatedAt = new Date().toISOString();
-    this.db
-      .prepare(
-        `INSERT INTO plans (agent_id, turn_id, steps, updated_at)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(agent_id) DO UPDATE SET turn_id = excluded.turn_id, steps = excluded.steps, updated_at = excluded.updated_at`,
-      )
-      .run(agentId, turnId, JSON.stringify(steps), updatedAt);
-    return { agentId, turnId, steps, updatedAt };
-  }
-
-  clearPlan(agentId: string): void {
-    this.db.prepare("DELETE FROM plans WHERE agent_id = ?").run(agentId);
   }
 
   createApproval(input: {
@@ -957,11 +973,21 @@ function mapAgent(row: AgentRow): Agent {
     toolProfile: normalizeToolProfile(row.tool_profile),
     memorySummary: row.memory_summary ?? "",
     memoryEnabled: row.memory_enabled !== 0,
+    skillIds: parseSkillIds(row.skill_ids),
     lastActivityAt: row.last_activity_at,
     nextRoutineAt: row.next_routine_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function parseSkillIds(value: string | null): string[] {
+  if (!value) return [];
+  try {
+    return normalizeSkillIds(JSON.parse(value));
+  } catch {
+    return [];
+  }
 }
 
 function mapMessage(row: MessageRow): Message {
@@ -972,7 +998,36 @@ function mapMessage(row: MessageRow): Message {
     content: row.content,
     createdAt: row.created_at,
     turnId: row.turn_id ?? null,
+    usage: parseUsage(row.usage),
   };
+}
+
+function parseUsage(raw: string | null): TokenUsage | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<TokenUsage>;
+    if (typeof value.inputTokens !== "number" || typeof value.outputTokens !== "number") return null;
+    return {
+      inputTokens: value.inputTokens,
+      outputTokens: value.outputTokens,
+      cacheReadTokens: value.cacheReadTokens ?? 0,
+      cacheWriteTokens: value.cacheWriteTokens ?? 0,
+      reasoningTokens: value.reasoningTokens ?? 0,
+      modelCalls: value.modelCalls ?? 1,
+      model: value.model ?? null,
+      isAuto: value.isAuto === true,
+      nanoAiu: typeof value.nanoAiu === "number" ? Math.max(0, value.nanoAiu) : 0,
+      creditCalls: typeof value.creditCalls === "number" ? Math.max(0, value.creditCalls) : 0,
+      creditStatus:
+        value.creditStatus === "complete" ||
+        value.creditStatus === "partial" ||
+        value.creditStatus === "unavailable"
+          ? value.creditStatus
+          : "unavailable",
+    };
+  } catch {
+    return null;
+  }
 }
 
 function mapRoutine(row: RoutineRow): Routine {
@@ -1070,24 +1125,6 @@ function readApprovalDecision(value: string): "pending" | ApprovalDecision {
 
 function readApprovalSource(value: string | null): ApprovalSource | null {
   return value === "user" || value === "rule" || value === "timeout" || value === "aborted" ? value : null;
-}
-
-function readPlanSteps(raw: string): PlanStep[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return [];
-  }
-  if (!Array.isArray(parsed)) return [];
-  return parsed.filter((item): item is PlanStep => {
-    if (!item || typeof item !== "object") return false;
-    const step = item as { text?: unknown; status?: unknown };
-    return (
-      typeof step.text === "string" &&
-      (step.status === "pending" || step.status === "in_progress" || step.status === "done")
-    );
-  });
 }
 
 function readModel(value: string | null | undefined): string {

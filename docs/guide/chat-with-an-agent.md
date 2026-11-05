@@ -16,9 +16,37 @@ While the agent runs, its current tool step is highlighted in the open tool card
 
 The conversation is saved in the local SQLite database. When Fid Coder rebuilds a Copilot session, it sends the last 30 messages, clipped to 12,000 characters, so the agent has recent context.
 
+## See the agent's skills
+
+When an agent has skills, a thin **Skills** row appears under the agent name with one chip per active skill. Skills shape every reply for that agent. Add or remove them in the agent editor; other agents keep their own lists.
+
+## Use a command
+
+Type `/` in the composer, or choose **Commands** next to the model picker, to open the command list.
+
+- `/review` — review uncommitted changes, staged changes, a branch, a PR number, or a path.
+- `/skills` — open this agent's skills editor.
+- `/help` — open this guide.
+
+Use ↑/↓ to move, Enter or Tab to select, and Escape to close. A command that needs a workspace or developer tools shows the reason in the list. The empty conversation also shows the available commands as chips.
+
+## Ask for a code review
+
+A developer or all-tools agent has the **/review** command. Type `/review` and add `staged`, `branch <name>`, `pr <number>`, or a path. Leave the target empty to review the uncommitted changes. The review runs in a read-only session: it can read, search, and use git reads, but it cannot edit files, run shell commands, or control a browser. The report appears in the chat.
+
 ## Use the model picker
 
-The model picker sits in the composer. **Auto** lets Copilot choose the model for the agent. Choose another model when the agent is idle; the picker is disabled while a turn is running.
+The model picker sits in the composer. **Auto** lets Copilot choose the model for the agent. The other choices are the models the signed-in Copilot session reports as selectable; if it reports none, only Auto is available. Choose another model when the agent is idle; the picker is disabled while a turn is running. The new model applies to the next reply. If Copilot cannot use the chosen model, the turn stops with an error instead of answering with a different model.
+
+## See token and credit usage
+
+Each assistant reply has a small usage line: the total tokens, the AI credits Copilot reported, and the model that produced that reply. Select it to see input, output, cache-read tokens, model calls, and a token-composition bar.
+
+The model on this line is historical: it names the model that served that reply. Changing the picker does not rewrite earlier usage lines. When Copilot chose the model automatically, the line shows `Auto · <model>`.
+
+AI credits appear when Copilot reports them for the model call. If the account or model does not report a credit cost, the credits value is hidden. A `~` means some model calls in the turn did not report a cost, so the amount is a subtotal.
+
+> **Tip:** Cached tokens are part of input; they are not counted twice.
 
 ## Stop a turn
 
@@ -37,5 +65,7 @@ Ask the agent what you worked on earlier, or name the issue. It can search the s
 ## Ask for a diagram
 
 Ask for a flow, process, or architecture picture. The agent answers with a Mermaid block, and the app draws it as a diagram with zoom, horizontal scroll, and a **Source** toggle. A reply that already contains ASCII art still shows as text under a **Diagram** label.
+
+Use **Copy image** above a rendered diagram to copy the whole diagram as a PNG, including its colors, at full size regardless of the current zoom or scroll. Paste it directly into Confluence or another document. **Copy** copies the Mermaid source instead.
 
 > **Tip:** Hover a reply and choose **Copy**, or use the copy button on a code block or diagram.

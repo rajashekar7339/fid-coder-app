@@ -1,6 +1,6 @@
 # Create your first agent
 
-An agent is a saved teammate on this PC. It has its own instructions, model, tool access, browser profile, and conversation. This guide creates a developer agent that can read a repository and draft release notes.
+An agent is a saved teammate on this PC. It has its own instructions, model, tool access, skills, browser profile, and conversation. This guide creates a developer agent that can read a repository and draft release notes.
 
 ![The New agent editor filled in with a name, role, instructions, developer tools, and a workspace folder.](images/agent-editor.png)
 
@@ -32,8 +32,15 @@ Keep the first version short. You can edit the agent later from the menu on its 
 - **All tools** gives the agent the browser, Jira, files, search, git, and shell.
 - **Browser and Jira** is for web work and a saved Jira site. It cannot run commands or touch files.
 - **Shell, search, git, and files** is for code work. It cannot control a browser or read Jira.
+- **Release analyst** compares a prod ref with a candidate ref and selects tests. It writes only under `artifacts/`.
 
 For this release assistant, choose **Shell, search, git, and files** and pick the repository folder. The file and search tools stay inside that folder. The shell starts in that folder too, but it is not a full sandbox. Without a workspace folder, the local tools stay unavailable.
+
+## Add skills
+
+Under **Skills**, check any instruction files this agent should follow. Skills are per agent: other agents do not receive them. Each row shows its source and size; use **View** to read it first. Built-in skills include a code-review rubric and a lean-change guide. Workspace skills come from `.github/skills`, `.agents/skills`, or `.claude/skills`; your own skills live in `%USERPROFILE%\.fid_coder_app\skills`.
+
+See **Add skills to an agent** in this guide for the full list and the prompt budget.
 
 ## Save and send the first message
 

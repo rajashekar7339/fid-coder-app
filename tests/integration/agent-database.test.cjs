@@ -33,6 +33,7 @@ test("existing agents default to Auto and keep a chosen model", () => {
   try {
     assert.equal(db.getAgent("11111111-1111-4111-8111-111111111111").model, AUTO_MODEL_ID);
     assert.equal(db.getAgent("11111111-1111-4111-8111-111111111111").toolProfile, "all");
+    assert.deepEqual(db.getAgent("11111111-1111-4111-8111-111111111111").skillIds, []);
     const created = db.createAgent({
       name: "Picker",
       systemPrompt: "Reply briefly.",
@@ -125,7 +126,39 @@ test("new databases seed agents on Auto", () => {
     assert.equal(agents.find((agent) => agent.name === "JIRA Agent")?.description, "Jira teammate");
     assert.equal(agents.find((agent) => agent.name === "JIRA Agent")?.toolProfile, "browser");
     assert.equal(agents.find((agent) => agent.name === "GIT PR Review")?.toolProfile, "developer");
+    assert.equal(agents.find((agent) => agent.name === "Release Impact Analyst")?.toolProfile, "analyst");
     assert.ok(agents.every((agent) => agent.lastActivityAt === null));
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an existing database gains the release analyst once", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-analyst-seed-"));
+  const file = path.join(dir, "app.sqlite");
+  let db = new AppDatabase(file);
+  try {
+    const seeded = db.listAgents().find((agent) => agent.name === "Release Impact Analyst");
+    assert.ok(seeded);
+    db.deleteAgent(seeded.id);
+    db.setSetting("seeded_release_analyst", "0");
+  } finally {
+    db.close();
+  }
+
+  db = new AppDatabase(file);
+  try {
+    const restored = db.listAgents().find((agent) => agent.name === "Release Impact Analyst");
+    assert.equal(restored?.toolProfile, "analyst");
+    db.deleteAgent(restored.id);
+  } finally {
+    db.close();
+  }
+
+  db = new AppDatabase(file);
+  try {
+    assert.equal(db.listAgents().some((agent) => agent.name === "Release Impact Analyst"), false);
   } finally {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });
@@ -172,6 +205,94 @@ test("agents expose their latest activity and next routine", () => {
       model: created.model,
     });
     assert.equal(updated.description, "");
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("skill ids stay on the agent that imported them", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-skills-"));
+  const db = new AppDatabase(path.join(dir, "app.sqlite"));
+  try {
+    const coder = db.createAgent({
+      name: "Coder",
+      systemPrompt: "Write code.",
+      workspaceDir: null,
+      model: AUTO_MODEL_ID,
+      skillIds: ["write-lean", "write-lean", "Not A Skill", "review-change"],
+    });
+    assert.deepEqual(coder.skillIds, ["write-lean", "review-change"]);
+    const reviewer = db.createAgent({
+      name: "Reviewer",
+      systemPrompt: "Review code.",
+      workspaceDir: null,
+      model: AUTO_MODEL_ID,
+      skillIds: ["review-change"],
+    });
+    const updated = db.updateAgent(coder.id, {
+      name: coder.name,
+      systemPrompt: coder.systemPrompt,
+      workspaceDir: coder.workspaceDir,
+      model: coder.model,
+      skillIds: ["write-lean"],
+    });
+    assert.deepEqual(updated.skillIds, ["write-lean"]);
+    assert.deepEqual(db.getAgent(reviewer.id).skillIds, ["review-change"]);
+    const cleared = db.updateAgent(reviewer.id, {
+      name: reviewer.name,
+      systemPrompt: reviewer.systemPrompt,
+      workspaceDir: reviewer.workspaceDir,
+      model: reviewer.model,
+    });
+    assert.deepEqual(cleared.skillIds, []);
+    assert.deepEqual(db.getAgent(coder.id).skillIds, ["write-lean"]);
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("messages keep token usage and add the column on an older database", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-usage-"));
+  const file = path.join(dir, "app.sqlite");
+  const raw = new DatabaseSync(file);
+  raw.exec(`
+    CREATE TABLE messages (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `);
+  raw.close();
+
+  const db = new AppDatabase(file);
+  try {
+    const agent = db.createAgent({
+      name: "Usage",
+      systemPrompt: "Reply briefly.",
+      workspaceDir: null,
+      model: AUTO_MODEL_ID,
+    });
+    const usage = {
+      inputTokens: 1200,
+      outputTokens: 300,
+      cacheReadTokens: 640,
+      cacheWriteTokens: 0,
+      reasoningTokens: 40,
+      modelCalls: 2,
+      model: "gpt-5",
+      isAuto: false,
+      nanoAiu: 12_000_000,
+      creditCalls: 2,
+      creditStatus: "complete",
+    };
+    const saved = db.addMessage(agent.id, "assistant", "Hello", null, usage);
+    assert.deepEqual(saved.usage, usage);
+    const found = db.listMessages(agent.id).find((message) => message.id === saved.id);
+    assert.deepEqual(found?.usage, usage);
   } finally {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });

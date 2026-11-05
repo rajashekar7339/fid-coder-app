@@ -1,6 +1,6 @@
 # Feature enhancements
 
-Planned feature work for Fid Coder after the current cockpit, workspace tools, plans, checkpoints, routines, and integrations.
+Planned feature work for Fid Coder after the current cockpit, workspace tools, checkpoints, routines, and integrations.
 
 Last updated: 30 October 2026.
 
@@ -10,7 +10,7 @@ Last updated: 30 October 2026.
 - No Docker and no remote browser.
 - Tools stay rooted in the agent workspace.
 - The browser is local and headed, with one profile per agent.
-- Agents, transcripts, plans, checkpoints, and settings stay on the PC.
+- Agents, transcripts, checkpoints, and settings stay on the PC.
 - Keep changes small and match the existing architecture in `AGENTS.md`.
 
 ## Current baseline
@@ -23,13 +23,13 @@ Already shipped:
 - GitHub pull request tools and the GitHub token.
 - Native workspace tools: list, glob, search, read, write, patch, git, and shell.
 - `explore_code`, the workspace brief, and project rules.
-- Plans, turn checkpoints, file diffs, and revert.
+- Turn checkpoints, file diffs, and revert.
 - Routines with cron schedules, manual runs, and Windows toasts.
 - Copilot usage, the help center, and the portable Windows build.
 
 Gaps this plan addresses:
 
-- One agent has exactly one transcript, one plan, and one running turn.
+- One agent has exactly one transcript and one running turn.
 - A risky shell command is gated by a prompt convention, not a host-enforced decision.
 - Routines expose only `last_status` and stop when the app quits.
 - The composer only accepts text.
@@ -59,14 +59,14 @@ A sixth, vertical use case — the configurable release impact analyst — is sp
 
 #### Problem
 
-An agent is both identity and conversation. `messages`, `turns`, and `plans` are keyed by `agent_id`, and `Runner` keeps one session and one running turn per agent. A routine writes into the same transcript as interactive work. Starting a new task means carrying a large old context or creating another agent.
+An agent is both identity and conversation. `messages` and `turns` are keyed by `agent_id`, and `Runner` keeps one session and one running turn per agent. A routine writes into the same transcript as interactive work. Starting a new task means carrying a large old context or creating another agent.
 
 #### What ships
 
 - **New chat** in the conversation header and with `Ctrl+N`.
 - A thread history popover with title search, rename, delete, and archive.
 - Auto-title from the first user message, editable.
-- Every thread has its own transcript, plan, turn changes, and live turn.
+- Every thread has its own transcript, turn changes, and live turn.
 - Routines write to their own thread instead of the interactive transcript.
 - Switching threads during a run preserves both live views.
 
@@ -74,17 +74,16 @@ An agent is both identity and conversation. `messages`, `turns`, and `plans` are
 
 - Add a `conversations` table: `id`, `agent_id`, `title`, `created_at`, `updated_at`, `archived_at`.
 - Add `conversation_id` to `messages` and `turns`.
-- Re-key `plans` by `conversation_id`; migrate the existing agent plan to each agent's first thread.
 - Change the Runner session cache key from `agentId` to `agentId:conversationId`, and keep the active turn per conversation.
 - Add `conversationId` to every `ChatEvent` so the renderer filters by thread, not agent.
-- Keep agent memory long-term and agent-wide. The thread transcript is the working context; a thread carries its own plan and change set.
-- Migrate existing data by creating one `Main` thread per agent and assigning all existing messages, turns, and the current plan. No data is deleted.
+- Keep agent memory long-term and agent-wide. The thread transcript is the working context; a thread carries its own change set.
+- Migrate existing data by creating one `Main` thread per agent and assigning all existing messages and turns. No data is deleted.
 - Add `conversations.list/create/rename/delete`, change `messages.list` to take a conversation id, and change `chat.send` to take a conversation id.
 - Update `ChatView`, `App`, and the sidebar; add a `ChatHistory` component.
 
 #### Done when
 
-Two threads on one agent have separate transcripts and plans, a running turn in one does not leak into the other, and existing data survives the migration.
+Two threads on one agent have separate transcripts and change sets, a running turn in one does not leak into the other, and existing data survives the migration.
 
 #### Risks
 
@@ -257,7 +256,7 @@ A fixture MCP server's tools appear in an agent's Context view, a call shows up 
 
 ### 6. Configurable release impact analyst
 
-**Status:** Planned
+**Status:** v1 in the app. A large diff keeps the prioritized tests. Full regression is only for configured policy paths, contract files, a failed adapter, or an unreadable repo. Custom adapters, Jira lookups, and a scheduled routine are not included.
 **Size:** L, 2–3 weeks for a reusable v1
 **Depends on:** #2 for shell safety; multi-repo workspace support is recommended, but the standalone CLI works with a parent folder today
 **Track:** separate use-case track
@@ -424,14 +423,16 @@ Field reference:
 | `repos[].prod`, `repos[].candidate` | No | Git refs or SHAs; a release manifest can supply them |
 | `repos[].testGlobs` | Automation only | Files the adapter indexes |
 | `repos[].caseIdPattern` | No | Regex for stable test IDs such as `TC-1042` |
-| `ignore` | No | Diff paths the engine never analyzes |
+| `ignore` | No | Diff paths and automation test files the engine never scans. Folders named `Deprecated` in the automation repo are always skipped |
 | `mapping.explicit[]` | No | Team-owned code-to-test rules; highest confidence |
 | `mapping.contracts[]` | No | OpenAPI, GraphQL, or protobuf files used for contract checks |
-| `policy.fullRegression` | No | Paths that always force the full suite |
-| `policy.minMappingCoverage` | No | Below this coverage, recommend full regression |
-| `policy.maxChangedFiles` | No | Above this count, recommend full regression |
+| `policy.fullRegression` | No | Source or contract paths that always force the full suite; automation test changes do not trigger it |
+| `policy.minMappingCoverage` | No | Below this coverage, add a note. The selected tests stay |
+| `policy.maxChangedFiles` | No | Above this source/contract changed-file count, add a note. The selected tests stay; automation test changes do not count |
+| `policy.maxDetailFiles` | No | Changed files that get signal extraction; default 400 |
+| `policy.maxTestFiles` | No | Test files indexed from the automation repo; default 500 |
 | `policy.allowCustomAdapters` | No | Opt in to loading a team-provided adapter module |
-| `outputs.*` | Yes | Report path, selection path, and CI format |
+| `outputs.*` | Yes | Report and selection paths under `artifacts/`, and CI format |
 | `jira.*` | No | Turn commit/PR ticket keys into Jira lookups |
 
 When `releaseManifest` is set, the per-repo `prod` and `candidate` fields are optional. The manifest wins so a release cannot accidentally compare moving branches.
@@ -574,16 +575,11 @@ Selection formats:
 
 Full-regression triggers:
 
-- Auth, security, payments, shared/core libraries.
-- Database migrations or schema changes.
-- API contracts or event schemas.
-- Build, dependency, or runtime changes.
-- More than `policy.maxChangedFiles`.
-- Mapping coverage below `policy.minMappingCoverage`.
+- A path listed in `policy.fullRegression`.
+- A changed file listed in `mapping.contracts`.
 - Adapter failure or unreadable refs.
-- Agent confidence low or claims without evidence.
 
-The report must put a full-regression recommendation at the top, before the selected tests.
+The report names a full-regression trigger before the selected tests. The selected tests stay the list to run. File count and mapping coverage are notes, not full-regression triggers. A map that matches most of the suite selects a test only when a signal also matches.
 
 #### Fid Coder integration
 

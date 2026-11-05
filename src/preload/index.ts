@@ -35,8 +35,8 @@ const channels = {
   changesDiff: "changes:diff",
   changesRevert: "changes:revert",
   changesRevertTurn: "changes:revert-turn",
-  plansGet: "plans:get",
   contextPreview: "context:preview",
+  impactLatest: "impact:latest",
   workspaceRules: "workspace:rules",
   workspaceCreateRules: "workspace:create-rules",
   workspaceOpenRule: "workspace:open-rule",
@@ -56,6 +56,9 @@ const channels = {
   settingsClearJiraToken: "settings:clear-jira-token",
   dialogPickFolder: "dialog:pick-folder",
   modelsList: "models:list",
+  skillsList: "skills:list",
+  skillsRead: "skills:read",
+  skillsOpenFolder: "skills:open-folder",
 } as const;
 
 const listeners = new Map<number, (event: IpcRendererEvent, payload: ChatEvent) => void>();
@@ -111,11 +114,11 @@ const api: FidApi = {
     revert: (changeId: string) => ipcRenderer.invoke(channels.changesRevert, changeId),
     revertTurn: (turnId: string) => ipcRenderer.invoke(channels.changesRevertTurn, turnId),
   },
-  plans: {
-    get: (agentId: string) => ipcRenderer.invoke(channels.plansGet, agentId),
-  },
   context: {
     preview: (agentId: string) => ipcRenderer.invoke(channels.contextPreview, agentId),
+  },
+  impact: {
+    latest: (agentId: string) => ipcRenderer.invoke(channels.impactLatest, agentId),
   },
   workspace: {
     rules: (agentId: string) => ipcRenderer.invoke(channels.workspaceRules, agentId),
@@ -145,6 +148,12 @@ const api: FidApi = {
   },
   models: {
     list: () => ipcRenderer.invoke(channels.modelsList),
+  },
+  skills: {
+    list: (workspaceDir?: string | null) => ipcRenderer.invoke(channels.skillsList, workspaceDir ?? null),
+    read: (workspaceDir: string | null, id: string, source) =>
+      ipcRenderer.invoke(channels.skillsRead, workspaceDir, id, source),
+    openFolder: () => ipcRenderer.invoke(channels.skillsOpenFolder),
   },
 };
 

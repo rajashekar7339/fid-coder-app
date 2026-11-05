@@ -21,6 +21,8 @@ The center column is the saved conversation for the selected agent.
 - Tool calls collapse into one card. The running step is highlighted; expand the card to see each call and a short result summary.
 - The composer at the bottom sends with Enter. Use Shift+Enter for a new line.
 - The model picker is in the composer. It is disabled while the agent is working.
+- Type `/` in the composer, or choose **Commands**, to open the command list.
+- A thin **Skills** row under the agent name lists the skills enabled for that agent.
 - The status pill beside the agent name shows Ready, Working, or Sign in.
 
 ## Agent Desk

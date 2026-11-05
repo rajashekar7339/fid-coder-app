@@ -3,7 +3,7 @@ import path from "path";
 import { StringDecoder } from "string_decoder";
 import { asRecord, optionalNumber, requiredString } from "../args";
 import { MAX_CHECKPOINT_BYTES, type AppTool } from "../types";
-import { resolveInside } from "../workspace";
+import { relativeInside, resolveInside, workspaceRoot } from "../workspace";
 
 const MAX_WRITE = 200_000;
 const DEFAULT_READ_LINES = 200;
@@ -81,6 +81,7 @@ export const fileTools: AppTool[] = [
       if (typeof content !== "string") throw new Error("content must be a string");
       if (content.length > MAX_WRITE) throw new Error("content is too large");
       const file = resolveInside(ctx.workspaceDir, requiredString(record, "path"));
+      assertWriteAllowed(ctx, file);
       const existing = existingFile(file);
       ctx.checkpoint?.capture(file, existing.previous, existing.existed);
       fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -104,12 +105,22 @@ export const fileTools: AppTool[] = [
     handler: async (args, ctx) => {
       const record = asRecord(args);
       const file = resolveInside(ctx.workspaceDir, requiredString(record, "path"));
+      assertWriteAllowed(ctx, file);
       return applyPatch(file, rawString(record, "old_string"), rawString(record, "new_string", true), (target, previous) =>
         ctx.checkpoint?.capture(target, previous, true),
       );
     },
   },
 ];
+
+function assertWriteAllowed(ctx: { workspaceDir: string | null; writeRoot?: string }, file: string): void {
+  const root = ctx.writeRoot?.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  if (!root) return;
+  const relative = relativeInside(workspaceRoot(ctx.workspaceDir), file);
+  if (relative !== root && !relative.startsWith(`${root}/`)) {
+    throw new Error(`This agent can only write files under ${root}/`);
+  }
+}
 
 function lineWindow(record: Record<string, unknown>, fallback: number, max: number): { offset: number; limit: number } {
   const offset = Math.floor(optionalNumber(record, "offset", 1));

@@ -9,13 +9,19 @@ import {
   usageFailureMessage,
   type CopilotUsageResult,
 } from "../../shared/copilot-usage";
-import { AUTO_MODEL_ID, catalogModels, type CatalogModel, type CatalogPrice } from "../../shared/model";
+import { AUTO_MODEL_ID, catalogModels, type CatalogModel } from "../../shared/model";
 import type { CopilotModel, SettingsView } from "../../shared/types";
 import type { AppTool, ToolContext } from "../../tools/types";
 import { clearSecret, getSecret, hasSecret, secretKeys } from "../secrets";
 import { userDataDir } from "../paths";
 
-type SdkEvent = { type?: string; data?: Record<string, unknown> };
+type SdkEvent = { type?: string; data?: Record<string, unknown>; agentId?: string };
+
+type ModelSwitchResult = {
+  deferred?: boolean;
+  modelId?: string;
+  status?: string;
+};
 
 type SessionLike = {
   sessionId?: string;
@@ -23,9 +29,14 @@ type SessionLike = {
     model?: {
       list?: (params?: { skipCache?: boolean }) => Promise<{
         list?: CatalogModel[];
-        modelPriceCategories?: CatalogPrice[];
       }>;
-      switchTo?: (params: { modelId: string }) => Promise<unknown>;
+      switchTo?: (params: {
+        modelId: string;
+        providerId?: string;
+        requireAvailable?: boolean;
+        source?: string;
+      }) => Promise<ModelSwitchResult | null | undefined>;
+      getCurrent?: () => Promise<{ modelId?: string; providerId?: string } | null | undefined>;
     };
   };
   on(handler: (event: SdkEvent) => void): (() => void) | { unsubscribe?: () => void };
@@ -204,16 +215,17 @@ export function listCopilotModels(): Promise<CopilotModel[]> {
 async function loadCopilotModels(): Promise<CopilotModel[]> {
   const token = hasSecret(secretKeys.copilot) ? getSecret(secretKeys.copilot) : null;
   const copilot = await ensureClient(token);
-  const clientModels = copilot.listModels ? await copilot.listModels().catch(() => []) : [];
-  const sessionCatalog = await readSessionCatalog(copilot);
+  const catalog = await readSessionCatalog(copilot);
+  const clientModels =
+    catalog.available || !copilot.listModels ? [] : await copilot.listModels().catch(() => []);
   return catalogModels({
     clientModels: Array.isArray(clientModels) ? clientModels : [],
-    sessionModels: sessionCatalog.sessionModels,
-    priceCategories: sessionCatalog.priceCategories,
+    sessionModels: catalog.models,
+    sessionCatalogAvailable: catalog.available,
   });
 }
 
-async function readSessionCatalog(copilot: ClientLike): Promise<{ sessionModels: CatalogModel[]; priceCategories: CatalogPrice[] }> {
+async function readSessionCatalog(copilot: ClientLike): Promise<{ models: CatalogModel[]; available: boolean }> {
   let session: SessionLike | null = null;
   try {
     session = await copilot.createSession({
@@ -224,15 +236,21 @@ async function readSessionCatalog(copilot: ClientLike): Promise<{ sessionModels:
       infiniteSessions: { enabled: false },
       onPermissionRequest: () => ({ kind: "reject", feedback: "Only Fid Coder tools are allowed" }),
     });
-    const listed = await session.rpc?.model?.list?.({ skipCache: true });
-    return {
-      sessionModels: Array.isArray(listed?.list) ? listed.list : [],
-      priceCategories: Array.isArray(listed?.modelPriceCategories) ? listed.modelPriceCategories : [],
-    };
+    const models = await listSessionModels(session);
+    return { models: models ?? [], available: models !== null };
   } catch {
-    return { sessionModels: [], priceCategories: [] };
+    return { models: [], available: false };
   } finally {
     await closeSession(copilot, session);
+  }
+}
+
+async function listSessionModels(session: SessionLike): Promise<CatalogModel[] | null> {
+  try {
+    const listed = await session.rpc?.model?.list?.({ skipCache: true });
+    return listed && Array.isArray(listed.list) ? listed.list : null;
+  } catch {
+    return null;
   }
 }
 
@@ -281,7 +299,7 @@ export async function openSession(input: {
   });
   if (input.model !== AUTO_MODEL_ID) {
     try {
-      await session.rpc?.model?.switchTo?.({ modelId: input.model });
+      await ensureSessionModel(session, input.model);
     } catch (error) {
       await closeSession(copilot, session);
       throw new Error(modelSwitchError(error, input.model));
@@ -293,6 +311,108 @@ export async function openSession(input: {
       /* Event subscription is attached by the caller. */
     },
   };
+}
+
+const MODEL_SWITCH_TIMEOUT_MS = 5_000;
+
+async function ensureSessionModel(session: SessionLike, requested: string): Promise<void> {
+  const switchTo = session.rpc?.model?.switchTo;
+  if (!switchTo) throw new Error(`Copilot could not switch to ${requested}.`);
+  const debug = process.env.FID_CODER_DEBUG_MODEL === "1";
+  if (debug) console.log("[model-switch] current", requested, await readCurrentModel(session));
+
+  const models = await listSessionModels(session);
+  if (debug) console.log("[model-switch] models", requested, models?.map((model) => model.id));
+  let listedProvider: string | undefined;
+  if (models) {
+    if (models.length === 0) {
+      throw new Error(`Copilot did not report any selectable models. Choose Auto instead of ${requested}.`);
+    }
+    const entry = models.find(
+      (model) => typeof model.id === "string" && modelMatches(String(model.id), requested),
+    );
+    if (!entry) {
+      throw new Error(
+        `Copilot does not offer ${requested} for this account. Choose Auto or another available model.`,
+      );
+    }
+    if (typeof entry.provider?.id === "string" && entry.provider.id.trim()) {
+      listedProvider = entry.provider.id;
+    }
+  }
+
+  let firstError: unknown = null;
+  let result: ModelSwitchResult | null | undefined;
+  try {
+    result = await switchTo({
+      modelId: requested,
+      providerId: listedProvider,
+      source: "agent",
+      requireAvailable: true,
+    });
+  } catch (error) {
+    firstError = error;
+  }
+  if (debug) console.log("[model-switch] result", requested, result, firstError);
+
+  let active = result?.modelId ?? (await readCurrentModel(session))?.modelId;
+  if (result?.deferred) active = (await waitForModel(session, requested)) ?? active;
+  if (active && modelMatches(active, requested)) return;
+  if (!active && !firstError) return;
+
+  const providerId = listedProvider ?? (await findModelProvider(session, requested));
+  if (debug) console.log("[model-switch] provider", requested, providerId);
+  if (providerId) {
+    result = await switchTo({ modelId: requested, providerId, requireAvailable: true, source: "agent" });
+    if (debug) console.log("[model-switch] retry", requested, providerId, result);
+    active = result?.modelId ?? (await readCurrentModel(session))?.modelId;
+    if (result?.deferred) active = (await waitForModel(session, requested)) ?? active;
+    if (!active || modelMatches(active, requested)) return;
+  }
+
+  if (firstError) throw firstError;
+  throw new Error(`Copilot stayed on ${active} after choosing ${requested}.`);
+}
+
+async function readCurrentModel(
+  session: SessionLike,
+): Promise<{ modelId?: string; providerId?: string } | null> {
+  try {
+    return (await session.rpc?.model?.getCurrent?.()) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function waitForModel(session: SessionLike, requested: string): Promise<string | null> {
+  if (!session.rpc?.model?.getCurrent) return null;
+  const deadline = Date.now() + MODEL_SWITCH_TIMEOUT_MS;
+  let active: string | null = null;
+  while (Date.now() < deadline) {
+    const current = await readCurrentModel(session);
+    active = current?.modelId ?? null;
+    if (active && modelMatches(active, requested)) return active;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return active;
+}
+
+async function findModelProvider(session: SessionLike, modelId: string): Promise<string | null> {
+  try {
+    const listed = await session.rpc?.model?.list?.({ skipCache: true });
+    const entry = listed?.list?.find((item) => typeof item.id === "string" && modelMatches(String(item.id), modelId));
+    const providerId = entry?.provider?.id;
+    return typeof providerId === "string" && providerId.trim() ? providerId : null;
+  } catch {
+    return null;
+  }
+}
+
+function modelMatches(current: string | null | undefined, requested: string): boolean {
+  if (!current) return false;
+  const left = current.trim().toLowerCase();
+  const right = requested.trim().toLowerCase();
+  return left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`);
 }
 
 function modelSwitchError(error: unknown, model: string): string {
@@ -423,7 +543,7 @@ export async function completeOnce(model: string, systemMessage: string, prompt:
     onPermissionRequest: () => ({ kind: "reject", feedback: "No tools" }),
   });
   try {
-    if (model !== AUTO_MODEL_ID) await session.rpc?.model?.switchTo?.({ modelId: model });
+    if (model !== AUTO_MODEL_ID) await ensureSessionModel(session, model);
     const response = await session.sendAndWait({ prompt }, MEMORY_TIMEOUT_MS);
     return readAssistantText(response, "").trim();
   } catch (error) {

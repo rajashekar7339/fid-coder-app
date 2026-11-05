@@ -20,8 +20,8 @@ export const channels = {
   changesDiff: "changes:diff",
   changesRevert: "changes:revert",
   changesRevertTurn: "changes:revert-turn",
-  plansGet: "plans:get",
   contextPreview: "context:preview",
+  impactLatest: "impact:latest",
   workspaceRules: "workspace:rules",
   workspaceCreateRules: "workspace:create-rules",
   workspaceOpenRule: "workspace:open-rule",
@@ -41,4 +41,7 @@ export const channels = {
   settingsClearJiraToken: "settings:clear-jira-token",
   dialogPickFolder: "dialog:pick-folder",
   modelsList: "models:list",
+  skillsList: "skills:list",
+  skillsRead: "skills:read",
+  skillsOpenFolder: "skills:open-folder",
 } as const;
