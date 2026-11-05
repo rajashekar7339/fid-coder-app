@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { DatabaseSync } from "node:sqlite";
 import { AUTO_MODEL_ID, normalizeModelId } from "../../shared/model";
+import { normalizeSkillIds } from "../../shared/skills";
 import { normalizeToolProfile } from "../../shared/tool-profile";
 import { normalizeApprovalMatch } from "../../shared/approval";
 import type {
@@ -19,6 +20,7 @@ import type {
   Routine,
   RoutineInput,
   RoutinePatch,
+  TokenUsage,
 } from "../../shared/types";
 import { ANALYST_DESCRIPTION, ANALYST_NAME, ANALYST_PROMPT, PREVIOUS_ANALYST_PROMPTS } from "../release-impact/preset";
 
@@ -32,6 +34,7 @@ type AgentRow = {
   tool_profile: string | null;
   memory_summary: string | null;
   memory_enabled: number;
+  skill_ids: string | null;
   last_activity_at: string | null;
   next_routine_at: string | null;
   created_at: string;
@@ -56,6 +59,7 @@ type MessageRow = {
   content: string;
   created_at: string;
   turn_id: string | null;
+  usage: string | null;
 };
 
 type TurnRow = {
@@ -212,6 +216,7 @@ export class AppDatabase {
         memory_summary TEXT NOT NULL DEFAULT '',
         memory_turn_count INTEGER NOT NULL DEFAULT 0,
         memory_enabled INTEGER NOT NULL DEFAULT 1,
+        skill_ids TEXT NOT NULL DEFAULT '[]',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -221,7 +226,8 @@ export class AppDatabase {
         agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
         role TEXT NOT NULL,
         content TEXT NOT NULL,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        usage TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_messages_agent ON messages(agent_id, created_at);
 
@@ -315,7 +321,9 @@ export class AppDatabase {
     this.ensureAgentModelColumn();
     this.ensureAgentDescriptionColumn();
     this.ensureAgentMemoryColumns();
+    this.ensureAgentSkillIdsColumn();
     this.ensureMessageTurnColumn();
+    this.ensureMessageUsageColumn();
     const addedToolProfile = this.ensureAgentToolProfileColumn();
     const now = new Date().toISOString();
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(JIRA_NAME, now, OLD_JIRA_NAME);
@@ -359,6 +367,12 @@ export class AppDatabase {
     }
   }
 
+  private ensureAgentSkillIdsColumn(): void {
+    const columns = this.db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+    if (columns.some((column) => column.name === "skill_ids")) return;
+    this.db.exec("ALTER TABLE agents ADD COLUMN skill_ids TEXT NOT NULL DEFAULT '[]'");
+  }
+
   private ensureAgentToolProfileColumn(): boolean {
     const columns = this.db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
     if (columns.some((column) => column.name === "tool_profile")) return false;
@@ -370,6 +384,12 @@ export class AppDatabase {
     const columns = this.db.prepare("PRAGMA table_info(messages)").all() as { name: string }[];
     if (columns.some((column) => column.name === "turn_id")) return;
     this.db.exec("ALTER TABLE messages ADD COLUMN turn_id TEXT");
+  }
+
+  private ensureMessageUsageColumn(): void {
+    const columns = this.db.prepare("PRAGMA table_info(messages)").all() as { name: string }[];
+    if (columns.some((column) => column.name === "usage")) return;
+    this.db.exec("ALTER TABLE messages ADD COLUMN usage TEXT");
   }
 
   private removeSeededTodo(): void {
@@ -451,8 +471,8 @@ export class AppDatabase {
     this.db
       .prepare(
         `INSERT INTO agents (
-          id, name, description, system_prompt, workspace_dir, model, tool_profile, memory_enabled, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, name, description, system_prompt, workspace_dir, model, tool_profile, memory_enabled, skill_ids, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -463,6 +483,7 @@ export class AppDatabase {
         normalizeModelId(input.model),
         normalizeToolProfile(input.toolProfile),
         input.memoryEnabled ? 1 : 0,
+        JSON.stringify(normalizeSkillIds(input.skillIds)),
         now,
         now,
       );
@@ -475,7 +496,7 @@ export class AppDatabase {
       .prepare(
         `UPDATE agents
          SET name = ?, description = ?, system_prompt = ?, workspace_dir = ?, model = ?, tool_profile = ?,
-             memory_enabled = ?, updated_at = ?
+             memory_enabled = ?, skill_ids = ?, updated_at = ?
          WHERE id = ?`,
       )
       .run(
@@ -486,6 +507,7 @@ export class AppDatabase {
         normalizeModelId(input.model),
         normalizeToolProfile(input.toolProfile),
         input.memoryEnabled ? 1 : 0,
+        JSON.stringify(normalizeSkillIds(input.skillIds)),
         now,
         id,
       );
@@ -599,13 +621,19 @@ export class AppDatabase {
     return rows.map(mapMessage);
   }
 
-  addMessage(agentId: string, role: MessageRole, content: string, turnId: string | null = null): Message {
+  addMessage(
+    agentId: string,
+    role: MessageRole,
+    content: string,
+    turnId: string | null = null,
+    usage: TokenUsage | null = null,
+  ): Message {
     const id = crypto.randomUUID();
     const createdAt = new Date().toISOString();
     this.db
-      .prepare("INSERT INTO messages (id, agent_id, role, content, created_at, turn_id) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(id, agentId, role, content, createdAt, turnId);
-    return { id, agentId, role, content, createdAt, turnId };
+      .prepare("INSERT INTO messages (id, agent_id, role, content, created_at, turn_id, usage) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(id, agentId, role, content, createdAt, turnId, usage ? JSON.stringify(usage) : null);
+    return { id, agentId, role, content, createdAt, turnId, usage };
   }
 
   createTurn(agentId: string, source: string): string {
@@ -945,11 +973,21 @@ function mapAgent(row: AgentRow): Agent {
     toolProfile: normalizeToolProfile(row.tool_profile),
     memorySummary: row.memory_summary ?? "",
     memoryEnabled: row.memory_enabled !== 0,
+    skillIds: parseSkillIds(row.skill_ids),
     lastActivityAt: row.last_activity_at,
     nextRoutineAt: row.next_routine_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function parseSkillIds(value: string | null): string[] {
+  if (!value) return [];
+  try {
+    return normalizeSkillIds(JSON.parse(value));
+  } catch {
+    return [];
+  }
 }
 
 function mapMessage(row: MessageRow): Message {
@@ -960,7 +998,27 @@ function mapMessage(row: MessageRow): Message {
     content: row.content,
     createdAt: row.created_at,
     turnId: row.turn_id ?? null,
+    usage: parseUsage(row.usage),
   };
+}
+
+function parseUsage(raw: string | null): TokenUsage | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<TokenUsage>;
+    if (typeof value.inputTokens !== "number" || typeof value.outputTokens !== "number") return null;
+    return {
+      inputTokens: value.inputTokens,
+      outputTokens: value.outputTokens,
+      cacheReadTokens: value.cacheReadTokens ?? 0,
+      cacheWriteTokens: value.cacheWriteTokens ?? 0,
+      reasoningTokens: value.reasoningTokens ?? 0,
+      modelCalls: value.modelCalls ?? 1,
+      model: value.model ?? null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function mapRoutine(row: RoutineRow): Routine {

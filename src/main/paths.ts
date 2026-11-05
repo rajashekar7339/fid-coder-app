@@ -25,3 +25,11 @@ export function profileDir(agentId: string): string {
 export function checkpointsDir(): string {
   return path.join(userDataDir(), "checkpoints");
 }
+
+export function skillsDir(): string {
+  if (typeof app?.isPackaged !== "boolean" || typeof app.getAppPath !== "function") {
+    return path.join(process.cwd(), "skills");
+  }
+  const root = app.isPackaged ? process.resourcesPath : app.getAppPath();
+  return path.join(root, "skills");
+}

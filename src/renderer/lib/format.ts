@@ -54,6 +54,10 @@ export function formatNextRun(iso: string | null | undefined): string {
   return `${label}, ${formatClock(iso)}`;
 }
 
+export function formatCount(count: number): string {
+  return Math.round(count).toLocaleString();
+}
+
 function sameDay(left: Date, right: Date): boolean {
   return (
     left.getFullYear() === right.getFullYear() &&

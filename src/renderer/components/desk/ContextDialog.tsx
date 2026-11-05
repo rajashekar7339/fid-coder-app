@@ -61,6 +61,10 @@ export function ContextDialog({ agent, onClose }: { agent: Agent; onClose: () =>
                 <span>Memory</span>
                 <strong>{formatChars(view.chars.memory)}</strong>
               </div>
+              <div className="context-fact-wide">
+                <span>Skills</span>
+                <strong>{view.skillNames.length > 0 ? view.skillNames.join(", ") : "None"}</strong>
+              </div>
             </div>
             <p className="context-tools">
               {view.toolProfile} profile · {view.tools.join(", ")}

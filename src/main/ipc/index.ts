@@ -2,6 +2,7 @@ import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { channels } from "../../shared/channels";
 import { isApprovalAction } from "../../shared/approval";
 import { normalizeModelId } from "../../shared/model";
+import { normalizeSkillIds } from "../../shared/skills";
 import { normalizeToolProfile } from "../../shared/tool-profile";
 import type { AgentInput, ApprovalAction, RoutineInput, RoutinePatch } from "../../shared/types";
 import type { BrowserManager } from "../browser/browser-manager";
@@ -21,6 +22,8 @@ import type { Runner } from "../chat/runner";
 import type { Scheduler } from "../routines/scheduler";
 import { clearSecret, secretKeys, setSecret } from "../secrets";
 import { readImpactSelection } from "../release-impact/index";
+import { listSkillInfo } from "../skills";
+import { skillsDir } from "../paths";
 import { createAgentsFile, ruleFilePath, workspaceRules } from "../workspace/workspace-rules";
 
 type AppServices = {
@@ -201,6 +204,7 @@ export function registerIpc(services: AppServices): void {
   });
 
   ipcMain.handle(channels.modelsList, () => listCopilotModels());
+  ipcMain.handle(channels.skillsList, () => listSkillInfo(skillsDir()));
 
   ipcMain.handle(channels.dialogPickFolder, async () => {
     const parent = services.getWindow();
@@ -225,6 +229,7 @@ function cleanAgent(input: AgentInput): AgentInput {
     model: normalizeModelId(input?.model),
     toolProfile: normalizeToolProfile(input?.toolProfile),
     memoryEnabled: input.memoryEnabled !== false,
+    skillIds: normalizeSkillIds(input?.skillIds),
   };
 }
 

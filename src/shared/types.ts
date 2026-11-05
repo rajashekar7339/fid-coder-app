@@ -10,6 +10,7 @@ export type Agent = {
   toolProfile: AgentToolProfile;
   memorySummary: string;
   memoryEnabled: boolean;
+  skillIds: string[];
   lastActivityAt: string | null;
   nextRoutineAt: string | null;
   createdAt: string;
@@ -23,6 +24,16 @@ export type CopilotModel = {
 
 export type MessageRole = "user" | "assistant" | "tool";
 
+export type TokenUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  reasoningTokens: number;
+  modelCalls: number;
+  model: string | null;
+};
+
 export type Message = {
   id: string;
   agentId: string;
@@ -30,6 +41,7 @@ export type Message = {
   content: string;
   createdAt: string;
   turnId?: string | null;
+  usage?: TokenUsage | null;
 };
 
 export type Routine = {
@@ -78,6 +90,12 @@ export type FileDiff = {
   note: string | null;
 };
 
+export type SkillInfo = {
+  id: string;
+  name: string;
+  description: string;
+};
+
 export type WorkspaceRuleFile = {
   path: string;
   chars: number;
@@ -92,6 +110,7 @@ export type ContextView = {
   memorySummary: string;
   workspaceBrief: string | null;
   rules: WorkspaceRuleFile[];
+  skillNames: string[];
   tools: string[];
   chars: {
     system: number;
@@ -169,6 +188,7 @@ export type ChatEvent =
   | { agentId: string; type: "text"; text: string }
   | { agentId: string; type: "tool-start"; toolName: string; text?: string }
   | { agentId: string; type: "tool-end"; toolName: string; ok: boolean; text?: string }
+  | { agentId: string; type: "usage"; usage: TokenUsage }
   | { agentId: string; type: "approval-request"; approval: ApprovalRequest }
   | {
       agentId: string;
@@ -201,6 +221,7 @@ export type AgentInput = {
   model: string;
   toolProfile: AgentToolProfile;
   memoryEnabled: boolean;
+  skillIds?: string[];
 };
 
 export type BrowserPreview = {

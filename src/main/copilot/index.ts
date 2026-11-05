@@ -15,7 +15,7 @@ import type { AppTool, ToolContext } from "../../tools/types";
 import { clearSecret, getSecret, hasSecret, secretKeys } from "../secrets";
 import { userDataDir } from "../paths";
 
-type SdkEvent = { type?: string; data?: Record<string, unknown> };
+type SdkEvent = { type?: string; data?: Record<string, unknown>; agentId?: string };
 
 type SessionLike = {
   sessionId?: string;

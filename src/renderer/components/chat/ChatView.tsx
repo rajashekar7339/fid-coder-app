@@ -29,6 +29,7 @@ import { AgentAvatar } from "../agents/AgentAvatar";
 import { ApprovalCard } from "../approvals/ApprovalCard";
 import { MessageContent } from "./MessageContent";
 import { ModelSelect } from "../ui/ModelSelect";
+import { TokenUsage } from "./TokenUsage";
 
 type Props = {
   agent: Agent;
@@ -241,6 +242,9 @@ export function ChatView({
           return { ...current, tools };
         });
       }
+      if (event.type === "usage") {
+        updateLive((current) => (current ? { ...current, usage: event.usage } : current));
+      }
       if (event.type === "done" || event.type === "error") {
         if (event.type === "error") {
           setError(event.error);
@@ -371,6 +375,7 @@ export function ChatView({
         model,
         toolProfile: agent.toolProfile,
         memoryEnabled: agent.memoryEnabled,
+        skillIds: agent.skillIds,
       });
       onUpdated(saved);
     } catch (caught) {
@@ -664,12 +669,15 @@ function MessageRow({
         <MessageContent text={message.content} streaming={streaming} />
         {streaming ? <span className="stream-caret" /> : null}
       </div>
-      {!streaming ? (
-        <button type="button" className="message-copy" onClick={() => onCopy(message.content)}>
-          {copied ? <Check size={11} /> : <Copy size={11} />}
-          {copied ? "Copied" : "Copy"}
-        </button>
-      ) : null}
+      <div className="message-foot">
+        {message.usage ? <TokenUsage usage={message.usage} live={streaming} /> : null}
+        {!streaming ? (
+          <button type="button" className="message-copy" onClick={() => onCopy(message.content)}>
+            {copied ? <Check size={11} /> : <Copy size={11} />}
+            {copied ? "Copied" : "Copy"}
+          </button>
+        ) : null}
+      </div>
     </article>
   );
 }

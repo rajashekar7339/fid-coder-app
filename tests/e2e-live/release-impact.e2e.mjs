@@ -270,6 +270,7 @@ async function main() {
           model: current.model,
           toolProfile: current.toolProfile,
           memoryEnabled: current.memoryEnabled,
+          skillIds: current.skillIds,
         });
       },
       { id: analyst.id, folder: workspace },

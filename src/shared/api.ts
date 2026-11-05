@@ -16,6 +16,7 @@ import type {
   RoutineInput,
   RoutinePatch,
   SettingsView,
+  SkillInfo,
   WorkspaceRuleFile,
 } from "./types";
 import type { CopilotUsageResult } from "./copilot-usage";
@@ -90,5 +91,8 @@ export interface FidApi {
   };
   models: {
     list: () => Promise<CopilotModel[]>;
+  };
+  skills: {
+    list: () => Promise<SkillInfo[]>;
   };
 }

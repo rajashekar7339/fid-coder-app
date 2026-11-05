@@ -56,6 +56,7 @@ const channels = {
   settingsClearJiraToken: "settings:clear-jira-token",
   dialogPickFolder: "dialog:pick-folder",
   modelsList: "models:list",
+  skillsList: "skills:list",
 } as const;
 
 const listeners = new Map<number, (event: IpcRendererEvent, payload: ChatEvent) => void>();
@@ -145,6 +146,9 @@ const api: FidApi = {
   },
   models: {
     list: () => ipcRenderer.invoke(channels.modelsList),
+  },
+  skills: {
+    list: () => ipcRenderer.invoke(channels.skillsList),
   },
 };
 

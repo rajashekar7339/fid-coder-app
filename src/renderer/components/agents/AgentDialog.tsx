@@ -1,8 +1,8 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { FolderOpen, X } from "lucide-react";
 import { AUTO_MODEL_ID } from "../../../shared/model";
 import { DEFAULT_TOOL_PROFILE } from "../../../shared/tool-profile";
-import type { Agent, AgentToolProfile, CopilotModel } from "../../../shared/types";
+import type { Agent, AgentToolProfile, CopilotModel, SkillInfo } from "../../../shared/types";
 import { errorText, fid } from "../../lib/fid";
 import { AgentAvatar } from "./AgentAvatar";
 import { Modal } from "../ui/Modal";
@@ -53,8 +53,27 @@ export function AgentDialog({
   const [memoryEnabled, setMemoryEnabled] = useState(agent?.memoryEnabled ?? true);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [clearingMemory, setClearingMemory] = useState(false);
+  const [skillIds, setSkillIds] = useState<string[]>(agent?.skillIds ?? []);
+  const [catalog, setCatalog] = useState<SkillInfo[]>([]);
+  const [pick, setPick] = useState("");
+  const [catalogNote, setCatalogNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fid()
+      .skills.list()
+      .then((skills) => {
+        if (!cancelled) setCatalog(skills);
+      })
+      .catch((caught: unknown) => {
+        if (!cancelled) setCatalogNote(errorText(caught));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function clearMemory() {
     if (!agent || clearingMemory || saving) return;
@@ -90,6 +109,7 @@ export function AgentDialog({
         model,
         toolProfile,
         memoryEnabled,
+        skillIds,
       };
       const saved = agent ? await fid().agents.update(agent.id, input) : await fid().agents.create(input);
       onSaved(saved);
@@ -211,6 +231,17 @@ export function AgentDialog({
             </span>
           </div>
 
+          <SkillsField
+            catalog={catalog}
+            catalogNote={catalogNote}
+            skillIds={skillIds}
+            pick={pick}
+            disabled={saving}
+            onPick={setPick}
+            onAdd={(id) => setSkillIds((current) => (current.includes(id) ? current : [...current, id]))}
+            onRemove={(id) => setSkillIds((current) => current.filter((item) => item !== id))}
+          />
+
           <div className="field">
             <label className="field-label" htmlFor="agent-workspace">
               Workspace
@@ -315,5 +346,86 @@ export function AgentDialog({
         </footer>
       </form>
     </Modal>
+  );
+}
+
+function SkillsField({
+  catalog,
+  catalogNote,
+  skillIds,
+  pick,
+  disabled,
+  onPick,
+  onAdd,
+  onRemove,
+}: {
+  catalog: SkillInfo[];
+  catalogNote: string | null;
+  skillIds: string[];
+  pick: string;
+  disabled: boolean;
+  onPick: (id: string) => void;
+  onAdd: (id: string) => void;
+  onRemove: (id: string) => void;
+}) {
+  const available = catalog.filter((skill) => !skillIds.includes(skill.id));
+  const selected = available.some((skill) => skill.id === pick) ? pick : (available[0]?.id ?? "");
+  return (
+    <div className="field">
+      <label className="field-label" htmlFor="agent-skills">
+        Skills
+      </label>
+      <span className="field-inline">
+        <select
+          id="agent-skills"
+          className="select"
+          value={selected}
+          disabled={disabled || available.length === 0}
+          onChange={(event) => onPick(event.target.value)}
+        >
+          {available.length === 0 ? (
+            <option value="">{catalog.length === 0 ? "No skills installed" : "All skills added"}</option>
+          ) : (
+            available.map((skill) => (
+              <option key={skill.id} value={skill.id}>
+                {skill.name}
+              </option>
+            ))
+          )}
+        </select>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={disabled || !selected}
+          onClick={() => onAdd(selected)}
+        >
+          Add skill
+        </button>
+      </span>
+      {skillIds.length === 0 ? (
+        <span className="field-note">No skills. This agent follows only its instructions.</span>
+      ) : (
+        <ul className="skill-list">
+          {skillIds.map((id) => {
+            const skill = catalog.find((item) => item.id === id);
+            return (
+              <li key={id} className="skill-row">
+                <div>
+                  <div className="skill-name">{skill?.name ?? id}</div>
+                  <div className="skill-note">{skill?.description ?? "This skill is no longer installed."}</div>
+                </div>
+                <button type="button" className="text-button" disabled={disabled} onClick={() => onRemove(id)}>
+                  Remove
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {catalogNote ? <span className="field-note">{catalogNote}</span> : null}
+      <span className="field-note">
+        Added skills are sent on every message for this agent. Other agents do not receive them.
+      </span>
+    </div>
   );
 }

@@ -74,6 +74,21 @@ test("streams the assistant under the user message", () => {
   assert.equal(projected.thinking, false);
 });
 
+test("carries live token usage onto the streaming assistant", () => {
+  const usage = {
+    inputTokens: 1200,
+    outputTokens: 300,
+    cacheReadTokens: 640,
+    cacheWriteTokens: 0,
+    reasoningTokens: 0,
+    modelCalls: 2,
+    model: "gpt-5",
+  };
+  const saved = [message("u1", "user", "Hello", "2026-10-24T12:00:00.100Z")];
+  const projected = projectThread(saved, live({ assistant: "Working", usage }), "agent-1");
+  assert.deepEqual(projected.messages.at(-1)?.usage, usage);
+});
+
 test("folds consecutive tool calls into one group", () => {
   const saved = [
     message("u1", "user", "weather", "2026-10-24T12:00:00.000Z"),

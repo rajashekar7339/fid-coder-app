@@ -70,6 +70,10 @@
       {
         "from": "node_modules/@vscode/ripgrep-win32-x64/bin/rg.exe",
         "to": "ripgrep/rg.exe"
+      },
+      {
+        "from": "skills",
+        "to": "skills"
       }
     ],
     "asar": true,
