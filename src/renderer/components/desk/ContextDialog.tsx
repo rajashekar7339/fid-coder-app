@@ -69,7 +69,8 @@ export function ContextDialog({ agent, onClose }: { agent: Agent; onClose: () =>
               </div>
             </div>
             <p className="context-tools">
-              {view.toolProfile} profile · {view.tools.map((tool) => TOOL_LABELS[tool] ?? tool).join(", ")}
+              {view.readOnly ? "Ask mode · read-only" : `Agent mode · ${view.toolProfile} profile`} ·{" "}
+              {view.tools.map((tool) => TOOL_LABELS[tool] ?? tool).join(", ")}
             </p>
             <p className="context-note">
               Credentials are never included in the system message. A skill's instructions are added only to the

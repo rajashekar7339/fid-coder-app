@@ -103,6 +103,24 @@ try {
   });
   await page.waitForTimeout(600);
 
+  await page.getByRole("button", { name: /Codebase Guide/ }).first().click();
+  await page.waitForSelector(".chat-empty", { timeout: 15000 });
+  await page.waitForTimeout(400);
+  await save(page.locator(".chat-pane"), "ask-mode.png");
+
+  await page.getByRole("button", { name: "Open project map" }).click();
+  await page.locator(".project-map-modal").waitFor({ state: "visible" });
+  await page.waitForFunction(
+    () => Boolean(document.querySelector(".project-map-modal .mermaid-diagram svg")),
+    { timeout: 20000 },
+  );
+  await page.waitForTimeout(500);
+  await save(page.locator(".project-map-modal"), "project-map.png");
+  await page.getByRole("button", { name: "Close project map" }).click();
+  await page.waitForTimeout(300);
+
+  await page.getByRole("button", { name: /JIRA Agent/ }).first().click();
+  await page.waitForTimeout(300);
   await page.getByRole("button", { name: "Manage routines" }).click();
   await page.locator(".routines-modal").waitFor({ state: "visible" });
   await page.waitForTimeout(500);
@@ -192,6 +210,7 @@ async function captureAgentEditor(page) {
   await page.getByRole("button", { name: "New agent" }).first().click();
   const modal = page.locator(".agent-modal");
   await modal.waitFor({ state: "visible" });
+  await modal.getByRole("button", { name: /General agent/ }).click();
   await modal.getByLabel("Name").fill("Release notes");
   await modal.getByLabel("Role").fill("Release assistant");
   await modal
@@ -208,7 +227,7 @@ async function captureAgentEditor(page) {
   await modal.locator(".agent-form-scroll").evaluate((element) => {
     element.scrollTop = 0;
   });
-  await modal.locator(".modal-header").click();
+  await modal.getByLabel("Name").evaluate((element) => element.blur());
   await page.waitForTimeout(2500);
   await save(modal, "agent-editor.png");
   await page.keyboard.press("Escape");
@@ -308,10 +327,74 @@ async function seedDemoData(page) {
     updatedAt,
   );
 
-  database.prepare("UPDATE agents SET workspace_dir = ? WHERE id = ?").run("D:\\Projects\\my-app", git.id);
+  const demoWorkspace = "D:\\Projects\\my-app";
+  database.prepare("UPDATE agents SET workspace_dir = ? WHERE id = ?").run(demoWorkspace, git.id);
   database
     .prepare("UPDATE agents SET updated_at = ? WHERE id = ?")
     .run(new Date(now - 30 * 24 * 60 * 60_000).toISOString(), git.id);
+
+  const codebaseId = randomUUID();
+  database
+    .prepare(
+      `INSERT INTO agents (
+        id, name, description, system_prompt, workspace_dir, model, tool_profile, read_only,
+        memory_enabled, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      codebaseId,
+      "Codebase Guide",
+      "Ask about this repository",
+      "You are a codebase guide. Answer from the code, cite path:line, and use Mermaid for flows.",
+      demoWorkspace,
+      "auto",
+      "developer",
+      1,
+      1,
+      createdAt,
+      updatedAt,
+    );
+
+  const mapText = [
+    "## Overview",
+    "A small desktop app with a renderer, a main process, and a preload bridge. The renderer owns the conversation UI; the main process owns tools, approvals, and persistence.",
+    "",
+    "## Components",
+    "| Component | Responsibility | Key files | Depends on |",
+    "| --- | --- | --- | --- |",
+    "| Renderer | Conversation, composer, and project map | `src/renderer/App.tsx:18` | Preload bridge |",
+    "| Main | Turns, tools, and SQLite | `src/main/index.ts:24` | Workspace |",
+    "| Preload | Typed IPC bridge | `src/preload/index.ts:16` | Main IPC |",
+    "",
+    "## Key flow",
+    "```mermaid",
+    "sequenceDiagram",
+    "  participant U as User",
+    "  participant R as Renderer",
+    "  participant M as Main",
+    "  U->>R: Send a message",
+    "  R->>M: chat.send",
+    "  M-->>R: stream and tool events",
+    "  R-->>U: Answer",
+    "```",
+    "",
+    "## Suggested reading order",
+    "1. `src/main/index.ts:1` — process startup and services.",
+    "2. `src/preload/index.ts:16` — the IPC surface.",
+    "3. `src/renderer/App.tsx:29` — selected agent and dialogs.",
+    "4. `src/main/chat/runner.ts:261` — the turn lifecycle.",
+    "5. `src/main/db/index.ts:204` — persisted state and migrations.",
+    "",
+    "## Risks and unknowns",
+    "- The preload channel list is copied by hand; a missing name fails only at runtime.",
+    "- The workspace brief is cached by `HEAD`; uncommitted edits can make it stale.",
+  ].join("\n");
+  database
+    .prepare(
+      `INSERT INTO workspace_maps (workspace_dir, cache_key, text, generated_at)
+       VALUES (?, ?, ?, ?)`,
+    )
+    .run(demoWorkspace, "no-git", mapText, updatedAt);
   database.close();
 
   const secrets = await page.evaluate(async () => {

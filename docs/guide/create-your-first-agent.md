@@ -14,6 +14,8 @@ An agent is a saved teammate on this PC. It has its own instructions, model, too
 
 Select **+** at the top of the sidebar, or **New agent** below the agent list. The editor opens with a preview of the agent and the fields that define it.
 
+Choose a **Start from** template. **Codebase guide** is read-only and is a good fit for questions about a repository. **General agent** starts with the full tool set for edits and commands. You can change every field after choosing a template.
+
 ## Fill in the identity
 
 1. **Name.** Use a short name that reads well in the sidebar, such as "Release notes."
@@ -35,6 +37,8 @@ Keep the first version short. You can edit the agent later from the menu on its 
 - **Release analyst** compares a prod ref with a candidate ref and selects tests. It writes only under `artifacts/`.
 
 For this release assistant, choose **Shell, search, git, and files** and pick the repository folder. The file and search tools stay inside that folder. The shell starts in that folder too, but it is not a full sandbox. Without a workspace folder, the local tools stay unavailable.
+
+The template sets the initial mode: **Codebase guide** starts in Ask mode, and **General agent** starts in Agent mode. Change it with the **Ask mode / Agent mode** switch in the composer, before the model picker. Ask mode registers only read-only tools; Agent mode gives the agent its full profile. The choice is saved for the agent.
 
 Skills are not assigned in the editor. Open **Skills** in the sidebar to browse or upload them, then use `/skills <skill> <task>` in the chat. See **Use skills on demand** in this guide.
 

@@ -3,18 +3,23 @@ import {
   ArrowDown,
   ArrowUp,
   BookOpen,
+  Bug,
   Check,
   ChevronDown,
   Clock3,
   Copy,
   FileText,
   Folder,
+  GitBranch,
   Globe2,
   Keyboard,
   Loader2,
+  Map as MapIcon,
   MousePointerClick,
+  Network,
   PanelRight,
   ScanSearch,
+  ShieldCheck,
   Slash,
   Sparkles,
   Square,
@@ -33,6 +38,7 @@ import {
   SKILL_SOURCE_LABELS,
 } from "../../../shared/skills";
 import { summarizeTool } from "../../../shared/summary";
+import { WORKSPACE_STARTERS, type Starter } from "../../../shared/starters";
 import type {
   Agent,
   ApprovalAction,
@@ -53,7 +59,9 @@ import {
 } from "../../lib/format";
 import { AgentAvatar } from "../agents/AgentAvatar";
 import { ApprovalCard } from "../approvals/ApprovalCard";
+import { FilePeekDialog } from "./FilePeekDialog";
 import { MessageContent } from "./MessageContent";
+import { ProjectMapDialog } from "./ProjectMapDialog";
 import { ModelSelect } from "../ui/ModelSelect";
 import { TokenUsage } from "./TokenUsage";
 
@@ -117,6 +125,13 @@ const COMMAND_ICONS: Record<string, LucideIcon> = {
   review: ScanSearch,
   skills: Wrench,
   help: BookOpen,
+};
+
+const STARTER_ICONS: Record<Starter["id"], LucideIcon> = {
+  architecture: Network,
+  flow: GitBranch,
+  review: ShieldCheck,
+  troubleshoot: Bug,
 };
 
 const liveByAgent = new Map<string, LiveTurn>();
@@ -218,6 +233,9 @@ export function ChatView({
   const [running, setRunning] = useState(() => liveByAgent.has(agent.id));
   const [error, setError] = useState<string | null>(null);
   const [savingModel, setSavingModel] = useState(false);
+  const [savingMode, setSavingMode] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [filePeek, setFilePeek] = useState<{ path: string; line: number } | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
   const [skillCatalog, setSkillCatalog] = useState<SkillInfo[]>([]);
@@ -384,6 +402,21 @@ export function ChatView({
       if (!input) return;
       input.focus();
       input.setSelectionRange(input.value.length, input.value.length);
+    });
+  }
+
+  function applyStarter(starter: Starter) {
+    setDraft(starter.prompt);
+    setCommandsOpen(false);
+    setSkillPickerClosed(true);
+    setUndoDraft(null);
+    setEnhanceStatus(null);
+    setError(null);
+    window.requestAnimationFrame(() => {
+      const input = composer.current;
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(starter.prompt.length, starter.prompt.length);
     });
   }
 
@@ -653,7 +686,7 @@ export function ChatView({
   }
 
   async function changeModel(model: string) {
-    if (model === agent.model || savingModel || running) return;
+    if (model === agent.model || savingModel || savingMode || running) return;
     setSavingModel(true);
     setError(null);
     try {
@@ -664,6 +697,7 @@ export function ChatView({
         workspaceDir: agent.workspaceDir,
         model,
         toolProfile: agent.toolProfile,
+        readOnly: agent.readOnly,
         memoryEnabled: agent.memoryEnabled,
       });
       onUpdated(saved);
@@ -671,6 +705,29 @@ export function ChatView({
       setError(errorText(caught));
     } finally {
       setSavingModel(false);
+    }
+  }
+
+  async function changeMode(readOnly: boolean) {
+    if (readOnly === agent.readOnly || savingMode || savingModel || running || enhancing) return;
+    setSavingMode(true);
+    setError(null);
+    try {
+      const saved = await fid().agents.update(agent.id, {
+        name: agent.name,
+        description: agent.description,
+        systemPrompt: agent.systemPrompt,
+        workspaceDir: agent.workspaceDir,
+        model: agent.model,
+        toolProfile: agent.toolProfile,
+        readOnly,
+        memoryEnabled: agent.memoryEnabled,
+      });
+      onUpdated(saved);
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      setSavingMode(false);
     }
   }
 
@@ -704,12 +761,31 @@ export function ChatView({
             </div>
             <div className="chat-sub">
               {agentSubtitle(agent)}
-              <span className="slash">/</span>
-              Local browser
+              {agent.toolProfile === "browser" ? (
+                <>
+                  <span className="slash">/</span>
+                  Local browser
+                </>
+              ) : agent.workspaceDir ? (
+                <>
+                  <span className="slash">/</span>
+                  Workspace
+                </>
+              ) : null}
             </div>
           </div>
         </div>
         <div className="chat-actions">
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Open project map"
+            title="Map this project's architecture"
+            disabled={!agent.workspaceDir}
+            onClick={() => setMapOpen(true)}
+          >
+            <MapIcon size={15} />
+          </button>
           <button
             type="button"
             className={`icon-button ${deskOpen ? "is-active" : ""}`}
@@ -738,11 +814,13 @@ export function ChatView({
             <p>{agentSubtitle(agent)}</p>
             <div className="empty-chips">
               <span>
-                <Globe2 size={12} /> Local browser
+                {agent.toolProfile === "browser" ? <Globe2 size={12} /> : <Folder size={12} />}
+                {agent.toolProfile === "browser" ? "Local browser" : agent.workspaceDir ? "Workspace" : "No workspace"}
               </span>
-              {agent.workspaceDir ? (
-                <span>
-                  <Folder size={12} /> Workspace
+              {agent.workspaceDir || agent.readOnly ? (
+                <span className={agent.readOnly ? "is-read-only" : undefined}>
+                  {agent.readOnly ? <ShieldCheck size={12} /> : <Terminal size={12} />}
+                  {agent.readOnly ? "Ask mode" : "Agent mode"}
                 </span>
               ) : null}
               {agent.nextRoutineAt ? (
@@ -751,6 +829,31 @@ export function ChatView({
                 </span>
               ) : null}
             </div>
+            {agent.workspaceDir && signedIn ? (
+              <div className="starter-block">
+                <div className="starter-head">Understand this codebase</div>
+                <div className="starter-grid">
+                  {WORKSPACE_STARTERS.map((starter) => {
+                    const Icon = STARTER_ICONS[starter.id];
+                    return (
+                      <button
+                        key={starter.id}
+                        type="button"
+                        className="starter-card"
+                        title={starter.hint}
+                        onClick={() => applyStarter(starter)}
+                      >
+                        <Icon size={14} aria-hidden="true" />
+                        <span>
+                          <strong>{starter.label}</strong>
+                          <small>{starter.hint}</small>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
             {COMMANDS.some((command) => !commandUnavailable(command)) ? (
               <div className="empty-commands">
                 {COMMANDS.filter((command) => !commandUnavailable(command)).map((command) => (
@@ -769,7 +872,9 @@ export function ChatView({
               {!settingsReady
                 ? "Checking Copilot…"
                 : signedIn
-                  ? "Send a message to start."
+                  ? agent.workspaceDir
+                    ? "Pick a starting point, or type below."
+                    : "Send a message to start."
                   : "Sign in to Copilot, then send a message."}
             </p>
           </div>
@@ -805,6 +910,7 @@ export function ChatView({
                           );
                         });
                       }}
+                      onOpenFile={(path, line) => setFilePeek({ path, line })}
                     />
                   )}
                 </Fragment>
@@ -1043,10 +1149,32 @@ export function ChatView({
             }}
           />
           <div className="composer-bottom">
+            <div className="mode-switch" role="group" aria-label="Agent mode">
+              <button
+                type="button"
+                className={agent.readOnly ? "is-active" : ""}
+                aria-pressed={agent.readOnly}
+                disabled={running || savingMode || savingModel || enhancing}
+                title="Ask mode: read-only tools for this agent. No edits, clicks, or commands."
+                onClick={() => void changeMode(true)}
+              >
+                Ask mode
+              </button>
+              <button
+                type="button"
+                className={!agent.readOnly ? "is-active" : ""}
+                aria-pressed={!agent.readOnly}
+                disabled={running || savingMode || savingModel || enhancing}
+                title="Agent mode: full tools for this agent. Writes and actions need approval where required."
+                onClick={() => void changeMode(false)}
+              >
+                Agent mode
+              </button>
+            </div>
             <ModelSelect
               value={agent.model}
               models={models}
-              disabled={running || savingModel}
+              disabled={running || savingModel || savingMode}
               className="model-picker-compact"
               onChange={(model) => void changeModel(model)}
             />
@@ -1135,6 +1263,23 @@ export function ChatView({
           <p className="command-hint">{hint}</p>
         ) : null}
       </form>
+
+      {mapOpen ? (
+        <ProjectMapDialog
+          agent={agent}
+          signedIn={signedIn}
+          onClose={() => setMapOpen(false)}
+          onOpenFile={(path, line) => setFilePeek({ path, line })}
+        />
+      ) : null}
+      {filePeek ? (
+        <FilePeekDialog
+          agentId={agent.id}
+          path={filePeek.path}
+          line={filePeek.line}
+          onClose={() => setFilePeek(null)}
+        />
+      ) : null}
     </main>
   );
 }
@@ -1162,12 +1307,14 @@ function MessageRow({
   streaming,
   copied,
   onCopy,
+  onOpenFile,
 }: {
   agent: Agent;
   message: Message;
   streaming: boolean;
   copied: boolean;
   onCopy: (content: string) => void;
+  onOpenFile: (path: string, line: number) => void;
 }) {
   if (message.role === "user") {
     return (
@@ -1197,7 +1344,7 @@ function MessageRow({
         </time>
       </div>
       <div className="message-body">
-        <MessageContent text={message.content} streaming={streaming} />
+        <MessageContent text={message.content} streaming={streaming} onOpenFile={onOpenFile} />
         {streaming ? <span className="stream-caret" /> : null}
       </div>
       <div className="message-foot">

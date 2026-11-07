@@ -20,6 +20,8 @@ import type {
   SkillContent,
   SkillInstallResult,
   SkillSource,
+  WorkspaceFilePeek,
+  WorkspaceMapView,
   WorkspaceRuleFile,
 } from "./types";
 import type { CopilotUsageResult } from "./copilot-usage";
@@ -72,6 +74,9 @@ export interface FidApi {
     rules: (agentId: string) => Promise<WorkspaceRuleFile[]>;
     createRules: (agentId: string) => Promise<WorkspaceRuleFile[]>;
     openRule: (agentId: string, path: string) => Promise<void>;
+    map: (agentId: string) => Promise<WorkspaceMapView | null>;
+    buildMap: (agentId: string) => Promise<WorkspaceMapView>;
+    file: (agentId: string, path: string, line?: number | null) => Promise<WorkspaceFilePeek>;
   };
   routines: {
     list: (agentId: string) => Promise<Routine[]>;

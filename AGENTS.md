@@ -36,7 +36,8 @@ src/
     history/        history.ts
     skills/         index.ts, install.ts
     routines/       scheduler.ts, cron.ts, notify.ts
-    workspace/      checkpoints.ts, explore-session.ts, review-session.ts, workspace-brief.ts, workspace-rules.ts
+    workspace/      checkpoints.ts, explore-session.ts, review-session.ts, workspace-brief.ts, workspace-rules.ts,
+                    architecture-map.ts, file-peek.ts
     release-impact/ config, collect, adapters, and the analyze engine
   cli/
     release-impact.ts
@@ -47,7 +48,7 @@ src/
     main.tsx
     styles/index.css
     components/
-      chat/         ChatView, MessageContent
+      chat/         ChatView, MessageContent, ProjectMapDialog, FilePeekDialog
       approvals/    ApprovalCard, ApprovalHistoryDialog
       agents/       AgentDialog, AgentAvatar
       sidebar/      Sidebar
@@ -58,7 +59,7 @@ src/
       help/         HelpDialog, GuideContent
       ui/           Modal, Switch, ConfirmDialog, BrandMark, UsageBar, ModelSelect
     lib/            fid, format, guide, markdown, schedule, highlight
-  shared/           types, channels, api, skills, enhance-prompt, commands, and other pure helpers
+  shared/           types, channels, api, skills, enhance-prompt, commands, starters, citations, and other pure helpers
     release-impact/ config types, paths, scoring, and report text
   tools/
     registry.ts     args.ts, process.ts, types.ts, workspace.ts
@@ -78,7 +79,7 @@ tests/
   e2e-live/          Electron/Playwright .e2e.mjs harnesses and manual diagnostics
 scripts/
   generate-guide-screenshots.mjs
-skills/             review-change/SKILL.md, write-lean/SKILL.md
+skills/             review-change/SKILL.md, architecture-review/SKILL.md, write-lean/SKILL.md
 docs/
   guide/            in-app help
   feature-enhancements.md
@@ -96,6 +97,10 @@ docs/
 | The read-only skill file tool | `src/tools/skills/skills.ts` |
 | Reusing a used skill | `agent_skills` in `src/main/db/index.ts`, `use_skill` in `src/tools/skills/skills.ts`, and `usedSkillsFor` in `src/main/chat/runner.ts` |
 | Enhancing a draft | `src/shared/enhance-prompt.ts`, `src/main/chat/enhance.ts`, and `Runner.enhanceDraft` |
+| Ask mode and read-only tools | `readOnly` on the agent, `askTools` in `src/tools/registry.ts`, and `askMode` in `src/main/chat/runner.ts` |
+| The project map | `src/main/workspace/architecture-map.ts`, `workspace_maps` in SQLite, and `ProjectMapDialog.tsx` |
+| Path:line citations and file preview | `src/shared/citations.ts`, `src/renderer/lib/inline-markdown.tsx`, and `FilePeekDialog.tsx` |
+| Starter prompts | `src/shared/starters.ts` and the empty state in `ChatView.tsx` |
 | The Skills library | `src/renderer/components/skills/SkillsDialog.tsx` |
 | A composer command | `src/shared/commands.ts` and the menu in `src/renderer/components/chat/ChatView.tsx` |
 | A read-only review | `src/tools/review/review.ts` and `src/main/workspace/review-session.ts` |
@@ -111,13 +116,15 @@ Skills are discovered from the workspace `.skills`, `.github/skills`, `.agents/s
 
 Enhance is manual and one-shot. The renderer calls `chat.enhance` only from the Enhance button; it writes nothing to SQLite, opens no agent session, and never sends. Do not call it from `send`, `runTurn`, or a routine path.
 
+Ask mode is a tool boundary, not a prompt preference. `readOnly` filters the agent's normal profile through `askTools(profile)`: workspace agents keep reads, search, git/PR reads, history, and the read-only explorer; Browser & Jira agents keep Jira reads, browser navigate/snapshot, and history. Neither gets write, shell, click, or type tools. The project map is built only after the user chooses **Build map** or **Refresh map**; opening a saved map or the dialog never calls a model. The map is cached by workspace in `workspace_maps` and marked stale when the git key changes. Do not generate it on agent creation or on a normal turn.
+
 Import a tool by its file name, for example `./browser/browser`. TypeScript resolves `./db` to `db/index.ts`. It does not resolve `./browser` to `browser/browser.ts`.
 
 `src/main/db/index.ts`, `src/main/copilot/index.ts`, and `src/main/ipc/index.ts` are one module each. `src/renderer/styles/index.css` is one sheet, and `@import "tailwindcss"` stays its first line. Add new code in that file. Split one of those files only while you are already editing it, and keep the CSS sections in their current order.
 
 `tests/unit/*.test.ts` imports from `src` keep the `.ts` suffix. Node runs those files as ESM. Leave `package.json` without `"type": "module"`. Tests in `tests/integration/` load `dist/` and run after `npm run build:node`.
 
-`npm test` runs the unit and integration suites. The Electron harnesses have separate scripts: `npm run test:features`, `npm run test:skills`, `npm run test:skills-reuse`, and `npm run test:enhance`. The live ones need Copilot and spend quota. See `CONTRIBUTING.md` for the test levels.
+`npm test` runs the unit and integration suites. The Electron harnesses have separate scripts: `npm run test:features`, `npm run test:skills`, `npm run test:skills-reuse`, `npm run test:map`, and `npm run test:enhance`. The live ones need Copilot and spend quota. See `CONTRIBUTING.md` for the test levels.
 
 A feature is a tool file, a main handler, and a screen, in those three places. Keep Electron and React out of one shared feature folder.
 

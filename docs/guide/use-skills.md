@@ -17,7 +17,7 @@ Fid Coder reads skills from:
 - **Workspace** — `.skills`, `.github/skills`, `.agents/skills`, and `.claude/skills` under the selected agent's workspace folder.
 - **Your skills** — `%USERPROFILE%\.fid_coder_app\skills`. Uploads go here.
 - **Copilot** — `~/.copilot/skills` and `~/.agents/skills`.
-- **Built-in** — the app's own `skills` folder. It starts with **Review a change** and **Write lean**.
+- **Built-in** — the app's own `skills` folder. It starts with **Review a change**, **Review architecture**, and **Write lean**.
 
 The first copy of an id wins: workspace, then your skills, then Copilot, then built-in. The library lists the winning copy and reports hidden duplicates.
 

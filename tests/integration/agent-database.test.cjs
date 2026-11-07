@@ -352,3 +352,41 @@ test("lists the most recent user and assistant messages for enhance context", ()
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("stores Ask mode and the cached project map", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-ask-map-"));
+  const db = new AppDatabase(path.join(dir, "app.sqlite"));
+  try {
+    const agent = db.createAgent({
+      name: "Guide",
+      systemPrompt: "Answer from the code.",
+      workspaceDir: dir,
+      model: "auto",
+      toolProfile: "developer",
+      readOnly: true,
+      memoryEnabled: false,
+    });
+    assert.equal(agent.readOnly, true);
+    const updated = db.updateAgent(agent.id, {
+      name: agent.name,
+      systemPrompt: agent.systemPrompt,
+      workspaceDir: agent.workspaceDir,
+      model: agent.model,
+      toolProfile: agent.toolProfile,
+      readOnly: false,
+      memoryEnabled: false,
+    });
+    assert.equal(updated.readOnly, false);
+
+    assert.equal(db.getWorkspaceMap(dir), null);
+    const first = db.setWorkspaceMap(dir, "key-1", "# Map\n\nFirst.");
+    assert.equal(first.cacheKey, "key-1");
+    assert.equal(db.getWorkspaceMap(dir).text, "# Map\n\nFirst.");
+    const second = db.setWorkspaceMap(dir, "key-2", "# Map\n\nSecond.");
+    assert.equal(second.cacheKey, "key-2");
+    assert.equal(db.getWorkspaceMap(dir).text, "# Map\n\nSecond.");
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

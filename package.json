@@ -22,6 +22,7 @@
     "start": "electron .",
     "release-impact": "node dist/cli/release-impact.js",
     "test:skills-reuse": "npm run build:node && node tests/e2e-live/skills-reuse.e2e.mjs",
+    "test:map": "npm run build:node && node tests/e2e-live/project-map.e2e.mjs",
     "test:enhance": "npm run build:node && node tests/e2e-live/enhance-prompt.e2e.mjs"
   },
   "dependencies": {

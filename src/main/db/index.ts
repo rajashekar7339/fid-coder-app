@@ -31,6 +31,7 @@ type AgentRow = {
   workspace_dir: string | null;
   model: string | null;
   tool_profile: string | null;
+  read_only: number | null;
   memory_summary: string | null;
   memory_enabled: number;
   last_activity_at: string | null;
@@ -109,6 +110,18 @@ type ApprovalRuleRow = {
   match: string;
   cwd: string;
   created_at: string;
+};
+
+export type WorkspaceMapRecord = {
+  cacheKey: string;
+  text: string;
+  generatedAt: string;
+};
+
+type WorkspaceMapRow = {
+  cache_key: string;
+  text: string;
+  generated_at: string;
 };
 
 export type TurnRecord = {
@@ -211,6 +224,7 @@ export class AppDatabase {
         workspace_dir TEXT,
         model TEXT NOT NULL DEFAULT 'auto',
         tool_profile TEXT NOT NULL DEFAULT 'all',
+        read_only INTEGER NOT NULL DEFAULT 0,
         memory_summary TEXT NOT NULL DEFAULT '',
         memory_turn_count INTEGER NOT NULL DEFAULT 0,
         memory_enabled INTEGER NOT NULL DEFAULT 1,
@@ -319,6 +333,13 @@ export class AppDatabase {
         PRIMARY KEY (agent_id, skill_id)
       );
       CREATE INDEX IF NOT EXISTS idx_agent_skills_agent ON agent_skills(agent_id, used_at);
+
+      CREATE TABLE IF NOT EXISTS workspace_maps (
+        workspace_dir TEXT PRIMARY KEY,
+        cache_key TEXT NOT NULL,
+        text TEXT NOT NULL,
+        generated_at TEXT NOT NULL
+      );
     `);
     this.db
       .prepare("UPDATE approvals SET decision = 'deny', source = 'aborted', decided_at = ? WHERE decision = 'pending'")
@@ -329,6 +350,7 @@ export class AppDatabase {
     this.ensureMessageTurnColumn();
     this.ensureMessageUsageColumn();
     const addedToolProfile = this.ensureAgentToolProfileColumn();
+    this.ensureAgentReadOnlyColumn();
     const now = new Date().toISOString();
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(JIRA_NAME, now, OLD_JIRA_NAME);
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(GIT_NAME, now, OLD_GIT_NAME);
@@ -376,6 +398,12 @@ export class AppDatabase {
     if (columns.some((column) => column.name === "tool_profile")) return false;
     this.db.exec("ALTER TABLE agents ADD COLUMN tool_profile TEXT NOT NULL DEFAULT 'all'");
     return true;
+  }
+
+  private ensureAgentReadOnlyColumn(): void {
+    const columns = this.db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+    if (columns.some((column) => column.name === "read_only")) return;
+    this.db.exec("ALTER TABLE agents ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0");
   }
 
   private ensureMessageTurnColumn(): void {
@@ -469,8 +497,9 @@ export class AppDatabase {
     this.db
       .prepare(
         `INSERT INTO agents (
-          id, name, description, system_prompt, workspace_dir, model, tool_profile, memory_enabled, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, name, description, system_prompt, workspace_dir, model, tool_profile, read_only, memory_enabled,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -480,6 +509,7 @@ export class AppDatabase {
         emptyToNull(input.workspaceDir),
         normalizeModelId(input.model),
         normalizeToolProfile(input.toolProfile),
+        input.readOnly === true ? 1 : 0,
         input.memoryEnabled ? 1 : 0,
         now,
         now,
@@ -493,7 +523,7 @@ export class AppDatabase {
       .prepare(
         `UPDATE agents
          SET name = ?, description = ?, system_prompt = ?, workspace_dir = ?, model = ?, tool_profile = ?,
-             memory_enabled = ?, updated_at = ?
+             read_only = ?, memory_enabled = ?, updated_at = ?
          WHERE id = ?`,
       )
       .run(
@@ -503,12 +533,36 @@ export class AppDatabase {
         emptyToNull(input.workspaceDir),
         normalizeModelId(input.model),
         normalizeToolProfile(input.toolProfile),
+        input.readOnly === true ? 1 : 0,
         input.memoryEnabled ? 1 : 0,
         now,
         id,
       );
     if (result.changes === 0) throw new Error("Agent not found");
     return this.requireAgent(id);
+  }
+
+  getWorkspaceMap(workspaceDir: string): WorkspaceMapRecord | null {
+    const row = this.db
+      .prepare("SELECT cache_key, text, generated_at FROM workspace_maps WHERE workspace_dir = ?")
+      .get(path.resolve(workspaceDir)) as WorkspaceMapRow | undefined;
+    if (!row) return null;
+    return { cacheKey: row.cache_key, text: row.text, generatedAt: row.generated_at };
+  }
+
+  setWorkspaceMap(workspaceDir: string, cacheKey: string, text: string): WorkspaceMapRecord {
+    const generatedAt = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO workspace_maps (workspace_dir, cache_key, text, generated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(workspace_dir) DO UPDATE SET
+           cache_key = excluded.cache_key,
+           text = excluded.text,
+           generated_at = excluded.generated_at`,
+      )
+      .run(path.resolve(workspaceDir), cacheKey, text, generatedAt);
+    return { cacheKey, text, generatedAt };
   }
 
   getMemoryTurnCount(id: string): number {
@@ -991,6 +1045,7 @@ function mapAgent(row: AgentRow): Agent {
     workspaceDir: row.workspace_dir,
     model: readModel(row.model),
     toolProfile: normalizeToolProfile(row.tool_profile),
+    readOnly: row.read_only === 1,
     memorySummary: row.memory_summary ?? "",
     memoryEnabled: row.memory_enabled !== 0,
     lastActivityAt: row.last_activity_at,

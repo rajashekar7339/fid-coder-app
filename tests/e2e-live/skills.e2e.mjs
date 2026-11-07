@@ -17,6 +17,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { _electron as electron } from "playwright";
 
@@ -49,6 +50,12 @@ function prepare() {
   fs.mkdirSync(userData, { recursive: true });
   fs.mkdirSync(shots, { recursive: true });
   fs.mkdirSync(workspace, { recursive: true });
+  fs.mkdirSync(path.join(workspace, "src"), { recursive: true });
+  fs.writeFileSync(
+    path.join(workspace, "src", "demo.ts"),
+    "export const first = 1;\nexport const second = 2;\nexport const third = 3;\n",
+    "utf8",
+  );
   writeSkill(
     path.join(workspace, ".github", "skills", "project-review", "SKILL.md"),
     "Project review",
@@ -84,6 +91,30 @@ function prepare() {
   const broken = path.join(workspace, ".github", "skills", "broken");
   fs.mkdirSync(broken, { recursive: true });
   fs.writeFileSync(path.join(broken, "SKILL.md"), "---\nname: Broken\n---\n\nNo description.\n", "utf8");
+}
+
+function seedProjectMap() {
+  const database = new DatabaseSync(path.join(userData, "fid-coder.sqlite"));
+  database.exec("PRAGMA busy_timeout = 5000");
+  const text = [
+    "## Demo map",
+    "The entry point is `src/demo.ts:2`.",
+    "",
+    "```mermaid",
+    "sequenceDiagram",
+    "  participant U as User",
+    "  participant R as Renderer",
+    "  U->>R: Open the map",
+    "  R-->>U: Diagram and files",
+    "```",
+  ].join("\n");
+  database
+    .prepare(
+      `INSERT OR REPLACE INTO workspace_maps (workspace_dir, cache_key, text, generated_at)
+       VALUES (?, ?, ?, ?)`,
+    )
+    .run(workspace, "no-git", text, new Date().toISOString());
+  database.close();
 }
 
 async function sleep(ms) {
@@ -171,6 +202,113 @@ async function main() {
     await page.waitForSelector(".agent-modal", { state: "detached", timeout: 20_000 });
     check("chat has no permanent skill bar", (await page.locator(".chat-skillbar").count()) === 0);
 
+    const auth = await page.evaluate(() => window.fid.settings.get());
+    const agent = await page.evaluate(
+      (name) => window.fid.agents.list().then((list) => list.find((item) => item.name === name)),
+      agentName,
+    );
+    if (!agent) throw new Error("The test agent was not created");
+    check("new agents start in Ask mode", agent.readOnly === true);
+    check(
+      "the Ask mode switch is active",
+      (await page.locator(".mode-switch button.is-active").innerText()) === "Ask mode",
+    );
+
+    if (auth.signedIn) {
+      await page.waitForSelector(".starter-card", { timeout: 10_000 });
+      check("empty state offers four codebase starters", (await page.locator(".starter-card").count()) === 4);
+      await page.getByRole("button", { name: /Troubleshoot an error/ }).click();
+      check(
+        "a starter fills the composer without sending",
+        (await composerValue(page)).startsWith("Troubleshoot this error:") &&
+          (await page.locator(".user-bubble").count()) === 0,
+      );
+      await page.locator(".composer-input").fill("");
+    } else {
+      console.log("SKIP  starter checks (Copilot is not signed in)");
+    }
+
+    await page.locator(".mode-switch").getByRole("button", { name: "Agent mode", exact: true }).click();
+    await page.waitForFunction(
+      (name) =>
+        window.fid.agents.list().then((list) => list.find((item) => item.name === name)?.readOnly === false),
+      agentName,
+      { timeout: 10_000 },
+    );
+    check("switching to Agent mode saves the mode", true);
+    await page.locator(".mode-switch").getByRole("button", { name: "Ask mode", exact: true }).click();
+    await page.waitForFunction(
+      (name) =>
+        window.fid.agents.list().then((list) => list.find((item) => item.name === name)?.readOnly === true),
+      agentName,
+      { timeout: 10_000 },
+    );
+    check("switching back to Ask saves the mode", true);
+
+    await page.locator(".agent-row").filter({ hasText: "JIRA Agent" }).first().click();
+    await page.waitForFunction(
+      () => document.querySelector(".chat-title h1")?.textContent?.trim() === "JIRA Agent",
+      null,
+      { timeout: 15_000 },
+    );
+    check("the Browser & Jira agent also has the mode switch", (await page.locator(".mode-switch").count()) === 1);
+    check(
+      "the Browser & Jira agent starts in Agent mode",
+      (await page.locator(".mode-switch button.is-active").innerText()) === "Agent mode",
+    );
+    await page.locator(".agent-row").filter({ hasText: agentName }).first().click();
+    await page.waitForFunction(
+      (name) => document.querySelector(".chat-title h1")?.textContent?.trim() === name,
+      agentName,
+      { timeout: 15_000 },
+    );
+
+    await page.getByRole("button", { name: "Open project map" }).click();
+    await page.waitForSelector(".project-map-modal", { timeout: 15_000 });
+    await page.waitForFunction(
+      () => document.querySelector(".project-map-modal .map-empty")?.textContent?.includes("No project map yet"),
+      null,
+      { timeout: 15_000 },
+    );
+    const mapEmpty = await page.locator(".project-map-modal").innerText();
+    check(
+      "the project map does not build automatically",
+      /No project map yet/.test(mapEmpty) && !/Building/.test(mapEmpty),
+    );
+    await page.getByRole("button", { name: "Close project map" }).click();
+    await page.waitForSelector(".project-map-modal", { state: "detached", timeout: 10_000 });
+
+    seedProjectMap();
+    await page.getByRole("button", { name: "Open project map" }).click();
+    await page.waitForSelector(".project-map-modal .map-content", { timeout: 15_000 });
+    check(
+      "a cached project map renders",
+      /Demo map/.test(await page.locator(".project-map-modal .map-content").innerText()),
+    );
+    await page.waitForSelector(".project-map-modal .mermaid-diagram svg", { timeout: 20_000 });
+    check("the project map renders its Mermaid flow", true);
+    await page.getByRole("button", { name: "Expand diagram" }).click();
+    await page.waitForSelector(".mermaid-overlay", { timeout: 10_000 });
+    check("a diagram opens full screen", true);
+    await page.getByRole("button", { name: "Close full-screen diagram" }).click();
+    await page.waitForSelector(".mermaid-overlay", { state: "detached", timeout: 10_000 });
+    await page.locator(".project-map-modal .md-citation").first().click();
+    await page.waitForSelector(".file-peek-modal", { timeout: 10_000 });
+    await page.waitForSelector(".file-peek-code, .file-peek-empty", { timeout: 10_000 });
+    const peek = await page.locator(".file-peek-modal").innerText();
+    const targetLines = await page.locator(".file-peek-line.is-target").count();
+    check(
+      "a citation opens a read-only file preview",
+      /src\/demo\.ts/.test(peek) && /second/.test(peek),
+      peek.replace(/\s+/g, " ").slice(0, 160),
+    );
+    check("the cited line is highlighted", targetLines === 1, String(targetLines));
+    await page.getByRole("button", { name: "Close file preview" }).click();
+    await page.waitForSelector(".file-peek-modal", { state: "detached", timeout: 10_000 });
+    await page.getByRole("button", { name: "Close project map" }).click();
+    await page.waitForSelector(".project-map-modal", { state: "detached", timeout: 10_000 });
+    await page.locator(".composer-input").fill("");
+
     await page.getByRole("button", { name: "Open skills" }).click();
     await page.waitForSelector(".skills-modal", { timeout: 15_000 });
     await page.waitForFunction(() => document.querySelectorAll(".skill-card").length >= 5, { timeout: 30_000 });
@@ -230,10 +368,15 @@ async function main() {
 
     await projectCard.getByRole("button", { name: "Use" }).click();
     await page.waitForSelector(".skills-modal", { state: "detached", timeout: 10_000 });
-    await page.waitForFunction(
-      () => document.querySelector(".composer-input")?.value === "/skills project-review ",
-      { timeout: 10_000 },
-    );
+    try {
+      await page.waitForFunction(
+        () => document.querySelector(".composer-input")?.value === "/skills project-review ",
+        { timeout: 10_000 },
+      );
+    } catch (error) {
+      console.log("  composer after Use:", JSON.stringify(await composerValue(page)));
+      throw error;
+    }
     check("Use fills the composer", (await composerValue(page)) === "/skills project-review ");
     check(
       "Use shows the version in the hint",
@@ -346,9 +489,21 @@ async function main() {
       const agent = agents.find((item) => item.name === name);
       if (!agent) return null;
       const view = await window.fid.context.preview(agent.id);
-      return { tools: view.tools, skillNames: view.skillNames, systemMessage: view.systemMessage };
+      return {
+        tools: view.tools,
+        readOnly: view.readOnly,
+        skillNames: view.skillNames,
+        systemMessage: view.systemMessage,
+      };
     }, agentName);
-    check("context exposes review_code", Boolean(preview?.tools.includes("review_code")));
+    check("context exposes the read-only explorer", Boolean(preview?.tools.includes("explore_code")));
+    check("context reports Ask mode", preview?.readOnly === true);
+    check(
+      "context has no write or shell tools",
+      !preview?.tools.includes("file_write") &&
+        !preview?.tools.includes("apply_patch") &&
+        !preview?.tools.includes("shell_run"),
+    );
     check("context does not list skills", preview?.skillNames === undefined);
     check(
       "system message has no skill body",
@@ -390,6 +545,27 @@ async function main() {
       guideImages.length >= 2 && guideImages.every((image) => image.complete && image.width > 0),
     );
     await shot(page, "04-help-skills");
+    await page.getByRole("button", { name: /Understand a codebase/ }).click();
+    await page.waitForSelector(".help-article", { timeout: 10_000 });
+    const codebaseHelp = await page.locator(".help-article").innerText();
+    check(
+      "help guide explains Ask mode and the project map",
+      /Ask mode/.test(codebaseHelp) && /Project map/.test(codebaseHelp) && /Architecture review/.test(codebaseHelp),
+    );
+    await page.waitForFunction(
+      () => {
+        const images = [...document.querySelectorAll(".help-article img")];
+        const diagram = document.querySelector(".help-article .mermaid-diagram svg");
+        return images.length >= 2 && images.every((image) => image.complete) && Boolean(diagram);
+      },
+      { timeout: 20_000 },
+    );
+    await page.locator(".help-article").getByRole("button", { name: "Expand diagram" }).click();
+    await page.waitForSelector(".mermaid-overlay", { timeout: 10_000 });
+    check("a guide flowchart opens full screen", true);
+    await page.getByRole("button", { name: "Close full-screen diagram" }).click();
+    await page.waitForSelector(".mermaid-overlay", { state: "detached", timeout: 10_000 });
+    await shot(page, "05-help-codebase");
     await page.getByRole("button", { name: /Chat with an agent/ }).first().click();
     await page.waitForFunction(
       () =>

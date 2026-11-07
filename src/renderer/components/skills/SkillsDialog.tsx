@@ -183,6 +183,15 @@ export function SkillsDialog({ workspaceDir, hasAgent, onClose, onUse, onChanged
                     <div className="skill-card-row">
                       <button
                         type="button"
+                        className="btn btn-secondary skill-card-use"
+                        disabled={!hasAgent}
+                        title={hasAgent ? `Use ${skill.name} in chat` : "Select an agent first"}
+                        onClick={() => onUse(skill.id)}
+                      >
+                        Use
+                      </button>
+                      <button
+                        type="button"
                         className="skill-card-copy"
                         aria-expanded={open}
                         aria-controls={readerId}
@@ -202,15 +211,6 @@ export function SkillsDialog({ workspaceDir, hasAgent, onClose, onUse, onChanged
                             <span className="skill-warning">will be truncated</span>
                           ) : null}
                         </span>
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-secondary skill-card-use"
-                        disabled={!hasAgent}
-                        title={hasAgent ? `Use ${skill.name} in chat` : "Select an agent first"}
-                        onClick={() => onUse(skill.id)}
-                      >
-                        Use
                       </button>
                     </div>
                     {open ? (

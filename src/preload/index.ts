@@ -41,6 +41,9 @@ const channels = {
   workspaceRules: "workspace:rules",
   workspaceCreateRules: "workspace:create-rules",
   workspaceOpenRule: "workspace:open-rule",
+  workspaceMapGet: "workspace:map",
+  workspaceMapBuild: "workspace:map-build",
+  workspaceFileRead: "workspace:file-read",
   routinesList: "routines:list",
   routinesCreate: "routines:create",
   routinesUpdate: "routines:update",
@@ -126,6 +129,10 @@ const api: FidApi = {
     rules: (agentId: string) => ipcRenderer.invoke(channels.workspaceRules, agentId),
     createRules: (agentId: string) => ipcRenderer.invoke(channels.workspaceCreateRules, agentId),
     openRule: (agentId: string, path: string) => ipcRenderer.invoke(channels.workspaceOpenRule, agentId, path),
+    map: (agentId: string) => ipcRenderer.invoke(channels.workspaceMapGet, agentId),
+    buildMap: (agentId: string) => ipcRenderer.invoke(channels.workspaceMapBuild, agentId),
+    file: (agentId: string, path: string, line?: number | null) =>
+      ipcRenderer.invoke(channels.workspaceFileRead, agentId, path, line ?? null),
   },
   routines: {
     list: (agentId: string) => ipcRenderer.invoke(channels.routinesList, agentId),

@@ -73,20 +73,32 @@ export function AgentDesk({
   const [impactError, setImpactError] = useState<string | null>(null);
   const workspaceNote =
     agent.toolProfile === "browser"
-      ? "Browser and Jira"
-      : agent.toolProfile === "analyst"
+      ? agent.readOnly
+        ? "Ask mode. Read-only browsing and Jira."
+        : "Browser and Jira"
+      : agent.readOnly
         ? agent.workspaceDir
-          ? "Release analysis. Writes under artifacts/."
-          : "Pick a workspace to analyze a release."
-        : agent.workspaceDir
-          ? "Shell + files enabled"
-          : "Shell + files unavailable";
+          ? "Ask mode. Reads files and git; no edits or commands."
+          : "Ask mode. Add a workspace for read-only file tools."
+        : agent.toolProfile === "analyst"
+          ? agent.workspaceDir
+            ? "Release analysis. Writes under artifacts/."
+            : "Pick a workspace to analyze a release."
+          : agent.workspaceDir
+            ? "Agent mode. Shell + files enabled."
+            : "Shell + files unavailable";
 
   useEffect(() => {
     let stopped = false;
     let timer = 0;
     setPreview(null);
-    if (agent.toolProfile === "developer" || agent.toolProfile === "analyst") return;
+    if (
+      agent.toolProfile === "developer" ||
+      agent.toolProfile === "analyst" ||
+      (agent.readOnly && agent.toolProfile !== "browser")
+    ) {
+      return;
+    }
     async function poll() {
       if (document.visibilityState === "visible") {
         try {
@@ -103,7 +115,7 @@ export function AgentDesk({
       stopped = true;
       window.clearTimeout(timer);
     };
-  }, [agent.id, agent.toolProfile]);
+  }, [agent.id, agent.toolProfile, agent.readOnly]);
 
   useEffect(() => {
     let stopped = false;
@@ -358,7 +370,7 @@ export function AgentDesk({
               <div className="browser-idle">
                 <Monitor size={19} aria-hidden="true" />
                 <p>
-                  {agent.toolProfile === "developer"
+                  {agent.toolProfile === "developer" || (agent.readOnly && agent.toolProfile !== "browser")
                     ? "This agent has no browser tools."
                     : "Appears here when this agent opens its local browser."}
                 </p>

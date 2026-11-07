@@ -173,6 +173,14 @@ function splitTableRow(line: string): string[] {
   return cells;
 }
 
+export function isMermaidBlock(language: string, text: string): boolean {
+  if (/^(mermaid|mmd)$/i.test(language.trim())) return true;
+  if (language.trim()) return false;
+  return /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram-v2|stateDiagram|erDiagram|C4Context|journey|gantt|pie)\b/i.test(
+    text,
+  );
+}
+
 const BOX_DRAWING = /[┌┐└┘├┤┬┴┼─│┏┓┗┛┣┫┳┻╋━┃]/g;
 
 export function isAsciiDiagram(text: string, language: string): boolean {

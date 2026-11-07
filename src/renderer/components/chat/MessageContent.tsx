@@ -1,9 +1,27 @@
-import { Check, ChevronLeft, ChevronRight, Code2, Copy, Image as ImageIcon, Loader2, Minus, Plus } from "lucide-react";
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Code2,
+  Copy,
+  Image as ImageIcon,
+  Loader2,
+  Maximize2,
+  Minus,
+  Plus,
+  X,
+} from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Mermaid, MermaidConfig } from "mermaid";
 import { highlightCode } from "../../lib/code-highlight";
 import { renderInlineMarkdown } from "../../lib/inline-markdown";
-import { isAsciiDiagram, parseMessageBlocks, type TableAlign } from "../../lib/message-markdown";
+import {
+  isAsciiDiagram,
+  isMermaidBlock,
+  parseMessageBlocks,
+  type TableAlign,
+} from "../../lib/message-markdown";
 
 const MERMAID_CONFIG: MermaidConfig = {
   startOnLoad: false,
@@ -55,6 +73,14 @@ const MERMAID_CONFIG: MermaidConfig = {
       fill: rgba(139, 184, 255, 0.045) !important;
       stroke: rgba(139, 184, 255, 0.34) !important;
     }
+    .actor { fill: #2b2d30 !important; stroke: #5f646d !important; }
+    .actor-line { stroke: #5f646d !important; }
+    .messageLine0, .messageLine1 { stroke: #92959e !important; }
+    .messageText { fill: #c8cbd1 !important; }
+    .note { fill: #313338 !important; stroke: #5f646d !important; }
+    .noteText { fill: #e3e5e8 !important; }
+    .labelText, .loopText { fill: #c8cbd1 !important; }
+    .activation0, .activation1, .activation2 { fill: #393b40 !important; stroke: #5f646d !important; }
   `,
   themeVariables: {
     background: "#1c1d21",
@@ -77,6 +103,17 @@ const MERMAID_CONFIG: MermaidConfig = {
     titleColor: "#e3e5e8",
     edgeLabelBackground: "#1c1d21",
     arrowheadColor: "#92959e",
+    actorBkg: "#2b2d30",
+    actorBorder: "#5f646d",
+    actorTextColor: "#e3e5e8",
+    signalColor: "#92959e",
+    signalTextColor: "#c8cbd1",
+    noteBkgColor: "#313338",
+    noteTextColor: "#e3e5e8",
+    noteBorderColor: "#5f646d",
+    activationBkgColor: "#313338",
+    activationBorderColor: "#5f646d",
+    sequenceNumberColor: "#1c1d21",
   },
   flowchart: {
     useMaxWidth: true,
@@ -193,16 +230,12 @@ async function copyDiagramImage(code: string): Promise<void> {
   await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
 }
 
-function isMermaidBlock(language: string, text: string): boolean {
-  if (/^(mermaid|mmd)$/i.test(language.trim())) return true;
-  if (language.trim()) return false;
-  return /^\s*(flowchart|graph)\s+(TB|TD|BT|RL|LR)\b/i.test(text);
-}
-
 const INLINE_CLASSES = { code: "md-code", link: "md-link" };
 
-function renderInline(text: string, keyPrefix: string) {
-  return renderInlineMarkdown(text, keyPrefix, INLINE_CLASSES);
+type OpenFile = (path: string, line: number) => void;
+
+function renderInline(text: string, keyPrefix: string, onOpenFile?: OpenFile) {
+  return renderInlineMarkdown(text, keyPrefix, INLINE_CLASSES, onOpenFile);
 }
 
 function alignClass(align: TableAlign): string {
@@ -306,13 +339,16 @@ function CodeBlock({ text, language }: { text: string; language: string }) {
   );
 }
 
-function MermaidBlock({ code, streaming }: { code: string; streaming: boolean }) {
+export function MermaidDiagram({ code, streaming = false }: { code: string; streaming?: boolean }) {
   const [svg, setSvg] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showSource, setShowSource] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [scrollable, setScrollable] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [fullZoom, setFullZoom] = useState(1);
   const canvas = useRef<HTMLDivElement>(null);
+  const closeExpanded = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (streaming) return;
@@ -323,6 +359,7 @@ function MermaidBlock({ code, streaming }: { code: string; streaming: boolean })
     setShowSource(false);
     setZoom(1);
     setScrollable(false);
+    setExpanded(false);
     void renderMermaidSvg(renderId, code, MERMAID_CONFIG)
       .then((rendered) => {
         if (active) setSvg(rendered);
@@ -334,6 +371,26 @@ function MermaidBlock({ code, streaming }: { code: string; streaming: boolean })
       active = false;
     };
   }, [code, streaming]);
+
+  useEffect(() => {
+    if (!expanded) return;
+    setFullZoom(1);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setExpanded(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    const frame = requestAnimationFrame(() => closeExpanded.current?.focus());
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", onKey, true);
+      cancelAnimationFrame(frame);
+    };
+  }, [expanded]);
 
   useEffect(() => {
     const element = canvas.current;
@@ -357,6 +414,10 @@ function MermaidBlock({ code, streaming }: { code: string; streaming: boolean })
     setZoom((current) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, current + delta)));
   }
 
+  function changeFullZoom(delta: number) {
+    setFullZoom((current) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, current + delta)));
+  }
+
   function scrollDiagram(direction: -1 | 1) {
     const element = canvas.current;
     if (!element) return;
@@ -369,108 +430,184 @@ function MermaidBlock({ code, streaming }: { code: string; streaming: boolean })
   if (streaming) return <CodeBlock text={code} language="mermaid" />;
 
   return (
-    <div className="code-block is-diagram is-mermaid">
-      <div className="code-block-bar">
-        <span>Diagram</span>
-        <div className="code-bar-actions">
-          {svg && !showSource && !error ? (
-            <div className="mermaid-zoom" role="group" aria-label="Diagram zoom">
+    <>
+      <div className="code-block is-diagram is-mermaid">
+        <div className="code-block-bar">
+          <span>Diagram</span>
+          <div className="code-bar-actions">
+            {svg && !showSource && !error ? (
+              <div className="mermaid-zoom" role="group" aria-label="Diagram zoom">
+                <button
+                  type="button"
+                  className="code-copy mermaid-tool-button"
+                  aria-label="Zoom out"
+                  title="Zoom out"
+                  disabled={zoom <= MIN_ZOOM}
+                  onClick={() => changeZoom(-ZOOM_STEP)}
+                >
+                  <Minus size={11} />
+                </button>
+                <button
+                  type="button"
+                  className="code-copy mermaid-zoom-value"
+                  aria-label="Fit diagram to width"
+                  title="Fit diagram to width"
+                  onClick={() => setZoom(1)}
+                >
+                  {Math.round(zoom * 100)}%
+                </button>
+                <button
+                  type="button"
+                  className="code-copy mermaid-tool-button"
+                  aria-label="Zoom in"
+                  title="Zoom in"
+                  disabled={zoom >= MAX_ZOOM}
+                  onClick={() => changeZoom(ZOOM_STEP)}
+                >
+                  <Plus size={11} />
+                </button>
+              </div>
+            ) : null}
+            {scrollable ? (
+              <div className="mermaid-scroll-controls" role="group" aria-label="Scroll diagram">
+                <button
+                  type="button"
+                  className="code-copy mermaid-tool-button"
+                  aria-label="Scroll diagram left"
+                  title="Scroll left"
+                  onClick={() => scrollDiagram(-1)}
+                >
+                  <ChevronLeft size={12} />
+                </button>
+                <button
+                  type="button"
+                  className="code-copy mermaid-tool-button"
+                  aria-label="Scroll diagram right"
+                  title="Scroll right"
+                  onClick={() => scrollDiagram(1)}
+                >
+                  <ChevronRight size={12} />
+                </button>
+              </div>
+            ) : null}
+            {error ? null : (
               <button
                 type="button"
-                className="code-copy mermaid-tool-button"
-                aria-label="Zoom out"
-                title="Zoom out"
-                disabled={zoom <= MIN_ZOOM}
-                onClick={() => changeZoom(-ZOOM_STEP)}
+                className="code-copy"
+                aria-pressed={showSource}
+                onClick={() => setShowSource((current) => !current)}
               >
-                <Minus size={11} />
+                <Code2 size={11} />
+                {showSource ? "Diagram" : "Source"}
               </button>
+            )}
+            {svg && !showSource && !error ? (
               <button
                 type="button"
-                className="code-copy mermaid-zoom-value"
-                aria-label="Fit diagram to width"
-                title="Fit diagram to width"
-                onClick={() => setZoom(1)}
+                className="code-copy"
+                aria-label="Expand diagram"
+                title="Open the diagram full screen"
+                onClick={() => setExpanded(true)}
               >
-                {Math.round(zoom * 100)}%
+                <Maximize2 size={11} />
+                Expand
               </button>
-              <button
-                type="button"
-                className="code-copy mermaid-tool-button"
-                aria-label="Zoom in"
-                title="Zoom in"
-                disabled={zoom >= MAX_ZOOM}
-                onClick={() => changeZoom(ZOOM_STEP)}
-              >
-                <Plus size={11} />
-              </button>
-            </div>
-          ) : null}
-          {scrollable ? (
-            <div className="mermaid-scroll-controls" role="group" aria-label="Scroll diagram">
-              <button
-                type="button"
-                className="code-copy mermaid-tool-button"
-                aria-label="Scroll diagram left"
-                title="Scroll left"
-                onClick={() => scrollDiagram(-1)}
-              >
-                <ChevronLeft size={12} />
-              </button>
-              <button
-                type="button"
-                className="code-copy mermaid-tool-button"
-                aria-label="Scroll diagram right"
-                title="Scroll right"
-                onClick={() => scrollDiagram(1)}
-              >
-                <ChevronRight size={12} />
-              </button>
-            </div>
-          ) : null}
-          {error ? null : (
-            <button
-              type="button"
-              className="code-copy"
-              aria-pressed={showSource}
-              onClick={() => setShowSource((current) => !current)}
-            >
-              <Code2 size={11} />
-              {showSource ? "Diagram" : "Source"}
-            </button>
-          )}
-          {svg && !showSource && !error ? <CopyImageButton code={code} /> : null}
-          <CopyButton text={code} />
-        </div>
-      </div>
-      {error ? (
-        <>
-          <div className="mermaid-error" title={error}>
-            Could not render this diagram. Showing its source instead.
+            ) : null}
+            {svg && !showSource && !error ? <CopyImageButton code={code} /> : null}
+            <CopyButton text={code} />
           </div>
+        </div>
+        {error ? (
+          <>
+            <div className="mermaid-error" title={error}>
+              Could not render this diagram. Showing its source instead.
+            </div>
+            <pre>
+              <code>{code}</code>
+            </pre>
+          </>
+        ) : showSource ? (
           <pre>
             <code>{code}</code>
           </pre>
-        </>
-      ) : showSource ? (
-        <pre>
-          <code>{code}</code>
-        </pre>
-      ) : svg ? (
-        <div ref={canvas} className="mermaid-canvas">
-          <div
-            className="mermaid-diagram"
-            style={{ width: `${zoom * 100}%` }}
-            dangerouslySetInnerHTML={{ __html: svg }}
-          />
-        </div>
-      ) : (
-        <div className="mermaid-loading">
-          <Loader2 size={13} className="spin" aria-hidden="true" />
-          Rendering diagram…
-        </div>
-      )}
-    </div>
+        ) : svg ? (
+          <div ref={canvas} className="mermaid-canvas">
+            <div
+              className="mermaid-diagram"
+              style={{ width: `${zoom * 100}%` }}
+              dangerouslySetInnerHTML={{ __html: svg }}
+            />
+          </div>
+        ) : (
+          <div className="mermaid-loading">
+            <Loader2 size={13} className="spin" aria-hidden="true" />
+            Rendering diagram…
+          </div>
+        )}
+      </div>
+
+      {expanded
+        ? createPortal(
+            <div className="mermaid-overlay" role="dialog" aria-modal="true" aria-label="Full-screen diagram">
+              <div className="mermaid-overlay-bar">
+                <span>Diagram</span>
+                <div className="mermaid-overlay-actions">
+                  <div className="mermaid-zoom" role="group" aria-label="Full-screen diagram zoom">
+                    <button
+                      type="button"
+                      className="code-copy mermaid-tool-button"
+                      aria-label="Zoom out"
+                      title="Zoom out"
+                      disabled={fullZoom <= MIN_ZOOM}
+                      onClick={() => changeFullZoom(-ZOOM_STEP)}
+                    >
+                      <Minus size={11} />
+                    </button>
+                    <button
+                      type="button"
+                      className="code-copy mermaid-zoom-value"
+                      aria-label="Fit diagram to width"
+                      title="Fit diagram to width"
+                      onClick={() => setFullZoom(1)}
+                    >
+                      {Math.round(fullZoom * 100)}%
+                    </button>
+                    <button
+                      type="button"
+                      className="code-copy mermaid-tool-button"
+                      aria-label="Zoom in"
+                      title="Zoom in"
+                      disabled={fullZoom >= MAX_ZOOM}
+                      onClick={() => changeFullZoom(ZOOM_STEP)}
+                    >
+                      <Plus size={11} />
+                    </button>
+                  </div>
+                  <CopyImageButton code={code} />
+                  <button
+                    ref={closeExpanded}
+                    type="button"
+                    className="code-copy"
+                    aria-label="Close full-screen diagram"
+                    onClick={() => setExpanded(false)}
+                  >
+                    <X size={12} />
+                    Close
+                  </button>
+                </div>
+              </div>
+              <div className="mermaid-overlay-canvas">
+                <div
+                  className="mermaid-diagram"
+                  style={{ width: `${fullZoom * 100}%` }}
+                  dangerouslySetInnerHTML={{ __html: svg }}
+                />
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
   );
 }
 
@@ -479,11 +616,13 @@ function DataTable({
   align,
   rows,
   blockKey,
+  onOpenFile,
 }: {
   headers: string[];
   align: TableAlign[];
   rows: string[][];
   blockKey: string;
+  onOpenFile?: OpenFile;
 }) {
   return (
     <div className="md-table-wrap">
@@ -492,7 +631,7 @@ function DataTable({
           <tr>
             {headers.map((header, column) => (
               <th key={`${blockKey}-h-${column}`} scope="col" className={alignClass(align[column] ?? "left")}>
-                {renderInline(header, `${blockKey}-h-${column}`)}
+                {renderInline(header, `${blockKey}-h-${column}`, onOpenFile)}
               </th>
             ))}
           </tr>
@@ -502,7 +641,7 @@ function DataTable({
             <tr key={`${blockKey}-r-${rowIndex}`}>
               {headers.map((_, column) => (
                 <td key={`${blockKey}-r-${rowIndex}-${column}`} className={alignClass(align[column] ?? "left")}>
-                  {renderInline(row[column] ?? "", `${blockKey}-r-${rowIndex}-${column}`)}
+                  {renderInline(row[column] ?? "", `${blockKey}-r-${rowIndex}-${column}`, onOpenFile)}
                 </td>
               ))}
             </tr>
@@ -516,9 +655,11 @@ function DataTable({
 export const MessageContent = memo(function MessageContent({
   text,
   streaming = false,
+  onOpenFile,
 }: {
   text: string;
   streaming?: boolean;
+  onOpenFile?: OpenFile;
 }) {
   const blocks = parseMessageBlocks(text);
   return (
@@ -527,7 +668,7 @@ export const MessageContent = memo(function MessageContent({
         const key = `${block.type}-${index}`;
         if (block.type === "code") {
           return isMermaidBlock(block.language, block.text) ? (
-            <MermaidBlock key={key} code={block.text} streaming={streaming} />
+            <MermaidDiagram key={key} code={block.text} streaming={streaming} />
           ) : (
             <CodeBlock key={key} text={block.text} language={block.language} />
           );
@@ -540,19 +681,20 @@ export const MessageContent = memo(function MessageContent({
               align={block.align}
               rows={block.rows}
               blockKey={key}
+              onOpenFile={onOpenFile}
             />
           );
         }
         if (block.type === "heading") {
           return (
             <p key={key} className={`md-heading md-h${block.level}`}>
-              {renderInline(block.text, key)}
+              {renderInline(block.text, key, onOpenFile)}
             </p>
           );
         }
         if (block.type === "list") {
           const items = block.items.map((item, itemIndex) => (
-            <li key={`${key}-${itemIndex}`}>{renderInline(item, `${key}-${itemIndex}`)}</li>
+            <li key={`${key}-${itemIndex}`}>{renderInline(item, `${key}-${itemIndex}`, onOpenFile)}</li>
           ));
           if (block.ordered) {
             return (
@@ -570,13 +712,13 @@ export const MessageContent = memo(function MessageContent({
         if (block.type === "quote") {
           return (
             <blockquote key={key} className="md-quote">
-              {renderInline(block.text, key)}
+              {renderInline(block.text, key, onOpenFile)}
             </blockquote>
           );
         }
         return (
           <p key={key} className="md-paragraph">
-            {renderInline(block.text, key)}
+            {renderInline(block.text, key, onOpenFile)}
           </p>
         );
       })}

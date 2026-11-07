@@ -1,4 +1,6 @@
+import askModeImage from "../../../docs/guide/images/ask-mode.png";
 import enhancePromptImage from "../../../docs/guide/images/enhance-prompt.png";
+import projectMapImage from "../../../docs/guide/images/project-map.png";
 import skillsLibraryImage from "../../../docs/guide/images/skills-library.png";
 import skillsUseImage from "../../../docs/guide/images/skills-use.png";
 
@@ -38,6 +40,15 @@ const SOURCES: GuideSource[] = [
       "Send messages, improve a draft, follow tool steps, read token and credit usage, switch models, stop a turn, and approve deletes, pushes, and downloads.",
     readMinutes: 6,
     file: "chat-with-an-agent.md",
+  },
+  {
+    id: "understand-a-codebase",
+    title: "Understand a codebase",
+    group: "Using Fid Coder",
+    summary:
+      "Use Ask mode, starter prompts, the project map, architecture review, flow diagrams, and clickable file evidence without making code changes.",
+    readMinutes: 6,
+    file: "understand-a-codebase.md",
   },
   {
     id: "schedule-a-routine",
@@ -95,7 +106,9 @@ const IMAGES = import.meta.glob("../../../docs/guide/images/*", {
 }) as Record<string, string>;
 
 const EXPLICIT_IMAGES: Record<string, string> = {
+  "ask-mode.png": askModeImage,
   "enhance-prompt.png": enhancePromptImage,
+  "project-map.png": projectMapImage,
   "skills-library.png": skillsLibraryImage,
   "skills-use.png": skillsUseImage,
 };

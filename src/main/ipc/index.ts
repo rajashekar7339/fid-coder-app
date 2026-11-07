@@ -35,6 +35,7 @@ import { listSkillInfo, readSkill, skillRoots } from "../skills";
 import { installSkill, planSkillImport } from "../skills/install";
 import { userSkillsDir } from "../paths";
 import { createAgentsFile, ruleFilePath, workspaceRules } from "../workspace/workspace-rules";
+import { readWorkspaceFile } from "../workspace/file-peek";
 
 type AppServices = {
   db: AppDatabase;
@@ -136,6 +137,24 @@ export function registerIpc(services: AppServices): void {
     const error = await shell.openPath(file);
     if (error) throw new Error(error);
   });
+  ipcMain.handle(channels.workspaceMapGet, (_event, agentId: string) =>
+    runner.getWorkspaceMap(String(agentId ?? "")),
+  );
+  ipcMain.handle(channels.workspaceMapBuild, (_event, agentId: string) =>
+    runner.buildWorkspaceMap(String(agentId ?? "")),
+  );
+  ipcMain.handle(
+    channels.workspaceFileRead,
+    (_event, agentId: string, relative: string, line?: number | null) => {
+      const agent = db.getAgent(String(agentId ?? ""));
+      if (!agent?.workspaceDir) throw new Error("Pick a workspace folder for this agent first");
+      return readWorkspaceFile(
+        agent.workspaceDir,
+        String(relative ?? ""),
+        typeof line === "number" ? line : null,
+      );
+    },
+  );
 
   ipcMain.handle(channels.routinesList, (_event, agentId: string) => db.listRoutines(agentId));
   ipcMain.handle(channels.routinesCreate, (_event, input: RoutineInput) => {
@@ -294,6 +313,7 @@ function cleanAgent(input: AgentInput): AgentInput {
     workspaceDir: input.workspaceDir?.trim() || null,
     model: normalizeModelId(input?.model),
     toolProfile: normalizeToolProfile(input?.toolProfile),
+    readOnly: input.readOnly === true,
     memoryEnabled: input.memoryEnabled !== false,
   };
 }

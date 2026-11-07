@@ -21,6 +21,8 @@ The center column is the saved conversation for the selected agent.
 - Replies stream in as Copilot writes them.
 - Tool calls collapse into one card. The running step is highlighted; expand the card to see each call and a short result summary.
 - The composer at the bottom sends with Enter. Use Shift+Enter for a new line.
+- **Ask mode** and **Agent mode** in the composer, before the model picker, switch between read-only questions and the agent's full tools. The choice is saved for the agent.
+- The map button in the chat header opens the cached project map. Choose **Build map** or **Refresh map** to spend one read-only exploration.
 - Choose **Enhance** to rewrite the draft; nothing is sent until you press Enter. It is manual and one-shot.
 - The model picker is in the composer. It is disabled while the agent is working.
 - Type `/` in the composer, or choose **Commands**, to open the command list. `/skills <skill> <task>` uses an installed skill for that message.

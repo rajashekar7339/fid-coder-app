@@ -8,6 +8,7 @@ export type Agent = {
   workspaceDir: string | null;
   model: string;
   toolProfile: AgentToolProfile;
+  readOnly: boolean;
   memorySummary: string;
   memoryEnabled: boolean;
   lastActivityAt: string | null;
@@ -136,6 +137,7 @@ export type ContextView = {
   agentId: string;
   model: string;
   toolProfile: AgentToolProfile;
+  readOnly: boolean;
   systemMessage: string;
   memorySummary: string;
   workspaceBrief: string | null;
@@ -249,7 +251,24 @@ export type AgentInput = {
   workspaceDir: string | null;
   model: string;
   toolProfile: AgentToolProfile;
+  readOnly?: boolean;
   memoryEnabled: boolean;
+};
+
+export type WorkspaceMapView = {
+  text: string;
+  generatedAt: string;
+  stale: boolean;
+};
+
+export type WorkspaceFilePeek = {
+  path: string;
+  text: string;
+  startLine: number;
+  endLine: number;
+  totalLines: number;
+  line: number | null;
+  truncated: boolean;
 };
 
 export type BrowserPreview = {

@@ -17,9 +17,15 @@ The workspace is required for file, search, git, and shell tools. Without one, t
 - **Shell, search, git, and files** cannot control a browser or read Jira. Use it for code work.
 - **Release analyst** reads git and the release-impact config, runs `impact_analyze`, and writes reports under `artifacts/`. It cannot edit source or automation repos, run shell commands, or use the browser.
 
+## Ask or Code
+
+Use the **Ask mode / Agent mode** switch in the composer, before the model picker. **Ask mode** registers only read-only tools: discovery, reads, search, git and pull-request reads, and the read-only explorer. It cannot edit, run shell commands, use the browser, or change git. **Agent mode** gives the agent the full tool profile above.
+
+Use Ask for architecture questions, flow diagrams, troubleshooting from a log, and onboarding. Switch to Code when the agent needs to run a test or build command or make an edit. Ask mode is enforced by the tool list the model receives, not only by its instructions.
+
 ## What the agent can use
 
-Inside the workspace, a developer agent has:
+Inside the workspace, a developer agent in Agent mode has:
 
 - Folder and file discovery with `list_dir`, `glob_files`, and `search_text`.
 - Reading with `file_read` and `read_many`.

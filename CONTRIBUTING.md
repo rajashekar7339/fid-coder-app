@@ -26,11 +26,11 @@ This is the working agreement for changes in this repo. It records how the Skill
 
 ## Non-negotiables
 
-- **Explicit over automatic.** Skills start with `/skills <id> <task>`; Enhance only runs from its button. The one approved exception is skill reuse: after an explicit first use, later turns get a compact used-skills list and the agent may call `use_skill` when it judges the message needs it. Do not add a full catalog, auto-send, or any other hidden model call.
+- **Explicit over automatic.** Skills start with `/skills <id> <task>`; Enhance only runs from its button; a project map is built only from **Build map** or **Refresh map**. The one approved exception is skill reuse: after an explicit first use, later turns get a compact used-skills list and the agent may call `use_skill` when it judges the message needs it. Do not add a full catalog, auto-send, or any other hidden model call.
 - **No new hidden model calls.** A feature model call needs an explicit trigger (a user turn or a button), a timeout, a size cap, and a clear cost story. Do not put a skill catalog or full skill bodies in every prompt.
 - **No hidden writes.** A side utility should not write SQLite, create a chat turn, or emit chat events unless that is its job.
 - **User control.** Transformative actions get an **Undo**. Commands that open dialogs must not throw away a normal draft.
-- **Least privilege.** Tool access is scoped. Read-only skill resources stay inside the skill folder. Throwaway sessions get no tools.
+- **Least privilege.** Tool access is scoped. Ask mode is enforced by the registered tools, not only by prompt text. Read-only skill resources stay inside the skill folder. Throwaway sessions get no tools.
 - **File as source of truth.** Default versions and skill metadata live in `SKILL.md`, not hardcoded in application code.
 - **Small and matching.** Match the surrounding code, keep the CSS sections in order, and do not add a dependency for a small UI action.
 
@@ -73,6 +73,10 @@ If the owner says “then I will review those,” stop after the review. If they
 - Give a one-step **Undo** for a rewrite. Clear the undo when the user edits, sends, or switches agents.
 - Preserve a normal draft when a dialog command such as `/help` or `/skills` is selected.
 - Selecting a skill should keep the current message as the task: `hello` + skill `write-lean` becomes `/skills write-lean hello`. If the draft already has a `/skills` prefix, replace the skill and keep its task.
+- A starter prompt fills the composer and focuses it; it does not send.
+- A cached project map renders without a model call. A missing or stale map offers an explicit build or refresh action.
+- Cite evidence as `path:line`; the citation opens a read-only preview with the line highlighted.
+- Large diagrams get a full-screen view with zoom; keep the inline view usable.
 - Use accessible names, `role="status"` for changing status text, and keep interactive buttons outside the live region.
 - Date and time labels: use the existing `createdAt`/`lastActivityAt` data. Prefer `Today` / `Yesterday` / a real date, and put the full timestamp in a tooltip.
 - For long threads, use a visible, sticky day divider instead of repeating a full date on every message.
@@ -82,6 +86,8 @@ If the owner says “then I will review those,” stop after the review. If they
 - **Skills:** global, not per-agent. A skill is invoked explicitly with `/skills <id> <task>`. Store the used id per agent. Later turns get only a compact id/name/description list; the agent calls `use_skill` when it decides the skill is needed. The body is not kept in the system prompt. Supporting files are read with `skill_read`, scoped to the skill folder.
 - **Skill versions:** read `version` from `SKILL.md`. Do not add a code fallback such as `1.0.0`.
 - **Enhance:** manual and one-shot. One button click, one model call. Use a throwaway session with no tools, a cheap model when available, a timeout, and input/output caps. Write nothing to SQLite and never auto-send. Skip composer commands and a running agent; reject a chat send while a rewrite is in flight.
+- **Ask mode:** store `readOnly` on the agent, but decide the tools from it at session build time. `askTools(profile)` filters the agent's normal tool set, so one read-only name set covers workspace and Browser & Jira agents. Never rely on prompt-only restrictions. Switching modes may drop the live session; replaying the conversation is expected.
+- **Project map:** explicit build, one read-only exploration, cached by workspace and git key. Opening the dialog or reading a saved map must not call a model. Mark stale maps; do not inject the map into every turn.
 - **Model calls:** a throwaway session still spends quota. Document it. Do not add a standing model call to a normal turn without asking.
 
 ## Testing
@@ -93,8 +99,9 @@ Run the smallest set that proves the change, then the relevant end-to-end path.
 | Types | `npm run typecheck` | Every change. |
 | Unit | `npm test` (unit part) | Pure rules, parsing, formatting, prompt text. |
 | Integration | `npm test` (integration part) | DB, main-process wiring, tools, IPC-adjacent logic. Mock Copilot. |
-| Deterministic UI | `npm run test:skills` | Electron UI, library, reader, help screenshots. No Copilot turn. |
+| Deterministic UI | `npm run test:skills` | Electron UI, Ask mode, starters, cached project map, citations, full-screen diagrams, library, reader, help screenshots. No Copilot turn. |
 | Live UI | `npm run test:skills-reuse` | A real skill turn and reuse on a later turn. Needs Copilot. |
+| Live UI | `npm run test:map` | One real project-map build, read-only workspace check, and cached reopen. Needs Copilot. |
 | Live UI | `npm run test:enhance` | One real rewrite, Undo, skips, and no-send checks. Needs Copilot. |
 | Live UI | `npm run test:features` | Changes/revert, workspace rules, context inspector. Needs Copilot. |
 | Live UI | `npm run test:release-impact` | Analyst desk and release-impact CLI. |
@@ -153,3 +160,4 @@ Keep the guide practical: what the user does, what happens, and how to undo or r
 - **Enhance Prompt:** backend handoff → review → simplification (send guard, last-four query) → UI (one button, read-only composer, inline status, Undo) → help docs/screenshot → unit, integration, and live e2e.
 - **Command draft bug:** reproduced the flow before changing code; found that selecting a dialog command cleared the draft; fixed the smallest cause and added two regression checks.
 - **Skill selection:** kept the typed message as the task instead of replacing it with `/skills <id> `; replacing an existing skill keeps its task. Added regression checks for both cases.
+- **Ask mode and architecture review:** added a read-only tool set, a composer switch, starter prompts, a cached project map, path:line file previews, full-screen diagrams, and the architecture-review skill. Deterministic e2e covers the cached map, citation preview, and diagram overlay; integration tests cover the tool boundary and map builder; the live `test:map` builds a real map and checks that the workspace is unchanged.
