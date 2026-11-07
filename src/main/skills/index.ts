@@ -1,10 +1,17 @@
 import fs from "fs";
 import path from "path";
 import { isSkillId, matchSkillInvocation, parseSkillMarkdown } from "../../shared/skills";
-import type { SkillCatalog, SkillContent, SkillInfo, SkillSource } from "../../shared/types";
+import type {
+  SkillCatalog,
+  SkillContent,
+  SkillFile,
+  SkillInfo,
+  SkillSource,
+} from "../../shared/types";
 import { copilotSkillsDirs, skillsDir, userSkillsDir } from "../paths";
 
 const MAX_SKILL_BYTES = 64_000;
+const MAX_SKILL_FILES = 100;
 
 const SOURCE_NAMES: Record<SkillSource, string> = {
   workspace: "workspace",
@@ -21,6 +28,7 @@ export type SkillRoot = {
 export type LoadedSkill = SkillInfo & {
   body: string;
   path: string;
+  dir: string;
 };
 
 type RootScan = {
@@ -77,8 +85,16 @@ export function readSkill(roots: readonly SkillRoot[], id: string, source?: Skil
         chars: skill.chars,
         path: skill.path,
         body: skill.body,
+        files: listSkillFiles(skill.dir),
       }
     : null;
+}
+
+export function listSkillFiles(dir: string): SkillFile[] {
+  const root = path.resolve(dir);
+  const files: SkillFile[] = [];
+  walkSkillFiles(root, root, files);
+  return files;
 }
 
 export function resolveSkillForTurn(
@@ -182,9 +198,41 @@ function scanRoot({ root, source }: SkillRoot): RootScan {
       chars: parsed.body.length,
       body: parsed.body,
       path: entry.file,
+      dir: path.dirname(entry.file),
     });
   }
   const result = { skills, warnings };
   cache.set(key, result);
   return result;
+}
+
+function walkSkillFiles(root: string, current: string, files: SkillFile[]): void {
+  if (files.length >= MAX_SKILL_FILES) return;
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(current, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  entries.sort((left, right) => left.name.localeCompare(right.name));
+  for (const entry of entries) {
+    if (files.length >= MAX_SKILL_FILES) return;
+    if (entry.isSymbolicLink()) continue;
+    const full = path.join(current, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name !== ".git" && entry.name !== "node_modules") {
+        walkSkillFiles(root, full, files);
+      }
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    const relative = path.relative(root, full).split(path.sep).join("/");
+    if (relative === "SKILL.md") continue;
+    try {
+      const stat = fs.statSync(full);
+      files.push({ path: relative, bytes: stat.size });
+    } catch {
+      // A file can disappear between readdir and stat; leave it out.
+    }
+  }
 }

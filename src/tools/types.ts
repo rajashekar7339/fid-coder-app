@@ -1,5 +1,5 @@
 import type { HistoryPort } from "../shared/history";
-import type { ApprovalKind, ApprovalOutcome } from "../shared/types";
+import type { ApprovalKind, ApprovalOutcome, SkillFile } from "../shared/types";
 
 export interface BrowserControl {
   navigate(agentId: string, url: string): Promise<string>;
@@ -22,9 +22,21 @@ export type ApprovalToolRequest = {
   reason: string;
 };
 
+export type SkillActivation = {
+  id: string;
+  name: string;
+  description: string;
+  version: string | null;
+  body: string;
+  dir: string;
+  files: SkillFile[];
+};
+
 export type ToolContext = {
   agentId: string;
   workspaceDir: string | null;
+  skillDir?: string;
+  skills?: SkillActivation[];
   writeRoot?: string;
   model?: string;
   turnId?: string;

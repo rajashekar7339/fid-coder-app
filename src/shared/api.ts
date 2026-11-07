@@ -23,6 +23,7 @@ import type {
   WorkspaceRuleFile,
 } from "./types";
 import type { CopilotUsageResult } from "./copilot-usage";
+import type { EnhanceResult } from "./enhance-prompt";
 import type { SelectedTests } from "./release-impact/types";
 
 export interface FidApi {
@@ -40,6 +41,7 @@ export interface FidApi {
     send: (agentId: string, text: string) => Promise<void>;
     running: (agentId: string) => Promise<boolean>;
     abort: (agentId: string) => Promise<void>;
+    enhance: (agentId: string, text: string) => Promise<EnhanceResult>;
     onEvent: (callback: (event: ChatEvent) => void) => number;
     offEvent: (id: number) => void;
   };

@@ -10,9 +10,19 @@ Type in the composer and press **Enter**. Use **Shift+Enter** for a new line. Th
 
 The agent can only answer after Copilot is connected. If the composer says "Sign in to Copilot to chat", open **Settings → Copilot** and sign in.
 
+## Improve a draft
+
+Choose **Enhance** next to **Commands** to rewrite the current draft. It makes the wording shorter and more specific, keeps paths, quotes, and slash commands, and uses the last few messages for context. Nothing is sent: the rewrite stays in the composer so you can edit it and send when ready. Choose **Undo** to restore the draft you had before the rewrite.
+
+![The composer with a rough draft and the Enhance button next to Commands.](images/enhance-prompt.png)
+
+Enhance runs only when you choose it. It does not run on later messages and does not change what Send does. It uses Copilot quota and picks a cheap model when your account lists one. Composer commands and a running agent are skipped with a short reason; any other non-empty draft, including a short one, runs when you choose Enhance.
+
 ## Follow the work
 
 While the agent runs, its current tool step is highlighted in the open tool card. Finished tool calls stay in the card above the reply. Expand it to see each call and a short summary of its result.
+
+Day dividers mark **Today**, **Yesterday**, and older calendar dates. They stay at the top of the thread while you scroll that day. Hover any time to see the full date and timestamp.
 
 The conversation is saved in the local SQLite database. When Fid Coder rebuilds a Copilot session, it sends the last 30 messages, clipped to 12,000 characters, so the agent has recent context.
 
@@ -20,14 +30,14 @@ The conversation is saved in the local SQLite database. When Fid Coder rebuilds 
 
 Type `/` in the composer, or choose **Commands** next to the model picker, to open the command list.
 
-- `/skills <skill-id> <task>` — follow an installed skill for this message.
+- `/skills <skill-id> <task>` — load an installed skill for this message. Later messages keep a short used-skills list and can reload it.
 - `/skills` — open the Skills library.
 - `/review` — review uncommitted changes, staged changes, a branch, a PR number, or a path.
 - `/help` — open this guide.
 
 Use ↑/↓ to move, Enter or Tab to select, and Escape to close. A command that needs a workspace or developer tools shows the reason in the list. The empty conversation also shows the available commands as chips.
 
-The **Skills** row at the bottom of the sidebar opens the library. It lists every installed skill, its source, version, and size, and has the **Upload skill** button. Skills are global; nothing is added to an agent until you use `/skills`.
+The **Skills** row at the bottom of the sidebar opens the library. It lists every installed skill, its source, version, and size, and has the **Upload skill** button. Skills are global; nothing from a skill is added to an agent until you use `/skills`. After that, later messages get a short used-skills list and the assistant can reload the skill when it needs it.
 
 ## Ask for a code review
 

@@ -11,7 +11,7 @@ The sidebar lists every agent on this machine.
 - Search with **Ctrl+K**, then press Escape to clear the search.
 - Select **+** at the top or **New agent** below the list to create an agent.
 - Open the menu on an agent row to edit or delete it. Deleting an agent also removes its conversation, routines, and browser profile.
-- The time on the right is the last activity. A green dot means the agent was active in the last 15 minutes.
+- The date on the right is the last activity: **Today**, **Yesterday**, or the calendar date. Hover it for the full timestamp. A green dot means the agent was active in the last 15 minutes.
 - **Skills** at the bottom of the sidebar opens the global library. Use **Upload skill** there to add a folder with `SKILL.md`.
 
 ## Conversation
@@ -21,6 +21,7 @@ The center column is the saved conversation for the selected agent.
 - Replies stream in as Copilot writes them.
 - Tool calls collapse into one card. The running step is highlighted; expand the card to see each call and a short result summary.
 - The composer at the bottom sends with Enter. Use Shift+Enter for a new line.
+- Choose **Enhance** to rewrite the draft; nothing is sent until you press Enter. It is manual and one-shot.
 - The model picker is in the composer. It is disabled while the agent is working.
 - Type `/` in the composer, or choose **Commands**, to open the command list. `/skills <skill> <task>` uses an installed skill for that message.
 - The status pill beside the agent name shows Ready, Working, or Sign in.

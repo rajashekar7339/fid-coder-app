@@ -1,5 +1,7 @@
 const TIME: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit" };
 const DAY: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
+const DAY_HEADING: Intl.DateTimeFormatOptions = { weekday: "long", ...DAY };
+const FULL_TIMESTAMP: Intl.DateTimeFormatOptions = { dateStyle: "full", timeStyle: "short" };
 
 function asDate(iso: string | null | undefined): Date | null {
   if (!iso) return null;
@@ -21,9 +23,28 @@ export function formatDay(iso: string | null | undefined): string {
   if (sameDay(date, now)) return "Today";
   if (sameDay(date, yesterday)) return "Yesterday";
   return date.toLocaleDateString(undefined, {
+    ...DAY_HEADING,
+    ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+  });
+}
+
+export function formatActivityDay(iso: string | null | undefined): string {
+  const date = asDate(iso);
+  if (!date) return "";
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (sameDay(date, now)) return "Today";
+  if (sameDay(date, yesterday)) return "Yesterday";
+  return date.toLocaleDateString(undefined, {
     ...DAY,
     ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
   });
+}
+
+export function formatFullTimestamp(iso: string | null | undefined): string {
+  const date = asDate(iso);
+  return date ? date.toLocaleString(undefined, FULL_TIMESTAMP) : "";
 }
 
 export function formatRelativeTime(iso: string | null | undefined): string {
@@ -56,6 +77,12 @@ export function formatNextRun(iso: string | null | undefined): string {
 
 export function formatCount(count: number): string {
   return Math.round(count).toLocaleString();
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${Math.max(0, Math.round(bytes))} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 export function formatCredits(nanoAiu: number): string {

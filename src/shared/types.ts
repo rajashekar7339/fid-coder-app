@@ -97,6 +97,11 @@ export type FileDiff = {
 
 export type SkillSource = "workspace" | "app" | "copilot" | "builtin";
 
+export type SkillFile = {
+  path: string;
+  bytes: number;
+};
+
 export type SkillInfo = {
   id: string;
   name: string;
@@ -109,6 +114,7 @@ export type SkillInfo = {
 export type SkillContent = SkillInfo & {
   path: string;
   body: string;
+  files: SkillFile[];
 };
 
 export type SkillCatalog = {

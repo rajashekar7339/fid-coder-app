@@ -3,7 +3,7 @@ import { ChevronDown, RefreshCw, Upload, Wrench, X } from "lucide-react";
 import { MAX_SKILL_CHARS, skillVersionLabel, SKILL_SOURCE_LABELS } from "../../../shared/skills";
 import type { SkillCatalog, SkillContent, SkillInfo, SkillSource } from "../../../shared/types";
 import { errorText, fid } from "../../lib/fid";
-import { formatCount } from "../../lib/format";
+import { formatBytes, formatCount } from "../../lib/format";
 import { Modal } from "../ui/Modal";
 
 type Props = {
@@ -225,6 +225,21 @@ export function SkillsDialog({ workspaceDir, hasAgent, onClose, onUse, onChanged
                               <span className="skill-reader-path">{preview.path}</span>
                             </div>
                             <pre>{preview.body}</pre>
+                            {preview.files.length > 0 ? (
+                              <div className="skill-reader-files">
+                                <span className="skill-reader-files-head">
+                                  Supporting files · {preview.files.length}
+                                </span>
+                                <ul>
+                                  {preview.files.map((file) => (
+                                    <li key={file.path}>
+                                      <span className="skill-reader-file-path">{file.path}</span>
+                                      <span>{formatBytes(file.bytes)}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
                           </>
                         ) : null}
                       </div>

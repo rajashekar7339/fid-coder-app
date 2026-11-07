@@ -83,6 +83,11 @@ test("reports a malformed skill and reads a skill body", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fid-skill-info-"));
   try {
     writeSkill(root, "write-lean", "Write lean", "Small diffs.");
+    const resources = path.join(root, "write-lean", "references");
+    fs.mkdirSync(resources, { recursive: true });
+    fs.writeFileSync(path.join(resources, "checklist.md"), "- Read the callers.\n");
+    fs.mkdirSync(path.join(root, "write-lean", ".git"));
+    fs.writeFileSync(path.join(root, "write-lean", ".git", "config"), "ignored\n");
     const broken = path.join(root, "broken");
     fs.mkdirSync(broken);
     fs.writeFileSync(path.join(broken, "SKILL.md"), "---\nname: Broken\n---\n\nBody\n");
@@ -97,6 +102,7 @@ test("reports a malformed skill and reads a skill body", () => {
     assert.equal(content.id, "write-lean");
     assert.match(content.body, /Small diffs/);
     assert.equal(content.path.endsWith(path.join("write-lean", "SKILL.md")), true);
+    assert.deepEqual(content.files, [{ path: "references/checklist.md", bytes: 20 }]);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

@@ -1,10 +1,10 @@
 # Use skills on demand
 
-A skill is a reusable `SKILL.md` instruction file. Skills are global: every agent can use any installed skill. Nothing is sent to the model until you invoke the skill for a message.
+A skill is a reusable `SKILL.md` instruction file. Skills are global: every agent can use any installed skill. Nothing from a skill's instructions is sent to the model until that skill is loaded. After you use one, the assistant keeps a short note of the skills used in the conversation and loads the instructions again only when it needs them.
 
 ## The Skills library
 
-Choose **Skills** at the bottom of the sidebar. The library shows every installed skill with its name, id, source, version, and size. Select a row to expand the read-only `SKILL.md` in place, including its source, version, and file path. Choose **Use** to put `/skills <skill-id> ` in the composer, then add the task. Choose **Upload skill** and pick a folder that contains `SKILL.md` to add one.
+Choose **Skills** at the bottom of the sidebar. The library shows every installed skill with its name, id, source, version, and size. Select a row to expand the read-only `SKILL.md` in place, including its source, version, and file path. Any supporting files in the skill folder are listed below the instructions. Choose **Use** to put the skill command in the composer. If you already typed a message, it becomes the task; otherwise add the task after the command. Choose **Upload skill** and pick a folder that contains `SKILL.md` to add one.
 
 ![The Skills library with a skill expanded to read its SKILL.md, and the Use and Upload skill buttons.](images/skills-library.png)
 
@@ -31,7 +31,11 @@ Type `/skills <skill-id> <task>` in the composer:
 
 ![The composer after choosing Use, with the skill command, version, and a prompt to add the task.](images/skills-use.png)
 
-The composer picker appears after `/skills ` and lists the installed skills. Choose one and add the task. The skill applies to that message only. It is not added to the agent's system prompt, and a normal next message does not carry it.
+The composer picker appears after `/skills ` and lists the installed skills. Choose one and add the task. The full instructions are added only to the message that loads them. They are not kept in the agent's system prompt.
+
+On later messages, the assistant sees a short list of skills used in this conversation: the id, name, and description, not the instructions. If a later message needs one, the assistant loads it with the read-only `use_skill` tool. You do not need to type `/skills` again. If the assistant does not pick it, use `/skills <skill-id> <task>` explicitly.
+
+A skill can bundle supporting files next to `SKILL.md`, such as a checklist, template, or reference. They are copied with the skill, listed in the reader, and never added to the prompt automatically. When a skill is loaded, the assistant can read files inside that skill's folder with the read-only `skill_read` tool, and only when the skill asks it to. The app never runs bundled scripts automatically.
 
 Type `/skills` alone to open the Skills library.
 

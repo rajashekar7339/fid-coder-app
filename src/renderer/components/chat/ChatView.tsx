@@ -16,8 +16,10 @@ import {
   PanelRight,
   ScanSearch,
   Slash,
+  Sparkles,
   Square,
   Terminal,
+  Undo2,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
@@ -42,7 +44,13 @@ import type {
 } from "../../../shared/types";
 import { agentSubtitle } from "../../lib/agent-display";
 import { errorText, fid } from "../../lib/fid";
-import { formatClock, formatCount, formatDay, formatNextRun } from "../../lib/format";
+import {
+  formatClock,
+  formatCount,
+  formatDay,
+  formatFullTimestamp,
+  formatNextRun,
+} from "../../lib/format";
 import { AgentAvatar } from "../agents/AgentAvatar";
 import { ApprovalCard } from "../approvals/ApprovalCard";
 import { MessageContent } from "./MessageContent";
@@ -95,6 +103,8 @@ const TOOL_META: Record<string, ToolMeta> = {
   gh_pr_view: { label: "Read a pull request", active: "Reading a pull request", Icon: Terminal },
   gh_pr_diff: { label: "Read a pull request diff", active: "Reading a pull request diff", Icon: Terminal },
   explore_code: { label: "Explored the code", active: "Exploring the code", Icon: ScanSearch },
+  use_skill: { label: "Used a skill", active: "Loading a skill", Icon: Wrench },
+  skill_read: { label: "Read a skill file", active: "Reading a skill file", Icon: FileText },
   review_code: { label: "Reviewed a change", active: "Reviewing a change", Icon: ScanSearch, command: "review" },
   history_first: { label: "Read the first message", active: "Reading the first message", Icon: Clock3 },
   history_search: { label: "Searched history", active: "Searching history", Icon: ScanSearch },
@@ -216,12 +226,16 @@ export function ChatView({
   const [commandIndex, setCommandIndex] = useState(0);
   const [skillPickerIndex, setSkillPickerIndex] = useState(0);
   const [skillPickerClosed, setSkillPickerClosed] = useState(false);
+  const [enhancing, setEnhancing] = useState(false);
+  const [enhanceStatus, setEnhanceStatus] = useState<string | null>(null);
+  const [undoDraft, setUndoDraft] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
   const pinned = useRef(true);
   const generation = useRef(0);
   const messageLoad = useRef(0);
   const sendLock = useRef(false);
+  const enhanceLock = useRef(false);
 
   const updateLive = useCallback(
     (updater: (current: LiveTurn | null) => LiveTurn | null) => {
@@ -258,6 +272,9 @@ export function ChatView({
     ? null
     : skillHintFor(draft, draftCommand, skillInvocation, skillCatalogState);
   const hint = !commandsOpen && !skillPickerOpen ? (skillHint ?? commandHint) : null;
+  const canEnhance =
+    settingsReady && signedIn && !running && !enhancing && draft.trim().length > 0;
+  const enhanceHint = enhancing ? "Enhancing your draft…" : enhanceStatus;
 
   useEffect(() => {
     let cancelled = false;
@@ -291,10 +308,19 @@ export function ChatView({
 
   useEffect(() => {
     if (!skillSeed) return;
-    setDraft(skillSeed);
+    const seeded = parseCommand(skillSeed);
+    const id = seeded?.command.id === "skills" ? seeded.args.trim() : "";
+    setDraft((current) => (id ? draftWithSkill(current, id) : skillSeed));
     setCommandsOpen(false);
+    setUndoDraft(null);
+    setEnhanceStatus(null);
     onSkillSeedUsed();
-    window.requestAnimationFrame(() => composer.current?.focus());
+    window.requestAnimationFrame(() => {
+      const input = composer.current;
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
   }, [skillSeed, onSkillSeedUsed]);
 
   useEffect(() => {
@@ -318,13 +344,15 @@ export function ChatView({
     if (commandUnavailable(command)) return;
     setCommandsOpen(false);
     setCommandIndex(0);
+    // A dialog command should not throw away a normal draft the user typed.
+    const commandDraft = draft.trimStart().startsWith("/");
     if (command.id === "skills") {
-      setDraft("");
+      if (commandDraft) setDraft("");
       onOpenSkills();
       return;
     }
     if (command.ui) {
-      setDraft("");
+      if (commandDraft) setDraft("");
       if (command.id === "help") onOpenHelp();
       return;
     }
@@ -332,11 +360,31 @@ export function ChatView({
     window.requestAnimationFrame(() => composer.current?.focus());
   }
 
+  function draftWithSkill(current: string, id: string): string {
+    const text = current.trim();
+    if (!text) return `/skills ${id} `;
+    const parsed = parseCommand(text);
+    if (!parsed) return `/skills ${id} ${text}`;
+    if (parsed.command.id !== "skills") return `/skills ${id} `;
+    const matched =
+      skillCatalogState === "ready" ? matchSkillInvocation(skillCatalog, parsed.args) : null;
+    const task =
+      matched && !("error" in matched)
+        ? matched.task.trim()
+        : parsed.args.trim().split(/\s+/).slice(1).join(" ");
+    return task ? `/skills ${id} ${task}` : `/skills ${id} `;
+  }
+
   function chooseSkill(skill: SkillInfo) {
     setCommandsOpen(false);
     setSkillPickerClosed(true);
-    setDraft(`/skills ${skill.id} `);
-    window.requestAnimationFrame(() => composer.current?.focus());
+    setDraft((current) => draftWithSkill(current, skill.id));
+    window.requestAnimationFrame(() => {
+      const input = composer.current;
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
   }
 
   useEffect(() => {
@@ -488,7 +536,50 @@ export function ChatView({
     setShowJump((current) => (current === !atBottom ? current : !atBottom));
   }
 
+  async function enhancePrompt() {
+    if (!canEnhance || enhanceLock.current) return;
+    const original = draft;
+    enhanceLock.current = true;
+    setEnhancing(true);
+    setError(null);
+    setEnhanceStatus(null);
+    setUndoDraft(null);
+    setCommandsOpen(false);
+    setSkillPickerClosed(true);
+    try {
+      const result = await fid().chat.enhance(agent.id, original);
+      if (result.status === "enhanced") {
+        setDraft(result.text);
+        setUndoDraft(original);
+        setEnhanceStatus("Enhanced. Review it, then send.");
+        window.requestAnimationFrame(() => {
+          const input = composer.current;
+          if (!input) return;
+          input.focus();
+          input.setSelectionRange(result.text.length, result.text.length);
+        });
+      } else {
+        setEnhanceStatus(result.reason);
+      }
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      enhanceLock.current = false;
+      setEnhancing(false);
+    }
+  }
+
+  function undoEnhance() {
+    if (undoDraft === null) return;
+    setDraft(undoDraft);
+    setUndoDraft(null);
+    setEnhanceStatus(null);
+    setError(null);
+    window.requestAnimationFrame(() => composer.current?.focus());
+  }
+
   function send() {
+    if (enhancing) return;
     const text = draft.trim();
     if (text === "/skills") {
       onOpenSkills();
@@ -513,7 +604,7 @@ export function ChatView({
 
   function sendText(raw: string) {
     const text = raw.trim();
-    if (!text || running || sendLock.current) return;
+    if (!text || running || enhancing || sendLock.current) return;
     const uiCommand = COMMANDS.find((command) => command.ui && text === `/${command.id}`);
     if (uiCommand) {
       chooseCommand(uiCommand);
@@ -530,6 +621,8 @@ export function ChatView({
     setShowJump(false);
     setDraft("");
     setError(null);
+    setUndoDraft(null);
+    setEnhanceStatus(null);
     setRunning(true);
     updateLive(() => blankLive(startedAt, { userText: text }));
     void fid()
@@ -690,7 +783,11 @@ export function ChatView({
               if (day) lastDay = day;
               return (
                 <Fragment key={item.kind === "message" ? item.message.id : item.id}>
-                  {showDay ? <div className="day-separator">{day}</div> : null}
+                  {showDay ? (
+                    <div className="day-separator" title={formatFullTimestamp(stamp)}>
+                      {day}
+                    </div>
+                  ) : null}
                   {item.kind === "tools" ? (
                     <ToolGroup calls={item.calls} pendingId={projected.pendingToolId} />
                   ) : (
@@ -857,6 +954,7 @@ export function ChatView({
                     : "Sign in to Copilot to chat"
             }
             disabled={!settingsReady || !signedIn}
+            readOnly={enhancing}
             aria-label={`Message ${agent.name}`}
             aria-expanded={commandsOpen || skillPickerOpen}
             aria-controls={commandsOpen ? "composer-commands" : skillPickerOpen ? "composer-skills" : undefined}
@@ -864,6 +962,8 @@ export function ChatView({
             onChange={(event) => {
               const value = event.target.value;
               setDraft(value);
+              setUndoDraft(null);
+              setEnhanceStatus(null);
               setCommandsOpen(/^\/[a-z-]*$/i.test(value));
             }}
             onKeyDown={(event) => {
@@ -965,6 +1065,26 @@ export function ChatView({
               <Slash size={11} aria-hidden="true" />
               Commands
             </button>
+            <button
+              type="button"
+              className="composer-command composer-enhance"
+              aria-label="Enhance prompt"
+              aria-busy={enhancing}
+              title={
+                enhancing
+                  ? "Rewriting the draft…"
+                  : "Rewrite this draft with a cheap model. Nothing is sent."
+              }
+              disabled={!canEnhance}
+              onClick={() => void enhancePrompt()}
+            >
+              {enhancing ? (
+                <Loader2 size={11} className="spin" aria-hidden="true" />
+              ) : (
+                <Sparkles size={11} aria-hidden="true" />
+              )}
+              {enhancing ? "Enhancing…" : "Enhance"}
+            </button>
             {agent.nextRoutineAt ? (
               <span className="composer-context">
                 <Clock3 size={10} aria-hidden="true" />
@@ -994,14 +1114,26 @@ export function ChatView({
                 type="submit"
                 className="send-button"
                 aria-label="Send message"
-                disabled={!settingsReady || !signedIn || !draft.trim()}
+                disabled={!settingsReady || !signedIn || !draft.trim() || enhancing}
               >
                 <ArrowUp size={15} />
               </button>
             )}
           </div>
         </div>
-        {hint ? <p className="command-hint">{hint}</p> : null}
+        {enhanceHint ? (
+          <div className="command-hint enhance-hint">
+            <span role="status">{enhanceHint}</span>
+            {!enhancing && undoDraft !== null ? (
+              <button type="button" className="enhance-undo" onClick={undoEnhance}>
+                <Undo2 size={11} aria-hidden="true" />
+                Undo
+              </button>
+            ) : null}
+          </div>
+        ) : hint ? (
+          <p className="command-hint">{hint}</p>
+        ) : null}
       </form>
     </main>
   );
@@ -1041,7 +1173,13 @@ function MessageRow({
     return (
       <div className="user-message">
         <div className="user-bubble">{message.content}</div>
-        <span className="user-time">{formatClock(message.createdAt)}</span>
+        <time
+          className="user-time"
+          dateTime={message.createdAt}
+          title={formatFullTimestamp(message.createdAt)}
+        >
+          {formatClock(message.createdAt)}
+        </time>
       </div>
     );
   }
@@ -1050,7 +1188,13 @@ function MessageRow({
       <div className="message-head">
         <AgentAvatar agent={agent} size="xs" />
         <span className="message-author">{agent.name}</span>
-        <span className="message-time">{formatClock(message.createdAt)}</span>
+        <time
+          className="message-time"
+          dateTime={message.createdAt}
+          title={formatFullTimestamp(message.createdAt)}
+        >
+          {formatClock(message.createdAt)}
+        </time>
       </div>
       <div className="message-body">
         <MessageContent text={message.content} streaming={streaming} />
@@ -1104,7 +1248,13 @@ function ToolGroup({ calls, pendingId }: { calls: Message[]; pendingId: string |
                 )}
                 <span className="tool-step-label">{pending ? meta.active : meta.label}</span>
                 <code>{meta.command ? `/${meta.command}` : split.name}</code>
-                <span className="tool-step-time">{formatClock(call.createdAt)}</span>
+                <time
+                  className="tool-step-time"
+                  dateTime={call.createdAt}
+                  title={formatFullTimestamp(call.createdAt)}
+                >
+                  {formatClock(call.createdAt)}
+                </time>
                 <ChevronDown size={10} className="tool-step-chevron" aria-hidden="true" />
               </summary>
               {split.body ? <pre>{split.body}</pre> : null}

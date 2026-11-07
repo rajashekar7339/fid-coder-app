@@ -525,7 +525,12 @@ export async function getCopilotStatus(): Promise<SettingsView> {
 
 const MEMORY_TIMEOUT_MS = 45_000;
 
-export async function completeOnce(model: string, systemMessage: string, prompt: string): Promise<string> {
+export async function completeOnce(
+  model: string,
+  systemMessage: string,
+  prompt: string,
+  options?: { timeoutMs?: number; failure?: string },
+): Promise<string> {
   let token: string | null = null;
   try {
     token = hasSecret(secretKeys.copilot) ? getSecret(secretKeys.copilot) : null;
@@ -544,12 +549,12 @@ export async function completeOnce(model: string, systemMessage: string, prompt:
   });
   try {
     if (model !== AUTO_MODEL_ID) await ensureSessionModel(session, model);
-    const response = await session.sendAndWait({ prompt }, MEMORY_TIMEOUT_MS);
+    const response = await session.sendAndWait({ prompt }, options?.timeoutMs ?? MEMORY_TIMEOUT_MS);
     return readAssistantText(response, "").trim();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!message.trim() || /ghp_|github_pat_|gho_|ghu_|eyJ|Bearer\s+\S+|Basic\s+\S+/i.test(message)) {
-      throw new Error("Copilot could not update agent memory.");
+      throw new Error(options?.failure ?? "Copilot could not update agent memory.");
     }
     throw error instanceof Error ? error : new Error(message);
   } finally {

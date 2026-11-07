@@ -33,6 +33,9 @@ npm run dev
 | `npm run test:unit` | Fast tests against source files |
 | `npm run test:integration` | Tests against compiled `dist` output; builds first |
 | `npm run test:features` | Live Electron harness for changes/revert, rules, and the context inspector. Needs Copilot sign-in and runs against a temporary profile. |
+| `npm run test:skills` | Deterministic Electron harness for the Skills library, reader, upload, versions, command menu, and help screenshots. |
+| `npm run test:skills-reuse` | Live harness for using a skill once and reloading it on a later turn. Needs Copilot and two turns. |
+| `npm run test:enhance` | Live harness for Enhance Prompt: one real rewrite, Undo, skips, and no-send checks. Needs Copilot. |
 | `npm run test:release-impact` | Live Electron harness for the analyst desk and release-impact CLI. Pauses 3 seconds before each UI click; set `FID_RUN_AGENT=1` to send one real Copilot turn. |
 | `npm run release-impact -- <command>` | Run the release-impact CLI (`init`, `doctor`, `analyze`, `explain`) |
 | `npm run dist:win` | Build the portable Windows app into `release/` |
@@ -49,6 +52,10 @@ src/
 ```
 
 `AGENTS.md` has the detailed folder map and the rules for adding a tool, IPC handler, screen, or database method.
+
+## Contributing
+
+Read `CONTRIBUTING.md` before starting a feature. It covers the review-first loop, layer checklist, UI rules, help docs, and test levels.
 
 ## Release impact analysis
 

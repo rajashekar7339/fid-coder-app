@@ -56,6 +56,10 @@ function prepare() {
     "Read the repository rules before reviewing.",
     "2.0.0",
   );
+  fs.writeFileSync(
+    path.join(workspace, ".github", "skills", "project-review", "checklist.md"),
+    "- Confirm the tests\n",
+  );
   writeSkill(
     path.join(workspace, ".skills", "dot-skill", "SKILL.md"),
     "From dot skills",
@@ -214,6 +218,12 @@ async function main() {
       "reader shows the skill path",
       /project-review/.test(await page.locator(".skill-reader-path").innerText()),
     );
+    const readerFiles = await page.locator(".skill-reader-files").innerText();
+    check(
+      "reader lists supporting files",
+      /checklist\.md/.test(readerFiles) && /20 B/.test(readerFiles),
+      readerFiles.replace(/\s+/g, " ").slice(0, 120),
+    );
     await projectCard.locator(".skill-card-copy").click();
     await page.waitForSelector(".skill-reader", { state: "detached", timeout: 10_000 });
     check("reader closes", true);
@@ -230,6 +240,38 @@ async function main() {
       /v2\.0\.0/.test(await page.locator(".command-hint").innerText().catch(() => "")),
     );
 
+    await page.locator(".composer-input").fill("keep my task");
+    await page.getByRole("button", { name: "Open skills" }).click();
+    await page.waitForSelector(".skills-modal", { timeout: 15_000 });
+    await page.waitForFunction(() => document.querySelectorAll(".skill-card").length >= 5, {
+      timeout: 30_000,
+    });
+    await page.locator(".skill-card", { hasText: "Write lean" }).locator(".skill-card-use").click();
+    await page.waitForSelector(".skills-modal", { state: "detached", timeout: 10_000 });
+    await page.waitForFunction(
+      () => document.querySelector(".composer-input")?.value === "/skills write-lean keep my task",
+      { timeout: 10_000 },
+    );
+    check(
+      "Use keeps the draft as the task",
+      (await composerValue(page)) === "/skills write-lean keep my task",
+    );
+
+    await page.locator(".composer-input").fill("/skills project-review review my diff");
+    await page.getByRole("button", { name: "Open skills" }).click();
+    await page.waitForSelector(".skills-modal", { timeout: 15_000 });
+    await page.locator(".skill-card", { hasText: "Write lean" }).locator(".skill-card-use").click();
+    await page.waitForSelector(".skills-modal", { state: "detached", timeout: 10_000 });
+    await page.waitForFunction(
+      () => document.querySelector(".composer-input")?.value === "/skills write-lean review my diff",
+      { timeout: 10_000 },
+    );
+    check(
+      "Use replaces the skill and keeps the task",
+      (await composerValue(page)) === "/skills write-lean review my diff",
+    );
+    await page.locator(".composer-input").fill("");
+
     await page.getByRole("button", { name: "Open skills" }).click();
     await page.waitForSelector(".skills-modal", { timeout: 15_000 });
     await page.getByRole("button", { name: "Upload skill" }).click();
@@ -244,6 +286,25 @@ async function main() {
     await shot(page, "02-skills-after-upload");
     await page.getByRole("button", { name: "Close skills" }).click();
     await page.waitForSelector(".skills-modal", { state: "detached", timeout: 10_000 });
+
+    await page.locator(".composer-input").fill("keep this draft");
+    await page.getByRole("button", { name: "Show commands" }).click();
+    await page.waitForSelector(".command-menu", { timeout: 10_000 });
+    await page.locator(".command-menu").getByRole("option", { name: /\/help/ }).click();
+    await page.waitForSelector(".help-modal", { timeout: 10_000 });
+    await page.getByRole("button", { name: "Close help" }).click();
+    await page.waitForSelector(".help-modal", { state: "detached", timeout: 10_000 });
+    check("a dialog command keeps the draft", (await composerValue(page)) === "keep this draft");
+
+    await page.locator(".composer-input").fill("keep this draft too");
+    await page.getByRole("button", { name: "Show commands" }).click();
+    await page.waitForSelector(".command-menu", { timeout: 10_000 });
+    await page.locator(".command-menu").getByRole("option", { name: /\/skills/ }).click();
+    await page.waitForSelector(".skills-modal", { timeout: 10_000 });
+    await page.getByRole("button", { name: "Close skills" }).click();
+    await page.waitForSelector(".skills-modal", { state: "detached", timeout: 10_000 });
+    check("the skills command keeps the draft", (await composerValue(page)) === "keep this draft too");
+    await page.locator(".composer-input").fill("");
 
     await page.locator(".composer-input").fill("/");
     await page.waitForSelector(".command-menu", { timeout: 10_000 });
@@ -329,6 +390,16 @@ async function main() {
       guideImages.length >= 2 && guideImages.every((image) => image.complete && image.width > 0),
     );
     await shot(page, "04-help-skills");
+    await page.getByRole("button", { name: /Chat with an agent/ }).first().click();
+    await page.waitForFunction(
+      () =>
+        [...document.querySelectorAll(".help-article img")].some(
+          (image) =>
+            image.src.includes("enhance-prompt.png") && image.complete && image.naturalWidth > 0,
+        ),
+      { timeout: 10_000 },
+    );
+    check("help guide has the Enhance screenshot", true);
     await page.getByRole("button", { name: "Close help" }).click();
     await page.waitForSelector(".help-modal", { state: "detached", timeout: 10_000 });
   } finally {

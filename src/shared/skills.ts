@@ -1,7 +1,8 @@
-import type { SkillSource } from "./types";
+import type { SkillFile, SkillSource } from "./types";
 
 export const SKILL_ID = /^[a-z0-9-]{1,64}$/;
 export const MAX_SKILL_CHARS = 8_000;
+export const MAX_SKILL_DESCRIPTION = 1_024;
 
 export const SKILL_SOURCE_LABELS: Record<SkillSource, string> = {
   workspace: "Workspace",
@@ -28,13 +29,14 @@ export function isSkillId(value: string): boolean {
 }
 
 export function parseSkillMarkdown(text: string): SkillText | null {
-  const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  const clean = text.replace(/^﻿/, "");
+  const match = clean.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   if (!match) return null;
   const name = readScalar(match[1], "name")?.slice(0, 80);
-  const description = readScalar(match[1], "description")?.slice(0, 400);
+  const description = readScalar(match[1], "description")?.slice(0, MAX_SKILL_DESCRIPTION);
   const version = readScalar(match[1], "version")?.slice(0, 40) ?? null;
   if (!name || !description) return null;
-  return { name, description, version, body: text.slice(match[0].length).trim() };
+  return { name, description, version, body: clean.slice(match[0].length).trim() };
 }
 
 export function matchSkillInvocation<T extends { id: string; name: string }>(
@@ -72,21 +74,52 @@ export function filterSkills<T extends { id: string; name: string; description: 
   skills: readonly T[],
   query: string,
 ): T[] {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return [...skills];
-  return skills.filter((skill) =>
-    `${skill.id} ${skill.name} ${skill.description}`.toLowerCase().includes(needle),
-  );
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return [...skills];
+  return skills.filter((skill) => {
+    const text = `${skill.id} ${skill.name} ${skill.description}`.toLowerCase();
+    return terms.every((term) => text.includes(term));
+  });
 }
 
-export function skillTurnPrompt(skill: { name: string; body: string }): string {
+export function usedSkillsPrompt(
+  skills: readonly { id: string; name: string; description: string }[],
+): string {
+  const lines = skills.map((skill) => {
+    const description = skill.description.replace(/\s+/g, " ").trim();
+    const short = description.length > 160 ? `${description.slice(0, 160)}…` : description;
+    return `- ${skill.id} (${skill.name}): ${short}`;
+  });
+  return [
+    "Skills used earlier in this conversation are available, but their instructions are not loaded:",
+    ...lines,
+    "Call use_skill with one id only if the current message needs that skill. Do not load one just because it was used before, or for a follow-up the conversation already answers.",
+  ].join("\n");
+}
+
+export function skillTurnPrompt(
+  skill: { name: string; body: string },
+  files: readonly SkillFile[] = [],
+): string {
   const raw = skill.body.trim();
   const truncated = raw.length > MAX_SKILL_CHARS;
   const body = truncated ? raw.slice(0, MAX_SKILL_CHARS) : raw;
-  return [
+  const parts = [
     "The user invoked this skill for this message. Follow it when it applies. It does not override approval rules, tool limits, or project rules.",
     `### ${skill.name}\n${body}${truncated ? "\n…(truncated)" : ""}`,
-  ].join("\n\n");
+  ];
+  if (files.length > 0) {
+    const shown = files.slice(0, 40);
+    const lines = shown.map((file) => `- ${file.path}`);
+    if (files.length > shown.length) lines.push(`- …and ${files.length - shown.length} more`);
+    parts.push(
+      [
+        "Supporting files (read them with skill_read only when the skill asks for them):",
+        ...lines,
+      ].join("\n"),
+    );
+  }
+  return parts.join("\n\n");
 }
 
 function readScalar(front: string, key: string): string | null {
@@ -98,10 +131,16 @@ function readScalar(front: string, key: string): string | null {
     if (rest.startsWith(">") || rest.startsWith("|")) {
       const folded: string[] = [];
       for (let next = index + 1; next < lines.length; next += 1) {
+        if (lines[next].trim() === "") {
+          folded.push("");
+          continue;
+        }
         if (!/^\s+\S/.test(lines[next])) break;
         folded.push(lines[next].trim());
       }
-      const joined = (rest.startsWith(">") ? folded.join(" ") : folded.join("\n")).trim();
+      const joined = (
+        rest.startsWith(">") ? folded.join(" ").replace(/\s+/g, " ") : folded.join("\n")
+      ).trim();
       return joined || null;
     }
     if (!rest) return null;

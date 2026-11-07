@@ -26,6 +26,11 @@ writeDemoSkill(
   "1.2.0",
   "Read the pull request titles and write three short sections: changes, risks, and testing gaps.",
 );
+fs.mkdirSync(path.join(userData, "skills", "release-notes", "references"), { recursive: true });
+fs.writeFileSync(
+  path.join(userData, "skills", "release-notes", "references", "template.md"),
+  "# Release notes\n\n## Changes\n\n## Risks\n\n## Testing gaps\n",
+);
 writeDemoSkill(
   "test-plan",
   "Test plan",
@@ -84,6 +89,12 @@ try {
   await page.waitForTimeout(500);
   await page.getByRole("button", { name: /JIRA Agent/ }).first().click();
   await page.waitForTimeout(400);
+  // Start the thread at the top so the sticky day label sits above the messages
+  // in the full-thread capture instead of covering them.
+  await page.locator(".chat-scroll").evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await page.waitForTimeout(250);
   await save(page.locator(".thread"), "chat-tool-steps.png");
 
   await app.evaluate(({ BrowserWindow }) => {
@@ -161,6 +172,11 @@ try {
   );
   await page.waitForTimeout(400);
   await save(page.locator(".composer-dock"), "skills-use.png");
+  await page.locator(".composer-input").fill(
+    "so basically the login page is broken whenever the session cookie expires and then it keeps redirecting in a loop and I was wondering if you could take a look at the whole flow and fix it please thanks",
+  );
+  await page.waitForTimeout(300);
+  await save(page.locator(".composer-dock"), "enhance-prompt.png");
   await page.locator(".composer-input").fill("");
 } finally {
   await app.close().catch(() => undefined);

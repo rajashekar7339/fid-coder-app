@@ -1,3 +1,4 @@
+import enhancePromptImage from "../../../docs/guide/images/enhance-prompt.png";
 import skillsLibraryImage from "../../../docs/guide/images/skills-library.png";
 import skillsUseImage from "../../../docs/guide/images/skills-use.png";
 
@@ -33,8 +34,9 @@ const SOURCES: GuideSource[] = [
     id: "chat-with-an-agent",
     title: "Chat with an agent",
     group: "Using Fid Coder",
-    summary: "Send messages, follow tool steps, read token and credit usage, switch models, stop a turn, and approve deletes, pushes, and downloads.",
-    readMinutes: 5,
+    summary:
+      "Send messages, improve a draft, follow tool steps, read token and credit usage, switch models, stop a turn, and approve deletes, pushes, and downloads.",
+    readMinutes: 6,
     file: "chat-with-an-agent.md",
   },
   {
@@ -57,8 +59,9 @@ const SOURCES: GuideSource[] = [
     id: "use-skills",
     title: "Use skills on demand",
     group: "Using Fid Coder",
-    summary: "Browse or upload skills, check their versions, and add one to a message with /skills.",
-    readMinutes: 4,
+    summary:
+      "Browse or upload skills, check their versions, and use one with /skills. A used skill can be loaded again when a later message needs it.",
+    readMinutes: 5,
     file: "use-skills.md",
   },
   {
@@ -92,6 +95,7 @@ const IMAGES = import.meta.glob("../../../docs/guide/images/*", {
 }) as Record<string, string>;
 
 const EXPLICIT_IMAGES: Record<string, string> = {
+  "enhance-prompt.png": enhancePromptImage,
   "skills-library.png": skillsLibraryImage,
   "skills-use.png": skillsUseImage,
 };

@@ -14,7 +14,7 @@ import type { CopilotUsageView } from "../../../shared/copilot-usage";
 import { formatUsageCount, formatUsageReset } from "../../../shared/copilot-usage";
 import type { Agent } from "../../../shared/types";
 import { agentSubtitle, isRecentlyActive } from "../../lib/agent-display";
-import { formatRelativeTime } from "../../lib/format";
+import { formatActivityDay, formatFullTimestamp } from "../../lib/format";
 import { AgentAvatar } from "../agents/AgentAvatar";
 import { BrandMark } from "../ui/BrandMark";
 import { UsageBar, usageLevel } from "../ui/UsageBar";
@@ -228,8 +228,13 @@ export function Sidebar({
                     <span className="agent-name">{agent.name}</span>
                     <span className="agent-meta">{agentSubtitle(agent)}</span>
                   </span>
-                  <span className="agent-when">
-                    {agent.lastActivityAt ? formatRelativeTime(agent.lastActivityAt) : "New"}
+                  <span
+                    className="agent-when"
+                    title={
+                      agent.lastActivityAt ? formatFullTimestamp(agent.lastActivityAt) : undefined
+                    }
+                  >
+                    {agent.lastActivityAt ? formatActivityDay(agent.lastActivityAt) : "New"}
                   </span>
                 </button>
                 <button

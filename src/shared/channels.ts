@@ -8,6 +8,7 @@ export const channels = {
   chatSend: "chat:send",
   chatRunning: "chat:running",
   chatAbort: "chat:abort",
+  chatEnhance: "chat:enhance",
   chatEvent: "chat:event",
   chatApproval: "chat:approval",
   approvalsPending: "approvals:pending",

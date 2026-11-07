@@ -311,6 +311,14 @@ export class AppDatabase {
         UNIQUE(agent_id, kind, decision, match, cwd)
       );
       CREATE INDEX IF NOT EXISTS idx_approval_rules_agent ON approval_rules(agent_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS agent_skills (
+        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        skill_id TEXT NOT NULL,
+        used_at TEXT NOT NULL,
+        PRIMARY KEY (agent_id, skill_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_agent_skills_agent ON agent_skills(agent_id, used_at);
     `);
     this.db
       .prepare("UPDATE approvals SET decision = 'deny', source = 'aborted', decided_at = ? WHERE decision = 'pending'")
@@ -528,11 +536,35 @@ export class AppDatabase {
     this.db.prepare("DELETE FROM agents WHERE id = ?").run(id);
   }
 
+  markSkillUsed(agentId: string, skillId: string): void {
+    this.db
+      .prepare("INSERT OR REPLACE INTO agent_skills (agent_id, skill_id, used_at) VALUES (?, ?, ?)")
+      .run(agentId, skillId, new Date().toISOString());
+  }
+
+  listUsedSkillIds(agentId: string, limit = 8): string[] {
+    const rows = this.db
+      .prepare(
+        "SELECT skill_id FROM agent_skills WHERE agent_id = ? ORDER BY used_at DESC, rowid DESC LIMIT ?",
+      )
+      .all(agentId, limit) as Array<{ skill_id: string }>;
+    return rows.map((row) => row.skill_id);
+  }
+
   listMessages(agentId: string): Message[] {
     const rows = this.db
       .prepare("SELECT * FROM messages WHERE agent_id = ? ORDER BY created_at ASC, rowid ASC")
       .all(agentId) as MessageRow[];
     return rows.map(mapMessage);
+  }
+
+  listRecentConversation(agentId: string, limit = 4): Message[] {
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM messages WHERE agent_id = ? AND role IN ('user', 'assistant') ORDER BY created_at DESC, rowid DESC LIMIT ?",
+      )
+      .all(agentId, limit) as MessageRow[];
+    return rows.reverse().map(mapMessage);
   }
 
   firstUserMessages(agentId: string, limit = 1): Message[] {

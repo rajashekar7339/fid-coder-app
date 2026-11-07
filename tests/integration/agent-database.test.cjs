@@ -298,3 +298,57 @@ test("messages keep token usage and add the column on an older database", () => 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("records used skills per agent and removes them with the agent", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-agent-skills-"));
+  const db = new AppDatabase(path.join(dir, "app.sqlite"));
+  try {
+    const agent = db.createAgent({
+      name: "Skill memory",
+      systemPrompt: "Reply briefly.",
+      workspaceDir: null,
+      model: AUTO_MODEL_ID,
+    });
+    db.markSkillUsed(agent.id, "review-change");
+    db.markSkillUsed(agent.id, "write-lean");
+    assert.deepEqual(db.listUsedSkillIds(agent.id), ["write-lean", "review-change"]);
+    db.markSkillUsed(agent.id, "review-change");
+    assert.deepEqual(db.listUsedSkillIds(agent.id), ["review-change", "write-lean"]);
+    assert.deepEqual(db.listUsedSkillIds(agent.id, 1), ["review-change"]);
+    db.deleteAgent(agent.id);
+    assert.deepEqual(db.listUsedSkillIds(agent.id), []);
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("lists the most recent user and assistant messages for enhance context", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-recent-conversation-"));
+  const db = new AppDatabase(path.join(dir, "app.sqlite"));
+  try {
+    const agent = db.createAgent({
+      name: "Enhance context",
+      systemPrompt: "Reply briefly.",
+      workspaceDir: null,
+      model: AUTO_MODEL_ID,
+    });
+    db.addMessage(agent.id, "user", "one");
+    db.addMessage(agent.id, "assistant", "two");
+    db.addMessage(agent.id, "tool", "tool output");
+    db.addMessage(agent.id, "user", "three");
+    db.addMessage(agent.id, "assistant", "four");
+    db.addMessage(agent.id, "user", "five");
+    assert.deepEqual(
+      db.listRecentConversation(agent.id).map((message) => `${message.role}:${message.content}`),
+      ["assistant:two", "user:three", "assistant:four", "user:five"],
+    );
+    assert.deepEqual(
+      db.listRecentConversation(agent.id, 2).map((message) => `${message.role}:${message.content}`),
+      ["assistant:four", "user:five"],
+    );
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

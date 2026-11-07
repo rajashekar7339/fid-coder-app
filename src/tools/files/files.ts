@@ -122,7 +122,7 @@ function assertWriteAllowed(ctx: { workspaceDir: string | null; writeRoot?: stri
   }
 }
 
-function lineWindow(record: Record<string, unknown>, fallback: number, max: number): { offset: number; limit: number } {
+export function lineWindow(record: Record<string, unknown>, fallback: number, max: number): { offset: number; limit: number } {
   const offset = Math.floor(optionalNumber(record, "offset", 1));
   const limit = Math.floor(optionalNumber(record, "limit", fallback));
   if (offset < 1) throw new Error("offset must be at least 1");
@@ -207,7 +207,7 @@ function replaceOnce(content: string, oldString: string, newString: string): str
   return content.slice(0, at) + newString + content.slice(at + oldString.length);
 }
 
-function readTextWindow(file: string, offset: number, limit: number): string {
+export function readTextWindow(file: string, offset: number, limit: number, toolName = "file_read"): string {
   let stat: fs.Stats;
   try {
     stat = fs.statSync(file);
@@ -263,7 +263,7 @@ function readTextWindow(file: string, offset: number, limit: number): string {
   const end = offset + lines.length - 1;
   const body = lines.map((line, index) => `${offset + index}|${line}`).join("\n");
   const header = hasMore
-    ? `Showing lines ${offset}-${end}. More lines follow. Call file_read with offset ${end + 1}.`
+    ? `Showing lines ${offset}-${end}. More lines follow. Call ${toolName} with offset ${end + 1}.`
     : `Showing lines ${offset}-${end} of ${lineNo}.`;
   return `${header}\n${body}`;
 }

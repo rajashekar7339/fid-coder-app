@@ -11,6 +11,7 @@ import {
   parseSkillMarkdown,
   skillTurnPrompt,
   skillVersionLabel,
+  usedSkillsPrompt,
 } from "../../src/shared/skills.ts";
 
 test("parses a skill file and a folded description", () => {
@@ -30,8 +31,22 @@ test("parses a skill file and a folded description", () => {
   assert.equal(folded?.body, "Report only.");
   const stripped = parseSkillMarkdown("---\nname: Review\ndescription: >-\n  Read the diff.\n---\n\nReport only.\n");
   assert.equal(stripped?.description, "Read the diff.");
+  const paragraphs = parseSkillMarkdown(
+    "---\nname: Review\ndescription: >\n  Read the diff.\n\n  Report only.\n---\n\nBody\n",
+  );
+  assert.equal(paragraphs?.description, "Read the diff. Report only.");
+  const bom = parseSkillMarkdown("﻿---\nname: Bom\ndescription: Starts with a byte order mark.\n---\n\nBody\n");
+  assert.equal(bom?.name, "Bom");
   assert.equal(parseSkillMarkdown("# No frontmatter\n"), null);
   assert.equal(parseSkillMarkdown("---\nname: Only name\n---\n\nBody\n"), null);
+});
+
+test("keeps a description up to the spec limit", () => {
+  const description = "d".repeat(1_024);
+  const parsed = parseSkillMarkdown(`---\nname: Long\ndescription: ${description}\n---\n\nBody\n`);
+  assert.equal(parsed?.description, description);
+  const over = parseSkillMarkdown(`---\nname: Long\ndescription: ${description}extra\n---\n\nBody\n`);
+  assert.equal(over?.description.length, 1_024);
 });
 
 test("matches a skill id or display name and leaves the task", () => {
@@ -79,6 +94,9 @@ test("filters skills by id, name, or description", () => {
   assert.deepEqual(filterSkills(catalog, "").map((skill) => skill.id), ["write-lean", "review-change"]);
   assert.deepEqual(filterSkills(catalog, "diff").map((skill) => skill.id), ["write-lean"]);
   assert.deepEqual(filterSkills(catalog, "review").map((skill) => skill.id), ["review-change"]);
+  assert.deepEqual(filterSkills(catalog, "review findings").map((skill) => skill.id), ["review-change"]);
+  assert.deepEqual(filterSkills(catalog, "write small").map((skill) => skill.id), ["write-lean"]);
+  assert.deepEqual(filterSkills(catalog, "write findings").map((skill) => skill.id), []);
   assert.deepEqual(filterSkills(catalog, "nothing"), []);
 });
 
@@ -90,6 +108,25 @@ test("builds a one-message skill prompt and truncates the body", () => {
   const cut = skillTurnPrompt({ name: "Long", body: `${"a".repeat(MAX_SKILL_CHARS)}EXTRA` });
   assert.match(cut, /a+\n…\(truncated\)/);
   assert.doesNotMatch(cut, /EXTRA/);
+  const withFiles = skillTurnPrompt({ name: "Review", body: "Read the checklist." }, [
+    { path: "references/checklist.md", bytes: 120 },
+    { path: "scripts/check.py", bytes: 300 },
+  ]);
+  assert.match(withFiles, /Supporting files/);
+  assert.match(withFiles, /- references\/checklist\.md/);
+  assert.match(withFiles, /- scripts\/check\.py/);
+  assert.doesNotMatch(skillTurnPrompt({ name: "Review", body: "Read." }), /Supporting files/);
+});
+
+test("builds a compact used-skills list", () => {
+  const prompt = usedSkillsPrompt([
+    { id: "review-change", name: "Review a change", description: "Review a diff for bugs." },
+    { id: "long", name: "Long", description: "d".repeat(200) },
+  ]);
+  assert.match(prompt, /Skills used earlier in this conversation/);
+  assert.ok(prompt.includes("- review-change (Review a change): Review a diff for bugs."));
+  assert.ok(prompt.includes(`- long (Long): ${"d".repeat(160)}…`));
+  assert.match(prompt, /only if the current message needs that skill/);
 });
 
 test("shipped skills parse and fit in one prompt", () => {

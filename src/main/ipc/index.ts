@@ -82,6 +82,9 @@ export function registerIpc(services: AppServices): void {
   ipcMain.handle(channels.chatAbort, async (_event, agentId: string) => {
     await runner.abort(agentId);
   });
+  ipcMain.handle(channels.chatEnhance, (_event, agentId: string, text: string) =>
+    runner.enhanceDraft(String(agentId ?? ""), String(text ?? "")),
+  );
   ipcMain.handle(channels.chatApproval, (_event, approvalId: string, action: ApprovalAction) => {
     if (!isApprovalAction(action)) throw new Error("Unknown approval action");
     return runner.resolveApproval(String(approvalId ?? ""), action);

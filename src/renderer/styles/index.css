@@ -868,11 +868,15 @@ kbd {
 
 .agent-when {
   align-self: flex-start;
+  flex: none;
   margin-top: 11px;
   color: var(--faint-2);
   font-family: var(--font-mono);
   font-size: 9.5px;
-  transition: opacity 120ms ease;
+  white-space: nowrap;
+  transition:
+    opacity 120ms ease,
+    padding-right 120ms ease;
 }
 
 .agent-row.is-active .agent-when {
@@ -881,7 +885,7 @@ kbd {
 
 .agent-row-wrap:hover .agent-when,
 .agent-row-wrap:focus-within .agent-when {
-  opacity: 0;
+  padding-right: 24px;
 }
 
 .agent-menu-trigger {
@@ -1323,14 +1327,19 @@ kbd {
 }
 
 .day-separator {
+  position: sticky;
+  top: 0;
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 1px 0 2px;
-  color: var(--faint-2);
+  padding: 9px 0 8px;
+  background: var(--canvas);
+  color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 8.7px;
-  letter-spacing: 0.12em;
+  font-size: 9.6px;
+  font-weight: 560;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
@@ -1339,7 +1348,13 @@ kbd {
   content: "";
   height: 1px;
   flex: 1;
-  background: linear-gradient(90deg, transparent, var(--line) 22%, var(--line) 78%, transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--line-strong) 22%,
+    var(--line-strong) 78%,
+    transparent
+  );
 }
 
 .message {
@@ -2491,6 +2506,25 @@ kbd {
   color: var(--faint-2);
 }
 
+.composer-enhance {
+  border-color: rgba(216, 248, 120, 0.18);
+  color: var(--muted);
+}
+
+.composer-enhance:hover:not(:disabled) {
+  border-color: rgba(216, 248, 120, 0.4);
+  color: var(--lime);
+}
+
+.composer-enhance svg {
+  color: var(--lime);
+  opacity: 0.8;
+}
+
+.composer-enhance:hover:not(:disabled) svg {
+  opacity: 1;
+}
+
 .command-menu {
   position: absolute;
   right: 0;
@@ -2629,6 +2663,26 @@ kbd {
   color: var(--faint-2);
   font-size: 9.8px;
   line-height: 1.4;
+}
+
+.enhance-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.enhance-undo {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--lime);
+  font-size: 9.6px;
+  font-weight: 560;
+}
+
+.enhance-undo:hover {
+  color: #e2ff8d;
 }
 
 .skill-menu-name {
@@ -3644,19 +3698,22 @@ kbd {
 
 .skill-card-use {
   flex: none;
-  height: 26px;
+  align-self: center;
+  height: 30px;
   margin: 0;
-  padding: 0 10px;
-  border-color: rgba(216, 248, 120, 0.28);
-  background: rgba(216, 248, 120, 0.07);
-  color: var(--lime);
-  font-size: 9.8px;
+  padding: 0 14px;
+  border-color: var(--lime);
+  background: var(--lime);
+  color: #11140c;
+  font-size: 11.3px;
+  font-weight: 560;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
 .skill-card-use:hover:not(:disabled) {
-  border-color: rgba(216, 248, 120, 0.45);
-  background: rgba(216, 248, 120, 0.12);
-  color: var(--lime);
+  border-color: #e2ff8d;
+  background: #e2ff8d;
+  color: #11140c;
 }
 
 .skill-card-title {
@@ -3704,6 +3761,50 @@ kbd {
   font-size: 10.2px;
   line-height: 1.5;
   white-space: pre-wrap;
+}
+
+.skill-reader-files {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.skill-reader-files-head {
+  color: var(--faint-2);
+  font-family: var(--font-mono);
+  font-size: 8.8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.skill-reader-files ul {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.skill-reader-files li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9.6px;
+}
+
+.skill-reader-file-path {
+  overflow-wrap: anywhere;
+}
+
+.skill-reader-files li > span:last-child {
+  flex: none;
+  color: var(--faint-2);
 }
 
 .skills-trust {
