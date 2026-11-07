@@ -23,11 +23,10 @@ export const COMMANDS: CommandInfo[] = [
   },
   {
     id: "skills",
-    label: "Edit agent skills",
-    description: "Open this agent's skills editor.",
-    usage: "/skills",
-    category: "app",
-    ui: true,
+    label: "Use a skill",
+    description: "Open the Skills library, or use a skill for this message.",
+    usage: "/skills <skill-id> <task>",
+    category: "agent",
   },
   {
     id: "help",

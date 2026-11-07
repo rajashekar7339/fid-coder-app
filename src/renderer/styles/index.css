@@ -1273,44 +1273,6 @@ kbd {
   color: var(--faint-2);
 }
 
-.chat-skillbar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 7px 19px 7px 22px;
-  border-bottom: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.012);
-}
-
-.chat-skillbar > svg {
-  flex: none;
-  color: var(--lime);
-}
-
-.chat-skillbar-label {
-  margin-right: 2px;
-  color: var(--faint-2);
-  font-family: var(--font-mono);
-  font-size: 8px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.chat-skill {
-  display: inline-flex;
-  height: 20px;
-  align-items: center;
-  padding: 0 7px;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.02);
-  color: var(--text);
-  font-size: 9.8px;
-  line-height: 1;
-}
-
 .chat-actions {
   margin-left: auto;
   flex: none;
@@ -2669,6 +2631,37 @@ kbd {
   line-height: 1.4;
 }
 
+.skill-menu-name {
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 550;
+}
+
+.skill-menu-id {
+  color: var(--lime);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.skill-menu-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.skill-menu-foot button {
+  color: var(--faint);
+  font-family: var(--font-sans);
+  font-size: 9.5px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.skill-menu-foot button:hover {
+  color: var(--ink);
+}
+
 .composer-context {
   display: inline-flex;
   align-items: center;
@@ -3452,68 +3445,6 @@ kbd {
   min-height: 148px;
 }
 
-.skill-options {
-  display: flex;
-  max-height: 250px;
-  flex-direction: column;
-  gap: 6px;
-  overflow-y: auto;
-  padding-right: 2px;
-}
-
-.skill-option {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.018);
-  cursor: pointer;
-}
-
-.skill-option:hover {
-  border-color: var(--line-strong);
-}
-
-.skill-option.is-selected {
-  border-color: rgba(216, 248, 120, 0.26);
-  background: rgba(216, 248, 120, 0.045);
-}
-
-.skill-option.is-disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-
-.skill-option.is-disabled:hover {
-  border-color: var(--line);
-}
-
-.skill-option.is-missing {
-  border-style: dashed;
-  cursor: default;
-}
-
-.skill-option input {
-  flex: none;
-  margin: 2px 0 0;
-  accent-color: var(--lime);
-}
-
-.skill-option-copy {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.skill-option .text-button {
-  flex: none;
-  margin-left: auto;
-}
-
 .skill-name {
   color: var(--ink);
   font-size: 11px;
@@ -3523,12 +3454,6 @@ kbd {
   color: var(--faint);
   font-size: 10px;
   line-height: 1.4;
-}
-
-.skill-option-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
 }
 
 .skill-meta {
@@ -3545,49 +3470,17 @@ kbd {
   color: var(--warning);
 }
 
-.skill-preview {
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--code);
-}
-
-.skill-preview-head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 6px;
-  color: var(--faint-2);
-  font-family: var(--font-mono);
-  font-size: 8.8px;
-}
-
-.skill-preview-path {
-  overflow-wrap: anywhere;
-}
-
-.skill-preview pre {
-  max-height: 220px;
-  margin: 0;
-  overflow: auto;
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: 10.2px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-
-.skill-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 2px;
-}
-
 .skill-warnings {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  margin-top: 4px;
+}
+
+.skill-warnings summary {
+  color: var(--warning);
+  font-size: 9.8px;
+  cursor: pointer;
 }
 
 .skill-warnings ul {
@@ -3598,8 +3491,231 @@ kbd {
   line-height: 1.45;
 }
 
-.skill-warning-note {
-  color: var(--warning);
+/* ---------- Skills library ---------- */
+
+.skills-modal {
+  width: min(880px, calc(100vw - 36px));
+  max-height: min(700px, calc(100vh - 36px));
+}
+
+.skills-head-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.skills-head-actions .icon-button {
+  margin-left: 0;
+}
+
+.skills-head-actions .btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 10.5px;
+}
+
+.skills-body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 18px 18px;
+}
+
+.skills-notice {
+  margin: 0 0 10px;
+  padding: 7px 9px;
+  border: 1px solid rgba(155, 216, 133, 0.18);
+  border-radius: 7px;
+  background: rgba(155, 216, 133, 0.06);
+  color: var(--success);
+  font-size: 9.8px;
+}
+
+.skills-notice.is-error {
+  border-color: rgba(242, 146, 134, 0.18);
+  background: rgba(242, 146, 134, 0.06);
+  color: var(--danger);
+}
+
+.skills-empty {
+  margin: 18px 2px;
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+.skills-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 40px 20px;
+  color: var(--faint);
+  text-align: center;
+}
+
+.skills-empty-state svg {
+  color: var(--faint-2);
+}
+
+.skills-empty-state strong {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.skills-empty-state span {
+  max-width: 300px;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.skills-empty-state .btn {
+  margin-top: 4px;
+}
+
+.skills-group {
+  margin-bottom: 14px;
+}
+
+.skills-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 2px 6px;
+  color: var(--faint-2);
+  font-family: var(--font-mono);
+  font-size: 8.2px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.skills-group-head span:last-child {
+  color: var(--faint-2);
+}
+
+.skill-card {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 6px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.skill-card:hover,
+.skill-card.is-open {
+  border-color: var(--line-strong);
+}
+
+.skill-card-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+}
+
+.skill-card-copy {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  text-align: left;
+}
+
+.skill-card-copy:hover .skill-name {
+  color: var(--lime);
+}
+
+.skill-card-chevron {
+  flex: none;
+  margin-left: auto;
+  color: var(--faint-2);
+  transition: transform 120ms ease;
+}
+
+.skill-card.is-open .skill-card-chevron {
+  transform: rotate(180deg);
+}
+
+.skill-card-use {
+  flex: none;
+  height: 26px;
+  margin: 0;
+  padding: 0 10px;
+  border-color: rgba(216, 248, 120, 0.28);
+  background: rgba(216, 248, 120, 0.07);
+  color: var(--lime);
+  font-size: 9.8px;
+}
+
+.skill-card-use:hover:not(:disabled) {
+  border-color: rgba(216, 248, 120, 0.45);
+  background: rgba(216, 248, 120, 0.12);
+  color: var(--lime);
+}
+
+.skill-card-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 7px;
+  width: 100%;
+}
+
+.skill-card-id {
+  color: var(--lime);
+  font-family: var(--font-mono);
+  font-size: 8.8px;
+}
+
+.skill-reader {
+  margin: 0 10px 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--code);
+}
+
+.skill-reader-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: var(--faint-2);
+  font-family: var(--font-mono);
+  font-size: 8.8px;
+}
+
+.skill-reader-path {
+  overflow-wrap: anywhere;
+}
+
+.skill-reader pre {
+  max-height: 320px;
+  margin: 0;
+  overflow: auto;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 10.2px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.skills-trust {
+  margin: 16px 2px 0;
+  color: var(--faint-2);
+  font-size: 9.4px;
+  line-height: 1.45;
+}
+
+.skills-trust code {
+  font-family: var(--font-mono);
+  font-size: 9px;
 }
 
 .memory-toggle {
@@ -5596,10 +5712,6 @@ kbd {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.018);
-}
-
-.context-fact-wide {
-  grid-column: 1 / -1;
 }
 
 .context-facts span {

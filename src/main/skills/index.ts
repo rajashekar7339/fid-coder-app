@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { composeSkillPrompt, isSkillId, parseSkillMarkdown, selectSkills } from "../../shared/skills";
+import { isSkillId, matchSkillInvocation, parseSkillMarkdown } from "../../shared/skills";
 import type { SkillCatalog, SkillContent, SkillInfo, SkillSource } from "../../shared/types";
 import { copilotSkillsDirs, skillsDir, userSkillsDir } from "../paths";
 
@@ -34,7 +34,7 @@ export function skillRoots(workspaceDir: string | null): SkillRoot[] {
   const roots: SkillRoot[] = [];
   if (workspaceDir?.trim()) {
     const base = path.resolve(workspaceDir);
-    for (const relative of [".github/skills", ".agents/skills", ".claude/skills"]) {
+    for (const relative of [".skills", ".github/skills", ".agents/skills", ".claude/skills"]) {
       roots.push({ root: path.join(base, relative), source: "workspace" });
     }
   }
@@ -51,10 +51,11 @@ export function loadSkillCatalog(roots: readonly SkillRoot[]): LoadedSkill[] {
 export function listSkillInfo(roots: readonly SkillRoot[]): SkillCatalog {
   const scan = scanSkillRoots(roots);
   return {
-    skills: scan.skills.map(({ id, name, description, source, chars }) => ({
+    skills: scan.skills.map(({ id, name, description, version, source, chars }) => ({
       id,
       name,
       description,
+      version,
       source,
       chars,
     })),
@@ -71,6 +72,7 @@ export function readSkill(roots: readonly SkillRoot[], id: string, source?: Skil
         id: skill.id,
         name: skill.name,
         description: skill.description,
+        version: skill.version,
         source: skill.source,
         chars: skill.chars,
         path: skill.path,
@@ -79,11 +81,14 @@ export function readSkill(roots: readonly SkillRoot[], id: string, source?: Skil
     : null;
 }
 
-export function skillsForAgent(
+export function resolveSkillForTurn(
   roots: readonly SkillRoot[],
-  ids: readonly string[],
-): { prompt: string; names: string[] } {
-  return composeSkillPrompt(selectSkills(loadSkillCatalog(roots), ids));
+  args: string,
+): { skill: LoadedSkill; task: string } | { error: string } {
+  const matched = matchSkillInvocation(loadSkillCatalog(roots), args);
+  if ("error" in matched) return matched;
+  if (!matched.task) return { error: "Add the task after the skill name." };
+  return matched;
 }
 
 function scanSkillRoots(roots: readonly SkillRoot[]): RootScan {
@@ -172,6 +177,7 @@ function scanRoot({ root, source }: SkillRoot): RootScan {
       id: entry.id,
       name: parsed.name,
       description: parsed.description,
+      version: parsed.version,
       source,
       chars: parsed.body.length,
       body: parsed.body,

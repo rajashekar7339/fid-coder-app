@@ -33,7 +33,6 @@ test("existing agents default to Auto and keep a chosen model", () => {
   try {
     assert.equal(db.getAgent("11111111-1111-4111-8111-111111111111").model, AUTO_MODEL_ID);
     assert.equal(db.getAgent("11111111-1111-4111-8111-111111111111").toolProfile, "all");
-    assert.deepEqual(db.getAgent("11111111-1111-4111-8111-111111111111").skillIds, []);
     const created = db.createAgent({
       name: "Picker",
       systemPrompt: "Reply briefly.",
@@ -211,42 +210,43 @@ test("agents expose their latest activity and next routine", () => {
   }
 });
 
-test("skill ids stay on the agent that imported them", () => {
+test("an older database with a skill_ids column still loads and updates agents", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-skills-"));
-  const db = new AppDatabase(path.join(dir, "app.sqlite"));
+  const file = path.join(dir, "app.sqlite");
+  const id = "22222222-2222-4222-8222-222222222222";
+  const raw = new DatabaseSync(file);
+  raw.exec(`
+    CREATE TABLE agents (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      system_prompt TEXT NOT NULL,
+      workspace_dir TEXT,
+      skill_ids TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  raw
+    .prepare(
+      "INSERT INTO agents (id, name, system_prompt, workspace_dir, skill_ids, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?, ?)",
+    )
+    .run(id, "Old skills", "Write code.", '["write-lean"]', "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z");
+  raw.close();
+
+  const db = new AppDatabase(file);
   try {
-    const coder = db.createAgent({
-      name: "Coder",
-      systemPrompt: "Write code.",
-      workspaceDir: null,
-      model: AUTO_MODEL_ID,
-      skillIds: ["write-lean", "write-lean", "Not A Skill", "review-change"],
+    const agent = db.getAgent(id);
+    assert.equal(agent.name, "Old skills");
+    assert.equal(agent.skillIds, undefined);
+    const updated = db.updateAgent(id, {
+      name: agent.name,
+      systemPrompt: agent.systemPrompt,
+      workspaceDir: agent.workspaceDir,
+      model: agent.model,
+      toolProfile: agent.toolProfile,
+      memoryEnabled: agent.memoryEnabled,
     });
-    assert.deepEqual(coder.skillIds, ["write-lean", "review-change"]);
-    const reviewer = db.createAgent({
-      name: "Reviewer",
-      systemPrompt: "Review code.",
-      workspaceDir: null,
-      model: AUTO_MODEL_ID,
-      skillIds: ["review-change"],
-    });
-    const updated = db.updateAgent(coder.id, {
-      name: coder.name,
-      systemPrompt: coder.systemPrompt,
-      workspaceDir: coder.workspaceDir,
-      model: coder.model,
-      skillIds: ["write-lean"],
-    });
-    assert.deepEqual(updated.skillIds, ["write-lean"]);
-    assert.deepEqual(db.getAgent(reviewer.id).skillIds, ["review-change"]);
-    const cleared = db.updateAgent(reviewer.id, {
-      name: reviewer.name,
-      systemPrompt: reviewer.systemPrompt,
-      workspaceDir: reviewer.workspaceDir,
-      model: reviewer.model,
-    });
-    assert.deepEqual(cleared.skillIds, []);
-    assert.deepEqual(db.getAgent(coder.id).skillIds, ["write-lean"]);
+    assert.equal(updated.name, "Old skills");
   } finally {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });

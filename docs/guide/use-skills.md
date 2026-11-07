@@ -1,62 +1,68 @@
-# Add skills to an agent
+# Use skills on demand
 
-A skill is a reusable `SKILL.md` instruction file that changes how one agent works. Skills belong to the agent: enabling a skill on one agent does not change any other agent.
+A skill is a reusable `SKILL.md` instruction file. Skills are global: every agent can use any installed skill. Nothing is sent to the model until you invoke the skill for a message.
+
+## The Skills library
+
+Choose **Skills** at the bottom of the sidebar. The library shows every installed skill with its name, id, source, version, and size. Select a row to expand the read-only `SKILL.md` in place, including its source, version, and file path. Choose **Use** to put `/skills <skill-id> ` in the composer, then add the task. Choose **Upload skill** and pick a folder that contains `SKILL.md` to add one.
+
+![The Skills library with a skill expanded to read its SKILL.md, and the Use and Upload skill buttons.](images/skills-library.png)
+
+The upload is copied into `%USERPROFILE%\.fid_coder_app\skills`. If a skill with the same id is already installed, the app asks before replacing it and reports the old and new versions. A malformed skill file appears under "skipped or hidden" with the reason. Use **Refresh** after adding or editing a skill file outside the app; no restart is needed.
 
 ## Where skills come from
 
-Fid Coder reads skills from these places:
+Fid Coder reads skills from:
 
-- **Built-in** — the app's `skills` folder. Start with **Review a change** and **Write lean**.
-- **Your skills** — `%USERPROFILE%\.fid_coder_app\skills`.
-- **Workspace** — `.github/skills`, `.agents/skills`, and `.claude/skills` under the agent's workspace folder.
+- **Workspace** — `.skills`, `.github/skills`, `.agents/skills`, and `.claude/skills` under the selected agent's workspace folder.
+- **Your skills** — `%USERPROFILE%\.fid_coder_app\skills`. Uploads go here.
 - **Copilot** — `~/.copilot/skills` and `~/.agents/skills`.
+- **Built-in** — the app's own `skills` folder. It starts with **Review a change** and **Write lean**.
 
-When two skills use the same folder name, the workspace copy wins. Then come **Your skills**, **Copilot**, and the built-in copy. The agent editor shows the source and reports a hidden copy.
+The first copy of an id wins: workspace, then your skills, then Copilot, then built-in. The library lists the winning copy and reports hidden duplicates.
 
-## Add or remove a skill
+## Use a skill
 
-1. Open the agent's menu and choose **Edit agent**, or create a new agent.
-2. Find **Skills**, below **Tools**.
-3. Check the skills this agent should follow. Uncheck one to remove it.
-4. Choose **Create agent** or **Save changes**.
+Type `/skills <skill-id> <task>` in the composer:
 
-The **Skills** row under the chat header lists the active skills for the selected agent. Other agents keep their own lists.
+```text
+/skills write-lean add a null check to src/foo.ts
+```
 
-## Read before you enable
+![The composer after choosing Use, with the skill command, version, and a prompt to add the task.](images/skills-use.png)
 
-Each row shows its source and character count. Choose **View** to read the instructions and see the file path. Workspace and Copilot skills are files on this PC; read one before checking it.
+The composer picker appears after `/skills ` and lists the installed skills. Choose one and add the task. The skill applies to that message only. It is not added to the agent's system prompt, and a normal next message does not carry it.
 
-A skill over 8,000 characters is marked **will be truncated**. The field also shows the selected total against the 16,000-character prompt budget. If the total is too high, later skills are shortened or left out of the prompt.
+Type `/skills` alone to open the Skills library.
 
-## Add your own skill
+## Versions
 
-Create a folder under `%USERPROFILE%\.fid_coder_app\skills`, then add `SKILL.md`:
+Add an optional `version` to the frontmatter. The library and composer picker show the version you are using:
 
 ```md
 ---
 name: Release notes
 description: Draft release notes from merged pull requests.
+version: 1.2.0
 ---
-
-Read the pull request titles and write three short sections: changes, risks, and testing gaps.
 ```
 
-`name` and `description` are required. Choose **Refresh** in the agent editor after adding a folder; **Open skills folder** opens the app skills folder. A malformed file appears under "Some skill files were skipped" with the reason.
+When you upload a skill with the same id, the app shows the version it replaced. If a teammate updates a shared skill, replace it with **Upload skill** and check the version in the list.
 
-A workspace can share a skill with its repository by adding `.github/skills/<name>/SKILL.md`.
+`name` and `description` are required. A file over 8,000 characters is marked **will be truncated**; only the first 8,000 characters are sent with the message.
+
+## Skills and /review
+
+`/skills review-change <task>` adds the review rubric to a normal turn. For a read-only review that cannot edit files or run commands, use `/review`. The two share the built-in review skill, but only `/review` runs the isolated reviewer.
 
 ## Commands in the composer
 
 Type `/` in the composer, or choose **Commands** next to the model picker, to open the list.
 
-- `/review` — review uncommitted changes, staged changes, a branch, a PR number, or a path.
-- `/skills` — open this agent's skills editor.
+- `/skills <skill-id> <task>` — use a skill for this message.
+- `/review` — review a change in a read-only session.
 - `/help` — open this guide.
 
-Use ↑/↓ to move, Enter or Tab to select, and Escape to close. A command that needs a workspace or developer tools shows the reason in the list. The chat empty state also shows the available commands as chips.
+Use ↑/↓ to move, Enter or Tab to select, and Escape to close. A command that needs a workspace or developer tools shows the reason in the list.
 
-## Ask for a code review
-
-A developer or all-tools agent has the **/review** command. Type `/review` and add `staged`, `branch <name>`, `pr <number>`, or a path. Leave the target empty to review the uncommitted changes. The review runs in a read-only session: it can read files, search, and use git reads, but it cannot edit files, run shell commands, or control a browser. The chat shows the findings.
-
-> **Keep in mind:** a skill is guidance. It does not override the app's approval rules, tool limits, or the workspace rules. The host still decides which tools the agent can use.
+> **Keep in mind:** a skill is guidance. It does not override the app's approval rules, tool limits, or workspace rules. Read a skill before you upload or use it.

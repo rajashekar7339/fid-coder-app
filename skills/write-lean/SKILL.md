@@ -1,13 +1,14 @@
 ---
 name: Write lean
 description: Write the smallest complete change. Read the code it touches, reuse what is already there, and leave one small test when the new logic can be wrong.
+version: 1.0.0
 ---
 
 # Write lean
 
 Adapted from Ponytail by Dietrich Gebert (MIT).
 
-Follow these rules on every turn where you write or change code.
+Follow these rules for the message that invokes this skill.
 
 ## Before you write
 

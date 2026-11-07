@@ -65,15 +65,14 @@ export function ContextDialog({ agent, onClose }: { agent: Agent; onClose: () =>
                 <span>Memory</span>
                 <strong>{formatChars(view.chars.memory)}</strong>
               </div>
-              <div className="context-fact-wide">
-                <span>Skills</span>
-                <strong>{view.skillNames.length > 0 ? view.skillNames.join(", ") : "None"}</strong>
-              </div>
             </div>
             <p className="context-tools">
               {view.toolProfile} profile · {view.tools.map((tool) => TOOL_LABELS[tool] ?? tool).join(", ")}
             </p>
-            <p className="context-note">Credentials are never included in the system message.</p>
+            <p className="context-note">
+              Credentials are never included in the system message. Skills are added only to the message that uses
+              <code> /skills</code>.
+            </p>
 
             <section className="context-section">
               <h3>System message</h3>

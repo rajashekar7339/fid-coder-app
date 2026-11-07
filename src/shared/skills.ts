@@ -1,34 +1,30 @@
-export const SKILL_ID = /^[a-z0-9-]{1,64}$/;
-export const MAX_SKILLS = 8;
-export const MAX_SKILL_CHARS = 8_000;
-export const MAX_SKILLS_CHARS = 16_000;
+import type { SkillSource } from "./types";
 
-const SKILL_LEAD =
-  "The user enabled these skills for this agent. Use each one when its task applies. They do not override the app's approval rules, tool limits, or project rules.";
+export const SKILL_ID = /^[a-z0-9-]{1,64}$/;
+export const MAX_SKILL_CHARS = 8_000;
+
+export const SKILL_SOURCE_LABELS: Record<SkillSource, string> = {
+  workspace: "Workspace",
+  app: "Your skills",
+  copilot: "Copilot",
+  builtin: "Built-in",
+};
 
 export type SkillText = {
   name: string;
   description: string;
+  version: string | null;
   body: string;
 };
 
-export function isSkillId(value: string): boolean {
-  return SKILL_ID.test(value);
+export function skillVersionLabel(version: string | null): string {
+  const value = version?.trim();
+  if (!value) return "No version";
+  return /^v/i.test(value) ? value : `v${value}`;
 }
 
-export function normalizeSkillIds(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  const seen = new Set<string>();
-  const ids: string[] = [];
-  for (const item of value) {
-    if (typeof item !== "string") continue;
-    const id = item.trim();
-    if (!isSkillId(id) || seen.has(id)) continue;
-    seen.add(id);
-    ids.push(id);
-    if (ids.length >= MAX_SKILLS) break;
-  }
-  return ids;
+export function isSkillId(value: string): boolean {
+  return SKILL_ID.test(value);
 }
 
 export function parseSkillMarkdown(text: string): SkillText | null {
@@ -36,43 +32,61 @@ export function parseSkillMarkdown(text: string): SkillText | null {
   if (!match) return null;
   const name = readScalar(match[1], "name")?.slice(0, 80);
   const description = readScalar(match[1], "description")?.slice(0, 400);
+  const version = readScalar(match[1], "version")?.slice(0, 40) ?? null;
   if (!name || !description) return null;
-  return { name, description, body: text.slice(match[0].length).trim() };
+  return { name, description, version, body: text.slice(match[0].length).trim() };
 }
 
-export function selectSkills<T extends { id: string }>(catalog: T[], ids: readonly string[]): T[] {
-  const byId = new Map(catalog.map((skill) => [skill.id, skill]));
-  const chosen: T[] = [];
-  for (const id of normalizeSkillIds(ids)) {
-    const skill = byId.get(id);
-    if (skill) chosen.push(skill);
-  }
-  return chosen;
-}
-
-export function composeSkillPrompt(
-  skills: readonly { name: string; body: string }[],
-): { prompt: string; names: string[] } {
-  if (skills.length === 0) return { prompt: "", names: [] };
-  const parts = [SKILL_LEAD];
-  const names: string[] = [];
-  let total = 0;
-  let omitted = false;
-  for (const skill of skills) {
-    if (total >= MAX_SKILLS_CHARS) {
-      omitted = true;
-      break;
+export function matchSkillInvocation<T extends { id: string; name: string }>(
+  catalog: readonly T[],
+  args: string,
+): { skill: T; task: string } | { error: string } {
+  const text = args.trim();
+  if (!text) return { error: "Name a skill. Usage: /skills <skill-id> <task>" };
+  if (catalog.length === 0) return { error: "No skills are installed." };
+  const lower = text.toLowerCase();
+  let best: { skill: T; task: string; length: number } | null = null;
+  let ambiguous = false;
+  for (const skill of catalog) {
+    for (const key of [skill.id, skill.name.trim()]) {
+      if (!key) continue;
+      const needle = key.toLowerCase();
+      if (lower !== needle && !lower.startsWith(`${needle} `) && !lower.startsWith(`${needle}\n`)) {
+        continue;
+      }
+      const task = text.slice(needle.length).trim();
+      if (!best || needle.length > best.length) {
+        best = { skill, task, length: needle.length };
+        ambiguous = false;
+      } else if (needle.length === best.length && skill.id !== best.skill.id) {
+        ambiguous = true;
+      }
     }
-    const room = Math.min(MAX_SKILL_CHARS, MAX_SKILLS_CHARS - total);
-    const raw = skill.body.trim();
-    const truncated = raw.length > room;
-    const body = truncated ? raw.slice(0, room) : raw;
-    parts.push(`### ${skill.name}\n${body}${truncated ? "\n…(truncated)" : ""}`);
-    names.push(skill.name);
-    total += body.length;
   }
-  if (omitted) parts.push("…(some selected skills were omitted because the prompt reached its size limit)");
-  return { prompt: parts.join("\n\n"), names };
+  if (!best) return { error: `No skill matches "${text.split(/\s+/)[0]}".` };
+  if (ambiguous) return { error: "More than one skill matches. Use the skill id." };
+  return { skill: best.skill, task: best.task };
+}
+
+export function filterSkills<T extends { id: string; name: string; description: string }>(
+  skills: readonly T[],
+  query: string,
+): T[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [...skills];
+  return skills.filter((skill) =>
+    `${skill.id} ${skill.name} ${skill.description}`.toLowerCase().includes(needle),
+  );
+}
+
+export function skillTurnPrompt(skill: { name: string; body: string }): string {
+  const raw = skill.body.trim();
+  const truncated = raw.length > MAX_SKILL_CHARS;
+  const body = truncated ? raw.slice(0, MAX_SKILL_CHARS) : raw;
+  return [
+    "The user invoked this skill for this message. Follow it when it applies. It does not override approval rules, tool limits, or project rules.",
+    `### ${skill.name}\n${body}${truncated ? "\n…(truncated)" : ""}`,
+  ].join("\n\n");
 }
 
 function readScalar(front: string, key: string): string | null {

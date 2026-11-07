@@ -33,7 +33,8 @@ import type { AppDatabase } from "../db";
 import { runCodeExplore } from "../workspace/explore-session";
 import { runCodeReview } from "../workspace/review-session";
 import { getSecret, hasSecret, secretKeys } from "../secrets";
-import { skillRoots, skillsForAgent } from "../skills";
+import { resolveSkillForTurn, skillRoots } from "../skills";
+import { skillTurnPrompt } from "../../shared/skills";
 import { workspaceBrief } from "../workspace/workspace-brief";
 import { workspaceRules, type WorkspaceRules } from "../workspace/workspace-rules";
 import { IMPACT_OUTPUT_ROOT } from "../../shared/release-impact/paths";
@@ -226,7 +227,16 @@ export class Runner {
           return await this.runReviewTurn(agent, parsed.args, turnId);
         }
       }
-      const systemMessage = await this.systemMessage(agent);
+      let latest = text;
+      let skillPrompt: string | null = null;
+      if (parsed?.command.id === "skills") {
+        const resolved = resolveSkillForTurn(skillRoots(agent.workspaceDir), parsed.args);
+        if ("error" in resolved) throw new Error(resolved.error);
+        latest = resolved.task;
+        skillPrompt = skillTurnPrompt(resolved.skill);
+      }
+      const base = await this.systemMessage(agent);
+      const systemMessage = skillPrompt ? `${base}\n\n${skillPrompt}` : base;
       const opened = await this.sessionFor(agent, systemMessage);
       const prior = this.db
         .listMessages(agent.id)
@@ -240,7 +250,7 @@ export class Runner {
       const prompt = buildSessionPrompt({
         summary: agent.memorySummary,
         prior,
-        latest: text,
+        latest,
         routine: input.source === "routine",
         freshSession: opened.fresh,
         now: localIso(new Date()),
@@ -510,7 +520,6 @@ export class Runner {
       memorySummary: agent.memorySummary,
       workspaceBrief: parts.brief,
       rules: parts.rules?.files ?? [],
-      skillNames: parts.skillNames,
       tools: this.toolsFor(agent).map((tool) => tool.name),
       chars: {
         system: parts.text.length,
@@ -527,20 +536,11 @@ export class Runner {
 
   private async systemParts(
     agent: Agent,
-  ): Promise<{ text: string; brief: string | null; rules: WorkspaceRules | null; skillNames: string[] }> {
+  ): Promise<{ text: string; brief: string | null; rules: WorkspaceRules | null }> {
     const workspaceTools = agent.toolProfile !== "browser";
     const shellEnabled = agent.toolProfile === "all" || agent.toolProfile === "developer";
     const browserEnabled = agent.toolProfile === "all" || agent.toolProfile === "browser";
-    const lines = [agent.systemPrompt];
-    let skillNames: string[] = [];
-    try {
-      const skills = skillsForAgent(skillRoots(agent.workspaceDir), agent.skillIds);
-      skillNames = skills.names;
-      if (skills.prompt) lines.push(skills.prompt);
-    } catch (error) {
-      console.error("Failed to load agent skills", error);
-    }
-    lines.push(HISTORY_HINT, DIAGRAM_HINT);
+    const lines = [agent.systemPrompt, HISTORY_HINT, DIAGRAM_HINT];
     let brief: string | null = null;
     let rules: WorkspaceRules | null = null;
     if (workspaceTools && agent.workspaceDir) {
@@ -578,7 +578,7 @@ export class Runner {
         "Browser tools control a headed browser on this Windows machine. This agent has its own persistent profile. Call browser_snapshot before browser_click or browser_type.",
       );
     }
-    return { text: lines.join("\n\n"), brief, rules, skillNames };
+    return { text: lines.join("\n\n"), brief, rules };
   }
 
   private toolsFor(agent: Agent) {

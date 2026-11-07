@@ -33,7 +33,7 @@ The app also builds a workspace brief for the system message: the top of the fol
 
 ## Workspace skills
 
-Skills under `.github/skills`, `.agents/skills`, or `.claude/skills` in this folder appear in the agent editor with the **Workspace** source. They override a skill with the same folder name from your app skills folder, Copilot, or the built-in library. Add `.github/skills/<name>/SKILL.md` to share a rubric with the repository.
+Skills under `.skills`, `.github/skills`, `.agents/skills`, or `.claude/skills` in this folder appear in the **Skills** library with the **Workspace** source. They override a skill with the same folder name from your app skills folder, Copilot, or the built-in library. Add `.skills/<name>/SKILL.md` to share a rubric with the repository and its version with every agent that uses this workspace. Use `/skills <skill> <task>` in the chat to apply one to a message.
 
 ## Safety
 

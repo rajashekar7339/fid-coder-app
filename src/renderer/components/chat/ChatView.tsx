@@ -22,7 +22,14 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { groupToolCalls, liveTurnSettled, projectThread, userTurnAccepted, type LiveTool, type LiveTurn } from "../../../shared/chat-thread";
-import { COMMANDS, commandAvailability, filterCommands, type CommandInfo } from "../../../shared/commands";
+import { COMMANDS, commandAvailability, filterCommands, parseCommand, type CommandInfo } from "../../../shared/commands";
+import {
+  filterSkills,
+  matchSkillInvocation,
+  MAX_SKILL_CHARS,
+  skillVersionLabel,
+  SKILL_SOURCE_LABELS,
+} from "../../../shared/skills";
 import { summarizeTool } from "../../../shared/summary";
 import type {
   Agent,
@@ -35,7 +42,7 @@ import type {
 } from "../../../shared/types";
 import { agentSubtitle } from "../../lib/agent-display";
 import { errorText, fid } from "../../lib/fid";
-import { formatClock, formatDay, formatNextRun } from "../../lib/format";
+import { formatClock, formatCount, formatDay, formatNextRun } from "../../lib/format";
 import { AgentAvatar } from "../agents/AgentAvatar";
 import { ApprovalCard } from "../approvals/ApprovalCard";
 import { MessageContent } from "./MessageContent";
@@ -57,8 +64,11 @@ type Props = {
   onStartSignIn: () => void;
   onRetryModels: () => void;
   onToggleDesk: () => void;
-  onEditAgent: () => void;
+  onOpenSkills: () => void;
   onOpenHelp: () => void;
+  skillSeed: string | null;
+  onSkillSeedUsed: () => void;
+  skillsRevision: number;
   onUpdated: (agent: Agent) => void;
   onActivity: () => void;
   onAuthRequired: () => void;
@@ -140,6 +150,34 @@ function signInRequired(message: string): boolean {
   return /not signed in|no github oauth token|copilot hmac key|not authenticated/i.test(message);
 }
 
+type SkillMatch = { skill: SkillInfo; task: string } | { error: string };
+
+function skillPickerQuery(value: string): string | null {
+  if (!/^\/skills(?:\s|$)/i.test(value)) return null;
+  const rest = value.slice("/skills".length);
+  if (!rest.startsWith(" ")) return null;
+  const query = rest.trimStart();
+  return /\s/.test(query) ? null : query;
+}
+
+function skillHintFor(
+  draft: string,
+  command: ReturnType<typeof parseCommand>,
+  match: SkillMatch | null,
+  state: "loading" | "ready" | "error",
+): string | null {
+  if (command?.command.id !== "skills") return null;
+  if (draft.trim() === "/skills") return "Open the Skills library, or type /skills <skill> <task>.";
+  if (state === "loading") return "Loading skills…";
+  if (state === "error") return "Skills could not be loaded. Use the skill id or open Skills.";
+  if (!match) return null;
+  if ("error" in match) return match.error;
+  const label = `${match.skill.name} · ${skillVersionLabel(match.skill.version)}`;
+  return match.task
+    ? `${label} · applies to this message only.`
+    : `${label} · add the task for this message.`;
+}
+
 export function ChatView({
   agent,
   models,
@@ -155,8 +193,11 @@ export function ChatView({
   onStartSignIn,
   onRetryModels,
   onToggleDesk,
-  onEditAgent,
+  onOpenSkills,
   onOpenHelp,
+  skillSeed,
+  onSkillSeedUsed,
+  skillsRevision,
   onUpdated,
   onActivity,
   onAuthRequired,
@@ -170,8 +211,11 @@ export function ChatView({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
   const [skillCatalog, setSkillCatalog] = useState<SkillInfo[]>([]);
+  const [skillCatalogState, setSkillCatalogState] = useState<"loading" | "ready" | "error">("loading");
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [commandIndex, setCommandIndex] = useState(0);
+  const [skillPickerIndex, setSkillPickerIndex] = useState(0);
+  const [skillPickerClosed, setSkillPickerClosed] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
   const pinned = useRef(true);
@@ -191,8 +235,15 @@ export function ChatView({
   );
 
   const projected = projectThread(messages, live, agent.id);
-  const skillNames = new Map(skillCatalog.map((skill) => [skill.id, skill.name]));
-  const agentSkills = agent.skillIds.map((id) => ({ id, name: skillNames.get(id) ?? id }));
+  const draftCommand = parseCommand(draft);
+  const pickerQuery = skillPickerQuery(draft);
+  const skillMatches = filterSkills(skillCatalog, pickerQuery ?? "");
+  const activeSkill = skillMatches[skillPickerIndex] ?? null;
+  const skillPickerOpen = !commandsOpen && !skillPickerClosed && pickerQuery !== null;
+  const skillInvocation =
+    draftCommand?.command.id === "skills" && skillCatalogState === "ready"
+      ? matchSkillInvocation(skillCatalog, draftCommand.args)
+      : null;
   const commandQuery = draft.startsWith("/") ? draft.slice(1).split(/\s/)[0] : "";
   const commandMatches = filterCommands(commandQuery);
   const activeCommand = commandMatches[commandIndex] ?? null;
@@ -201,35 +252,62 @@ export function ChatView({
         (command) => draft.trim() === `/${command.id}` || draft.trim().startsWith(`/${command.id} `),
       )
     : null;
-  const commandHint = !commandsOpen && commandDraft ? commandDraft.description : null;
+  const commandHint =
+    !commandsOpen && commandDraft && commandDraft.id !== "skills" ? commandDraft.description : null;
+  const skillHint = skillPickerOpen
+    ? null
+    : skillHintFor(draft, draftCommand, skillInvocation, skillCatalogState);
+  const hint = !commandsOpen && !skillPickerOpen ? (skillHint ?? commandHint) : null;
 
   useEffect(() => {
     let cancelled = false;
+    setSkillCatalogState("loading");
     void fid()
       .skills.list(agent.workspaceDir)
       .then((catalog) => {
-        if (!cancelled) setSkillCatalog(catalog.skills);
+        if (cancelled) return;
+        setSkillCatalog(catalog.skills);
+        setSkillCatalogState("ready");
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (!cancelled) setSkillCatalogState("error");
+      });
     return () => {
       cancelled = true;
     };
-  }, [agent.workspaceDir]);
+  }, [agent.workspaceDir, skillsRevision]);
 
   useEffect(() => {
     setCommandIndex(0);
   }, [commandQuery, commandsOpen]);
 
   useEffect(() => {
-    if (!commandsOpen) return;
+    setSkillPickerIndex(0);
+  }, [pickerQuery, skillPickerOpen]);
+
+  useEffect(() => {
+    setSkillPickerClosed(false);
+  }, [draft]);
+
+  useEffect(() => {
+    if (!skillSeed) return;
+    setDraft(skillSeed);
+    setCommandsOpen(false);
+    onSkillSeedUsed();
+    window.requestAnimationFrame(() => composer.current?.focus());
+  }, [skillSeed, onSkillSeedUsed]);
+
+  useEffect(() => {
+    if (!commandsOpen && !skillPickerOpen) return;
     const close = (event: PointerEvent) => {
       const target = event.target;
       if (target instanceof Element && target.closest(".composer")) return;
       setCommandsOpen(false);
+      setSkillPickerClosed(true);
     };
     document.addEventListener("pointerdown", close);
     return () => document.removeEventListener("pointerdown", close);
-  }, [commandsOpen]);
+  }, [commandsOpen, skillPickerOpen]);
 
   function commandUnavailable(command: CommandInfo): string | null {
     if (command.id === "review" && !signedIn) return "Sign in to Copilot first.";
@@ -240,13 +318,24 @@ export function ChatView({
     if (commandUnavailable(command)) return;
     setCommandsOpen(false);
     setCommandIndex(0);
+    if (command.id === "skills") {
+      setDraft("");
+      onOpenSkills();
+      return;
+    }
     if (command.ui) {
       setDraft("");
-      if (command.id === "skills") onEditAgent();
       if (command.id === "help") onOpenHelp();
       return;
     }
     setDraft(`/${command.id} `);
+    window.requestAnimationFrame(() => composer.current?.focus());
+  }
+
+  function chooseSkill(skill: SkillInfo) {
+    setCommandsOpen(false);
+    setSkillPickerClosed(true);
+    setDraft(`/skills ${skill.id} `);
     window.requestAnimationFrame(() => composer.current?.focus());
   }
 
@@ -400,7 +489,26 @@ export function ChatView({
   }
 
   function send() {
-    sendText(draft);
+    const text = draft.trim();
+    if (text === "/skills") {
+      onOpenSkills();
+      return;
+    }
+    if (skillCatalogState === "ready") {
+      const parsed = parseCommand(text);
+      if (parsed?.command.id === "skills") {
+        const matched = matchSkillInvocation(skillCatalog, parsed.args);
+        if ("error" in matched) {
+          setError(matched.error);
+          return;
+        }
+        if (!matched.task) {
+          setError("Add the task after the skill name.");
+          return;
+        }
+      }
+    }
+    sendText(text);
   }
 
   function sendText(raw: string) {
@@ -464,7 +572,6 @@ export function ChatView({
         model,
         toolProfile: agent.toolProfile,
         memoryEnabled: agent.memoryEnabled,
-        skillIds: agent.skillIds,
       });
       onUpdated(saved);
     } catch (caught) {
@@ -520,18 +627,6 @@ export function ChatView({
           </button>
         </div>
       </header>
-
-      {agentSkills.length > 0 ? (
-        <div className="chat-skillbar" aria-label="Active skills">
-          <BookOpen size={11} aria-hidden="true" />
-          <span className="chat-skillbar-label">Skills</span>
-          {agentSkills.map((skill) => (
-            <span key={skill.id} className="chat-skill">
-              {skill.name}
-            </span>
-          ))}
-        </div>
-      ) : null}
 
       {settingsReady && !signedIn ? (
         <div className="sign-in-banner">
@@ -700,6 +795,53 @@ export function ChatView({
               <div className="command-foot">↑↓ move · Enter select · Esc close</div>
             </div>
           ) : null}
+          {skillPickerOpen ? (
+            <div id="composer-skills" className="command-menu skill-menu" role="listbox" aria-label="Skills">
+              <div className="command-menu-head">
+                <span>Skills</span>
+                <span>{skillCatalogState === "ready" ? `${skillMatches.length} found` : "loading"}</span>
+              </div>
+              {skillCatalogState === "loading" ? (
+                <div className="command-empty">Loading skills…</div>
+              ) : skillCatalogState === "error" ? (
+                <div className="command-empty">Skills could not be loaded.</div>
+              ) : skillMatches.length === 0 ? (
+                <div className="command-empty">No skills match.</div>
+              ) : (
+                skillMatches.map((skill, index) => (
+                  <button
+                    key={`${skill.source}:${skill.id}`}
+                    type="button"
+                    role="option"
+                    aria-selected={index === skillPickerIndex}
+                    className={`command-row ${index === skillPickerIndex ? "is-active" : ""}`}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => chooseSkill(skill)}
+                  >
+                    <Wrench size={13} className="command-icon" aria-hidden="true" />
+                    <span className="command-copy">
+                      <span className="command-title">
+                        <span className="skill-menu-name">{skill.name}</span>
+                        <span className="skill-menu-id">{skill.id}</span>
+                      </span>
+                      <span className="command-description">{skill.description}</span>
+                      <span className="command-usage">
+                        {SKILL_SOURCE_LABELS[skill.source]} · {skillVersionLabel(skill.version)} ·{" "}
+                        {formatCount(skill.chars)} chars
+                        {skill.chars > MAX_SKILL_CHARS ? " · will be truncated" : ""}
+                      </span>
+                    </span>
+                  </button>
+                ))
+              )}
+              <div className="command-foot skill-menu-foot">
+                <span>↑↓ move · Enter select · Esc close</span>
+                <button type="button" onClick={onOpenSkills}>
+                  Open Skills
+                </button>
+              </div>
+            </div>
+          ) : null}
           <textarea
             ref={composer}
             rows={1}
@@ -716,8 +858,8 @@ export function ChatView({
             }
             disabled={!settingsReady || !signedIn}
             aria-label={`Message ${agent.name}`}
-            aria-expanded={commandsOpen}
-            aria-controls={commandsOpen ? "composer-commands" : undefined}
+            aria-expanded={commandsOpen || skillPickerOpen}
+            aria-controls={commandsOpen ? "composer-commands" : skillPickerOpen ? "composer-skills" : undefined}
             title="Enter to send. Shift+Enter for a new line."
             onChange={(event) => {
               const value = event.target.value;
@@ -725,6 +867,43 @@ export function ChatView({
               setCommandsOpen(/^\/[a-z-]*$/i.test(value));
             }}
             onKeyDown={(event) => {
+              if (skillPickerOpen) {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setSkillPickerIndex((index) =>
+                    skillMatches.length === 0 ? 0 : (index + 1) % skillMatches.length,
+                  );
+                  return;
+                }
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setSkillPickerIndex((index) =>
+                    skillMatches.length === 0
+                      ? 0
+                      : (index - 1 + skillMatches.length) % skillMatches.length,
+                  );
+                  return;
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setSkillPickerClosed(true);
+                  return;
+                }
+                if (
+                  (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey)) &&
+                  !event.nativeEvent.isComposing
+                ) {
+                  if (activeSkill) {
+                    event.preventDefault();
+                    chooseSkill(activeSkill);
+                    return;
+                  }
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    return;
+                  }
+                }
+              }
               if (commandsOpen) {
                 if (event.key === "ArrowDown") {
                   event.preventDefault();
@@ -822,7 +1001,7 @@ export function ChatView({
             )}
           </div>
         </div>
-        {commandHint ? <p className="command-hint">{commandHint}</p> : null}
+        {hint ? <p className="command-hint">{hint}</p> : null}
       </form>
     </main>
   );

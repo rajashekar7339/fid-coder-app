@@ -2,7 +2,6 @@ import fs from "fs";
 import path from "path";
 import { DatabaseSync } from "node:sqlite";
 import { AUTO_MODEL_ID, normalizeModelId } from "../../shared/model";
-import { normalizeSkillIds } from "../../shared/skills";
 import { normalizeToolProfile } from "../../shared/tool-profile";
 import { normalizeApprovalMatch } from "../../shared/approval";
 import type {
@@ -34,7 +33,6 @@ type AgentRow = {
   tool_profile: string | null;
   memory_summary: string | null;
   memory_enabled: number;
-  skill_ids: string | null;
   last_activity_at: string | null;
   next_routine_at: string | null;
   created_at: string;
@@ -216,7 +214,6 @@ export class AppDatabase {
         memory_summary TEXT NOT NULL DEFAULT '',
         memory_turn_count INTEGER NOT NULL DEFAULT 0,
         memory_enabled INTEGER NOT NULL DEFAULT 1,
-        skill_ids TEXT NOT NULL DEFAULT '[]',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -321,7 +318,6 @@ export class AppDatabase {
     this.ensureAgentModelColumn();
     this.ensureAgentDescriptionColumn();
     this.ensureAgentMemoryColumns();
-    this.ensureAgentSkillIdsColumn();
     this.ensureMessageTurnColumn();
     this.ensureMessageUsageColumn();
     const addedToolProfile = this.ensureAgentToolProfileColumn();
@@ -365,12 +361,6 @@ export class AppDatabase {
     if (!names.has("memory_enabled")) {
       this.db.exec("ALTER TABLE agents ADD COLUMN memory_enabled INTEGER NOT NULL DEFAULT 1");
     }
-  }
-
-  private ensureAgentSkillIdsColumn(): void {
-    const columns = this.db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
-    if (columns.some((column) => column.name === "skill_ids")) return;
-    this.db.exec("ALTER TABLE agents ADD COLUMN skill_ids TEXT NOT NULL DEFAULT '[]'");
   }
 
   private ensureAgentToolProfileColumn(): boolean {
@@ -471,8 +461,8 @@ export class AppDatabase {
     this.db
       .prepare(
         `INSERT INTO agents (
-          id, name, description, system_prompt, workspace_dir, model, tool_profile, memory_enabled, skill_ids, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, name, description, system_prompt, workspace_dir, model, tool_profile, memory_enabled, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -483,7 +473,6 @@ export class AppDatabase {
         normalizeModelId(input.model),
         normalizeToolProfile(input.toolProfile),
         input.memoryEnabled ? 1 : 0,
-        JSON.stringify(normalizeSkillIds(input.skillIds)),
         now,
         now,
       );
@@ -496,7 +485,7 @@ export class AppDatabase {
       .prepare(
         `UPDATE agents
          SET name = ?, description = ?, system_prompt = ?, workspace_dir = ?, model = ?, tool_profile = ?,
-             memory_enabled = ?, skill_ids = ?, updated_at = ?
+             memory_enabled = ?, updated_at = ?
          WHERE id = ?`,
       )
       .run(
@@ -507,7 +496,6 @@ export class AppDatabase {
         normalizeModelId(input.model),
         normalizeToolProfile(input.toolProfile),
         input.memoryEnabled ? 1 : 0,
-        JSON.stringify(normalizeSkillIds(input.skillIds)),
         now,
         id,
       );
@@ -973,21 +961,11 @@ function mapAgent(row: AgentRow): Agent {
     toolProfile: normalizeToolProfile(row.tool_profile),
     memorySummary: row.memory_summary ?? "",
     memoryEnabled: row.memory_enabled !== 0,
-    skillIds: parseSkillIds(row.skill_ids),
     lastActivityAt: row.last_activity_at,
     nextRoutineAt: row.next_routine_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
-}
-
-function parseSkillIds(value: string | null): string[] {
-  if (!value) return [];
-  try {
-    return normalizeSkillIds(JSON.parse(value));
-  } catch {
-    return [];
-  }
 }
 
 function mapMessage(row: MessageRow): Message {

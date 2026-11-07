@@ -10,7 +10,6 @@ export type Agent = {
   toolProfile: AgentToolProfile;
   memorySummary: string;
   memoryEnabled: boolean;
-  skillIds: string[];
   lastActivityAt: string | null;
   nextRoutineAt: string | null;
   createdAt: string;
@@ -102,6 +101,7 @@ export type SkillInfo = {
   id: string;
   name: string;
   description: string;
+  version: string | null;
   source: SkillSource;
   chars: number;
 };
@@ -115,6 +115,10 @@ export type SkillCatalog = {
   skills: SkillInfo[];
   warnings: string[];
 };
+
+export type SkillInstallResult =
+  | { status: "installed"; skill: SkillInfo; previous: SkillInfo | null }
+  | { status: "cancelled" };
 
 export type WorkspaceRuleFile = {
   path: string;
@@ -130,7 +134,6 @@ export type ContextView = {
   memorySummary: string;
   workspaceBrief: string | null;
   rules: WorkspaceRuleFile[];
-  skillNames: string[];
   tools: string[];
   chars: {
     system: number;
@@ -241,7 +244,6 @@ export type AgentInput = {
   model: string;
   toolProfile: AgentToolProfile;
   memoryEnabled: boolean;
-  skillIds: string[];
 };
 
 export type BrowserPreview = {

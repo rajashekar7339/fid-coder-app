@@ -1,3 +1,6 @@
+import skillsLibraryImage from "../../../docs/guide/images/skills-library.png";
+import skillsUseImage from "../../../docs/guide/images/skills-use.png";
+
 export type GuideArticle = {
   id: string;
   title: string;
@@ -52,9 +55,9 @@ const SOURCES: GuideSource[] = [
   },
   {
     id: "use-skills",
-    title: "Add skills to an agent",
+    title: "Use skills on demand",
     group: "Using Fid Coder",
-    summary: "Enable per-agent instructions from built-in, workspace, app, or Copilot skill folders.",
+    summary: "Browse or upload skills, check their versions, and add one to a message with /skills.",
     readMinutes: 4,
     file: "use-skills.md",
   },
@@ -88,6 +91,11 @@ const IMAGES = import.meta.glob("../../../docs/guide/images/*", {
   import: "default",
 }) as Record<string, string>;
 
+const EXPLICIT_IMAGES: Record<string, string> = {
+  "skills-library.png": skillsLibraryImage,
+  "skills-use.png": skillsUseImage,
+};
+
 function docFor(file: string): string {
   const entry = Object.entries(DOCS).find(
     ([path]) => path === `../../../docs/guide/${file}` || path.endsWith(`/${file}`),
@@ -102,6 +110,8 @@ export const GUIDE_ARTICLES: GuideArticle[] = SOURCES.map(({ file, ...article })
 
 export function guideImage(path: string): string {
   const name = path.split("/").pop() ?? path;
+  const explicit = EXPLICIT_IMAGES[name];
+  if (explicit) return explicit;
   const entry = Object.entries(IMAGES).find(([key]) => key.endsWith(`/${name}`));
   return entry?.[1] ?? path;
 }

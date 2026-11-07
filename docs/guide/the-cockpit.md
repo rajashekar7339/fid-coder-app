@@ -12,6 +12,7 @@ The sidebar lists every agent on this machine.
 - Select **+** at the top or **New agent** below the list to create an agent.
 - Open the menu on an agent row to edit or delete it. Deleting an agent also removes its conversation, routines, and browser profile.
 - The time on the right is the last activity. A green dot means the agent was active in the last 15 minutes.
+- **Skills** at the bottom of the sidebar opens the global library. Use **Upload skill** there to add a folder with `SKILL.md`.
 
 ## Conversation
 
@@ -21,8 +22,7 @@ The center column is the saved conversation for the selected agent.
 - Tool calls collapse into one card. The running step is highlighted; expand the card to see each call and a short result summary.
 - The composer at the bottom sends with Enter. Use Shift+Enter for a new line.
 - The model picker is in the composer. It is disabled while the agent is working.
-- Type `/` in the composer, or choose **Commands**, to open the command list.
-- A thin **Skills** row under the agent name lists the skills enabled for that agent.
+- Type `/` in the composer, or choose **Commands**, to open the command list. `/skills <skill> <task>` uses an installed skill for that message.
 - The status pill beside the agent name shows Ready, Working, or Sign in.
 
 ## Agent Desk

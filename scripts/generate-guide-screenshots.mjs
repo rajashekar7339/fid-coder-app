@@ -19,28 +19,23 @@ const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = path.join(appDir, "docs", "guide", "images");
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), "fid-coder-guide-"));
 
-const vite = spawn(process.execPath, [path.join(appDir, "node_modules", "vite", "bin", "vite.js")], {
-  cwd: appDir,
-  stdio: ["ignore", "pipe", "pipe"],
-});
+writeDemoSkill(
+  "release-notes",
+  "Release notes",
+  "Draft release notes from merged pull requests.",
+  "1.2.0",
+  "Read the pull request titles and write three short sections: changes, risks, and testing gaps.",
+);
+writeDemoSkill(
+  "test-plan",
+  "Test plan",
+  "Turn acceptance criteria into a short test plan.",
+  "2.0.1",
+  "List the happy path, edge cases, and the one regression that would block release.",
+);
 
-let viteLog = "";
-vite.stdout.on("data", (chunk) => {
-  viteLog += chunk.toString();
-});
-vite.stderr.on("data", (chunk) => {
-  viteLog += chunk.toString();
-});
-
-const deadline = Date.now() + 30000;
-while (!viteLog.includes("5173") && Date.now() < deadline) {
-  await new Promise((resolve) => setTimeout(resolve, 200));
-}
-if (!viteLog.includes("5173")) {
-  console.log(viteLog);
-  vite.kill();
-  throw new Error("Vite did not start");
-}
+let vite = null;
+await ensureVite();
 
 const app = await electron.launch({
   executablePath: path.join(appDir, "node_modules", "electron", "dist", "electron.exe"),
@@ -141,9 +136,35 @@ try {
   });
   await page.waitForTimeout(600);
   await save(modal, "workspace-tools.png");
+
+  await page.keyboard.press("Escape");
+  await modal.waitFor({ state: "hidden" });
+  await page.waitForTimeout(300);
+  await page.getByRole("button", { name: /JIRA Agent/ }).first().click();
+  await page.waitForTimeout(300);
+  await page.getByRole("button", { name: "Open skills" }).click();
+  await page.locator(".skills-modal").waitFor({ state: "visible" });
+  await page.waitForFunction(() => document.querySelectorAll(".skill-card").length >= 4, { timeout: 20000 });
+  await page.locator(".skill-card", { hasText: "Release notes" }).locator(".skill-card-copy").click();
+  await page.locator(".skills-modal .skill-reader pre").waitFor({ state: "visible" });
+  await page.evaluate(() => {
+    const path = document.querySelector(".skill-reader-path");
+    if (path) path.textContent = "%USERPROFILE%\\.fid_coder_app\\skills\\release-notes\\SKILL.md";
+  });
+  await page.waitForTimeout(400);
+  await save(page.locator(".skills-modal"), "skills-library.png");
+  await page.locator(".skill-card", { hasText: "Release notes" }).getByRole("button", { name: "Use" }).click();
+  await page.waitForSelector(".skills-modal", { state: "detached" });
+  await page.waitForFunction(
+    () => document.querySelector(".composer-input")?.value === "/skills release-notes ",
+    { timeout: 10000 },
+  );
+  await page.waitForTimeout(400);
+  await save(page.locator(".composer-dock"), "skills-use.png");
+  await page.locator(".composer-input").fill("");
 } finally {
   await app.close().catch(() => undefined);
-  vite.kill();
+  if (vite) vite.kill();
   try {
     fs.rmSync(userData, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   } catch {
@@ -295,4 +316,55 @@ async function save(locator, name) {
   await locator.screenshot({ path: file, animations: "disabled" });
   const bytes = fs.statSync(file).size;
   console.log(`Wrote ${name} (${Math.round(bytes / 1024)} KB)`);
+}
+
+function writeDemoSkill(id, name, description, version, body) {
+  const dir = path.join(userData, "skills", id);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, "SKILL.md"),
+    `---\nname: ${name}\ndescription: ${description}\nversion: ${version}\n---\n\n${body}\n`,
+  );
+}
+
+async function ensureVite() {
+  if (await viteRunning()) {
+    console.log("vite: reusing the server on 5173");
+    return;
+  }
+  let log = "";
+  vite = spawn(
+    process.execPath,
+    [path.join(appDir, "node_modules", "vite", "bin", "vite.js"), "--port", "5173", "--strictPort"],
+    { cwd: appDir, stdio: ["ignore", "pipe", "pipe"] },
+  );
+  vite.stdout.on("data", (chunk) => {
+    log += chunk.toString();
+  });
+  vite.stderr.on("data", (chunk) => {
+    log += chunk.toString();
+  });
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    if (await viteRunning()) {
+      console.log("vite: started on 5173");
+      return;
+    }
+    await sleep(200);
+  }
+  console.log(log);
+  throw new Error("Vite did not start on 5173");
+}
+
+async function viteRunning() {
+  try {
+    const response = await fetch("http://127.0.0.1:5173", { signal: AbortSignal.timeout(1000) });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -43,5 +43,5 @@ export const channels = {
   modelsList: "models:list",
   skillsList: "skills:list",
   skillsRead: "skills:read",
-  skillsOpenFolder: "skills:open-folder",
+  skillsInstall: "skills:install",
 } as const;

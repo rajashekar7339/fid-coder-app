@@ -12,7 +12,13 @@ const secrets = require("../../dist/main/secrets.js");
 secrets.hasSecret = () => false;
 secrets.getSecret = () => null;
 
-const { listSkillInfo, loadSkillCatalog, readSkill, skillsForAgent } = require("../../dist/main/skills/index.js");
+const {
+  listSkillInfo,
+  loadSkillCatalog,
+  readSkill,
+  resolveSkillForTurn,
+  skillRoots,
+} = require("../../dist/main/skills/index.js");
 const { AppDatabase } = require("../../dist/main/db/index.js");
 const { Runner } = require("../../dist/main/chat/runner.js");
 
@@ -26,10 +32,10 @@ test("reads installed skills and refreshes when a file changes", () => {
     fs.mkdirSync(path.join(root, "notes"));
 
     const roots = [{ root, source: "builtin" }];
-    const first = skillsForAgent(roots, ["review-change", "missing", "write-lean"]);
-    assert.deepEqual(first.names, ["Review a change", "Write lean"]);
-    assert.match(first.prompt, /### Review a change/);
-    assert.match(first.prompt, /Report only\./);
+    const first = resolveSkillForTurn(roots, "review-change report the diff");
+    assert.equal(first.skill.id, "review-change");
+    assert.equal(first.task, "report the diff");
+    assert.match(first.skill.body, /Report only\./);
     assert.equal(
       loadSkillCatalog(roots)
         .map((skill) => skill.id)
@@ -41,52 +47,39 @@ test("reads installed skills and refreshes when a file changes", () => {
     fs.writeFileSync(file, "---\nname: Write lean\ndescription: Small diffs.\n---\n\nRead callers.\n");
     const later = Date.now() / 1000 + 5;
     fs.utimesSync(file, later, later);
-    const second = skillsForAgent(roots, ["write-lean"]);
-    assert.match(second.prompt, /### Write lean\nRead callers\./);
-    assert.doesNotMatch(second.prompt, /### Write lean\nSmall diffs\./);
+    const second = resolveSkillForTurn(roots, "write-lean read the callers");
+    assert.match(second.skill.body, /Read callers\./);
+    assert.doesNotMatch(second.skill.body, /Small diffs\./);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("a selected skill reaches only that agent's system message", async () => {
+test("skills are not copied into the system message", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-skill-agents-"));
   const db = new AppDatabase(path.join(dir, "app.sqlite"));
   try {
-    const withSkill = db.createAgent({
+    const agent = db.createAgent({
       name: "Lean coder",
       systemPrompt: "Write code.",
       workspaceDir: null,
       model: "auto",
       toolProfile: "developer",
       memoryEnabled: false,
-      skillIds: ["write-lean"],
-    });
-    const withoutSkill = db.createAgent({
-      name: "Plain coder",
-      systemPrompt: "Write code.",
-      workspaceDir: null,
-      model: "auto",
-      toolProfile: "developer",
-      memoryEnabled: false,
-      skillIds: [],
     });
 
     const runner = new Runner(db, {}, {});
-    const lean = await runner.previewContext(withSkill.id);
-    const plain = await runner.previewContext(withoutSkill.id);
-
-    assert.deepEqual(lean.skillNames, ["Write lean"]);
-    assert.match(lean.systemMessage, /smallest complete change/i);
-    assert.deepEqual(plain.skillNames, []);
-    assert.doesNotMatch(plain.systemMessage, /smallest complete change/i);
+    const view = await runner.previewContext(agent.id);
+    assert.equal(view.skillNames, undefined);
+    assert.doesNotMatch(view.systemMessage, /smallest complete change/i);
+    assert.doesNotMatch(view.systemMessage, /The user invoked this skill/);
   } finally {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("reports a malformed skill and reads a selected skill body", () => {
+test("reports a malformed skill and reads a skill body", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fid-skill-info-"));
   try {
     writeSkill(root, "write-lean", "Write lean", "Small diffs.");
@@ -109,8 +102,32 @@ test("reports a malformed skill and reads a selected skill body", () => {
   }
 });
 
+test("workspace .skills wins and a named skill is loaded for one message", () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "fid-skill-dot-"));
+  try {
+    writeSkill(path.join(workspace, ".skills"), "local-only", "From dot skills", "Dot body.");
+    writeSkill(path.join(workspace, ".github", "skills"), "local-only", "From github", "Github body.");
+    const roots = skillRoots(workspace).filter((root) => root.source === "workspace");
+    const skill = loadSkillCatalog(roots).find((item) => item.id === "local-only");
+    assert.equal(skill.name, "From dot skills");
+    assert.match(skill.body, /Dot body/);
+
+    const named = resolveSkillForTurn(roots, "From dot skills tighten the parser");
+    assert.equal(named.skill.id, "local-only");
+    assert.equal(named.task, "tighten the parser");
+    assert.match(named.skill.body, /Dot body/);
+    assert.match(resolveSkillForTurn(roots, "missing").error, /No skill matches "missing"/);
+    assert.match(
+      resolveSkillForTurn(roots, "From dot skills").error,
+      /Add the task after the skill name/,
+    );
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
 function writeSkill(root, id, name, body) {
   const dir = path.join(root, id);
-  fs.mkdirSync(dir);
+  fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: ${body}\n---\n\n${body}\n`);
 }

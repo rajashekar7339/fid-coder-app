@@ -1,4 +1,4 @@
-// Live end-to-end test for per-agent skills.
+// Live end-to-end test for the global skills library and /skills picker.
 //
 // Usage:
 //   npm run test:skills
@@ -7,7 +7,7 @@
 // Requirements:
 //   - `npm run build:node` output present (the npm script runs it).
 //   - No Copilot turn is needed. The test creates an agent and checks the
-//     skill library, the editor, the chat bar, and the context preview.
+//     library, upload, versions, command menu, picker, context preview, and guide.
 //
 // The test launches its own Electron instance with a temporary userData
 // directory and a temporary workspace. It reuses Vite on port 5173 if one is
@@ -24,6 +24,7 @@ const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "fid-coder-skills-"));
 const userData = path.join(root, "userdata");
 const workspace = path.join(root, "workspace");
+const uploadSource = path.join(root, "upload", "uploaded-skill");
 const shots = path.join(root, "shots");
 const agentName = "Skills E2E";
 const clean = process.env.FID_CLEAN === "1";
@@ -37,9 +38,11 @@ function check(name, ok, detail = "") {
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? `  (${detail})` : ""}`);
 }
 
-function writeSkill(file, name, description, body) {
+function writeSkill(file, name, description, body, version = null) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `---\nname: ${name}\ndescription: ${description}\n---\n\n${body}\n`, "utf8");
+  const front = [`name: ${name}`, `description: ${description}`];
+  if (version) front.push(`version: ${version}`);
+  fs.writeFileSync(file, `---\n${front.join("\n")}\n---\n\n${body}\n`, "utf8");
 }
 
 function prepare() {
@@ -51,12 +54,28 @@ function prepare() {
     "Project review",
     "Review this repo with its own rules.",
     "Read the repository rules before reviewing.",
+    "2.0.0",
+  );
+  writeSkill(
+    path.join(workspace, ".skills", "dot-skill", "SKILL.md"),
+    "From dot skills",
+    "A workspace .skills example.",
+    "Use the workspace dot skills folder.",
+    "1.0.0",
   );
   writeSkill(
     path.join(userData, "skills", "user-lean", "SKILL.md"),
     "User lean",
     "Use the shared helper.",
     "Prefer the shared helper.",
+    "1.0.0",
+  );
+  writeSkill(
+    path.join(uploadSource, "SKILL.md"),
+    "Uploaded skill",
+    "Added by the end-to-end test.",
+    "Follow the uploaded instructions.",
+    "1.1.0",
   );
   const broken = path.join(workspace, ".github", "skills", "broken");
   fs.mkdirSync(broken, { recursive: true });
@@ -111,6 +130,10 @@ async function shot(page, name) {
   console.log("  shot:", file);
 }
 
+async function composerValue(page) {
+  return page.locator(".composer-input").inputValue();
+}
+
 async function main() {
   prepare();
   await ensureVite();
@@ -119,7 +142,11 @@ async function main() {
       executablePath: path.join(appDir, "node_modules", "electron", "dist", "electron.exe"),
       args: ["."],
       cwd: appDir,
-      env: { ...process.env, FID_CODER_USER_DATA: userData },
+      env: {
+        ...process.env,
+        FID_CODER_USER_DATA: userData,
+        FID_CODER_SKILL_IMPORT_DIR: uploadSource,
+      },
       timeout: 60_000,
     });
     const page = await app.firstWindow({ timeout: 60_000 });
@@ -131,87 +158,127 @@ async function main() {
     await page.getByLabel("Name").fill(agentName);
     await page.getByLabel("Instructions").fill("Check the skills UI.");
     await page.locator("#agent-workspace").fill(workspace);
-    await page.waitForFunction(() => document.querySelectorAll(".skill-option").length >= 4, {
-      timeout: 30_000,
-    });
-
-    const optionText = await page.locator(".skill-options").innerText();
-    check("workspace skill is discovered", /Project review[\s\S]*Workspace/.test(optionText));
-    check("user skill is discovered", /User lean[\s\S]*Your skills/.test(optionText));
     check(
-      "built-in skills are discovered",
-      /Write lean[\s\S]*Built-in/.test(optionText) && /Review a change[\s\S]*Built-in/.test(optionText),
+      "agent editor has no per-agent skills field",
+      (await page.locator(".agent-modal").getByText("Skills", { exact: true }).count()) === 0 &&
+        (await page.locator(".skill-options").count()) === 0,
     );
-    check("skill sizes are shown", /\d[\d,]* chars/.test(optionText));
+    await page.getByRole("button", { name: "Create agent" }).click();
+    await page.waitForSelector(".agent-modal", { state: "detached", timeout: 20_000 });
+    check("chat has no permanent skill bar", (await page.locator(".chat-skillbar").count()) === 0);
+
+    await page.getByRole("button", { name: "Open skills" }).click();
+    await page.waitForSelector(".skills-modal", { timeout: 15_000 });
+    await page.waitForFunction(() => document.querySelectorAll(".skill-card").length >= 5, { timeout: 30_000 });
+
+    const library = await page.locator(".skills-modal").innerText();
+    check(
+      "library shows all skills",
+      ["User lean", "Project review", "From dot skills", "Write lean", "Review a change"].every((name) =>
+        library.includes(name),
+      ),
+      library.replace(/\s+/g, " ").slice(0, 240),
+    );
+    check("library shows sources", /Your skills/.test(library) && /Workspace/.test(library) && /Built-in/.test(library));
+    check("library shows versions", /v2\.0\.0/.test(library) && /v1\.0\.0/.test(library));
+    check("library shows sizes", /chars/.test(library));
+    await shot(page, "01-skills-library");
+
+    const warningsSummary = page.locator(".skill-warnings summary");
+    if (await warningsSummary.count()) await warningsSummary.click();
     const warnings = await page.locator(".skill-warnings").innerText().catch(() => "");
     check("malformed skill is reported", /broken/.test(warnings), warnings.replace(/\s+/g, " ").slice(0, 120));
 
-    await page.getByRole("checkbox", { name: /Project review/ }).check();
-    await page.getByRole("checkbox", { name: /User lean/ }).check();
-    await page.getByRole("checkbox", { name: /Write lean/ }).check();
-    check("selection count is shown", (await page.locator(".field-optional").filter({ hasText: "3/8" }).count()) > 0);
+    writeSkill(
+      path.join(userData, "skills", "refreshed-skill", "SKILL.md"),
+      "Refreshed skill",
+      "Added while the library is open.",
+      "Follow the refreshed instructions.",
+      "1.0.0",
+    );
+    await page.getByRole("button", { name: "Refresh skills" }).click();
+    await page.waitForFunction(
+      () => document.querySelector(".skills-modal")?.textContent?.includes("Refreshed skill"),
+      { timeout: 20_000 },
+    );
+    check("refresh reloads skills without reopening", true);
+
+    const projectCard = page.locator(".skill-card", { hasText: "Project review" });
+    await projectCard.locator(".skill-card-copy").click();
+    await page.waitForSelector(".skill-reader pre", { timeout: 15_000 });
     check(
-      "selected budget is shown",
-      (await page.getByText(/Selected: .*16,000 chars/).count()) > 0,
+      "skill row opens the reader",
+      /Read the repository rules before reviewing/.test(await page.locator(".skill-reader pre").innerText()),
+    );
+    check(
+      "reader shows the skill path",
+      /project-review/.test(await page.locator(".skill-reader-path").innerText()),
+    );
+    await projectCard.locator(".skill-card-copy").click();
+    await page.waitForSelector(".skill-reader", { state: "detached", timeout: 10_000 });
+    check("reader closes", true);
+
+    await projectCard.getByRole("button", { name: "Use" }).click();
+    await page.waitForSelector(".skills-modal", { state: "detached", timeout: 10_000 });
+    await page.waitForFunction(
+      () => document.querySelector(".composer-input")?.value === "/skills project-review ",
+      { timeout: 10_000 },
+    );
+    check("Use fills the composer", (await composerValue(page)) === "/skills project-review ");
+    check(
+      "Use shows the version in the hint",
+      /v2\.0\.0/.test(await page.locator(".command-hint").innerText().catch(() => "")),
     );
 
-    const projectRow = page.locator(".skill-option-wrap", { hasText: "Project review" });
-    await projectRow.getByRole("button", { name: "View" }).click();
-    await page.waitForSelector(".skill-preview pre", { timeout: 15_000 });
-    const previewText = await page.locator(".skill-preview pre").innerText();
-    const previewPath = await page.locator(".skill-preview-path").innerText();
-    check("view shows the skill body", /Read the repository rules before reviewing/.test(previewText));
-    check(
-      "view shows the skill path",
-      /project-review/.test(previewPath) && /SKILL\.md/.test(previewPath),
-      previewPath,
+    await page.getByRole("button", { name: "Open skills" }).click();
+    await page.waitForSelector(".skills-modal", { timeout: 15_000 });
+    await page.getByRole("button", { name: "Upload skill" }).click();
+    await page.waitForFunction(
+      () => document.querySelector(".skills-modal")?.textContent?.includes("Uploaded skill"),
+      { timeout: 20_000 },
     );
-    await page.locator(".skill-options").scrollIntoViewIfNeeded();
-    await page.waitForTimeout(250);
-    await shot(page, "01-skills-dialog");
-
-    check(
-      "open folder action exists",
-      (await page.getByRole("button", { name: "Open skills folder" }).count()) === 1,
-    );
-    await page.getByRole("button", { name: "Refresh" }).click();
-    await page.waitForTimeout(700);
-    check("refresh keeps the catalog", (await page.locator(".skill-option").count()) >= 4);
-    check("refresh keeps the selection", await page.getByRole("checkbox", { name: /Project review/ }).isChecked());
-
-    await page.getByRole("button", { name: "Create agent" }).click();
-    await page.waitForSelector(".agent-modal", { state: "detached", timeout: 20_000 });
-    await page.waitForSelector(".chat-skillbar", { timeout: 20_000 });
-    const bar = await page.locator(".chat-skillbar").innerText();
-    check(
-      "chat bar lists the skills",
-      ["Project review", "User lean", "Write lean"].every((name) => bar.includes(name)),
-      bar.replace(/\s+/g, " "),
-    );
-    await shot(page, "02-chat-skills");
+    const afterUpload = await page.locator(".skills-modal").innerText();
+    check("upload adds the skill", afterUpload.includes("Uploaded skill"));
+    check("upload reports the version", /Added Uploaded skill v1\.1\.0/.test(afterUpload), afterUpload.replace(/\s+/g, " ").slice(0, 160));
+    check("uploaded version is shown in the list", /v1\.1\.0/.test(afterUpload));
+    await shot(page, "02-skills-after-upload");
+    await page.getByRole("button", { name: "Close skills" }).click();
+    await page.waitForSelector(".skills-modal", { state: "detached", timeout: 10_000 });
 
     await page.locator(".composer-input").fill("/");
     await page.waitForSelector(".command-menu", { timeout: 10_000 });
-    const commandMenuText = await page.locator(".command-menu").innerText();
+    const commandMenu = await page.locator(".command-menu").innerText();
     check(
       "slash menu lists commands",
-      ["/review", "/skills", "/help"].every((id) => commandMenuText.includes(id)),
-      commandMenuText.replace(/\s+/g, " ").slice(0, 120),
+      ["/review", "/skills", "/help"].every((id) => commandMenu.includes(id)),
+      commandMenu.replace(/\s+/g, " ").slice(0, 120),
     );
-    await shot(page, "02-commands");
+    await page.locator(".composer-input").fill("/skills");
+    await page.waitForSelector(".command-menu", { timeout: 10_000 });
     await page.locator(".composer-input").press("Enter");
-    check(
-      "selecting /review fills the composer",
-      (await page.locator(".composer-input").inputValue()).trim() === "/review",
-    );
-    await page.locator(".composer-input").fill("");
+    await page.waitForSelector(".skills-modal", { timeout: 10_000 });
+    check("selecting /skills opens the library", true);
+    await page.getByRole("button", { name: "Close skills" }).click();
+    await page.waitForSelector(".skills-modal", { state: "detached", timeout: 10_000 });
 
-    await page.getByRole("button", { name: /JIRA Agent/ }).first().click();
-    await page.waitForTimeout(500);
-    check("another agent has no skill bar", (await page.locator(".chat-skillbar").count()) === 0);
-    await page.getByRole("button", { name: /Skills E2E/ }).first().click();
-    await page.waitForSelector(".chat-skillbar", { timeout: 15_000 });
-    check("the original agent keeps its skills", (await page.locator(".chat-skillbar").innerText()).includes("Project review"));
+    await page.locator(".composer-input").fill("/skills ");
+    await page.waitForSelector(".skill-menu", { timeout: 10_000 });
+    const picker = await page.locator(".skill-menu").innerText();
+    check(
+      "skill picker lists skills",
+      ["From dot skills", "Project review", "Write lean"].every((name) => picker.includes(name)),
+      picker.replace(/\s+/g, " ").slice(0, 180),
+    );
+    check("skill picker shows versions", /v2\.0\.0/.test(picker));
+    await page.locator(".composer-input").press("Enter");
+    const picked = await composerValue(page);
+    check("selecting a skill fills the command", picked.startsWith("/skills ") && !picked.endsWith("/skills "), picked);
+    check(
+      "skill hint shows the version and asks for the task",
+      /v1\.0\.0/.test(await page.locator(".command-hint").innerText().catch(() => "")) &&
+        /add the task/i.test(await page.locator(".command-hint").innerText().catch(() => "")),
+    );
+    await shot(page, "03-skill-picker");
 
     const preview = await page.evaluate(async (name) => {
       const agents = await window.fid.agents.list();
@@ -221,56 +288,45 @@ async function main() {
       return { tools: view.tools, skillNames: view.skillNames, systemMessage: view.systemMessage };
     }, agentName);
     check("context exposes review_code", Boolean(preview?.tools.includes("review_code")));
+    check("context does not list skills", preview?.skillNames === undefined);
     check(
-      "context includes the selected skills",
-      ["Project review", "User lean", "Write lean"].every((name) => preview?.skillNames.includes(name)),
+      "system message has no skill body",
+      !/Read the repository rules before reviewing/.test(preview?.systemMessage ?? ""),
     );
-    check(
-      "context includes the workspace skill body",
-      /Read the repository rules before reviewing/.test(preview?.systemMessage ?? ""),
-    );
-    check(
-      "system message hides the internal tool name",
-      !/review_code/.test(preview?.systemMessage ?? ""),
-    );
-
-    await page.locator(".composer-input").fill("/skills");
-    await page.waitForSelector(".command-menu", { timeout: 10_000 });
-    await page.locator(".composer-input").press("Enter");
-    await page.waitForSelector(".agent-modal", { timeout: 15_000 });
-    await page.waitForFunction(() => document.querySelectorAll(".skill-option").length >= 4, {
-      timeout: 30_000,
-    });
-    check(
-      "saved skills persist in the editor",
-      (await page.getByRole("checkbox", { name: /Project review/ }).isChecked()) &&
-        (await page.getByRole("checkbox", { name: /Write lean/ }).isChecked()),
-    );
-    await page.getByRole("checkbox", { name: /Write lean/ }).uncheck();
-    await page.getByRole("button", { name: "Save changes" }).click();
-    await page.waitForSelector(".agent-modal", { state: "detached", timeout: 20_000 });
-    await page.waitForFunction(
-      () => {
-        const bar = document.querySelector(".chat-skillbar");
-        return Boolean(bar && bar.textContent?.includes("Project review") && !bar.textContent?.includes("Write lean"));
-      },
-      { timeout: 15_000 },
-    );
-    check("removing a skill updates the chat bar", true);
-    await shot(page, "03-chat-after-remove");
+    check("system message hides the internal tool name", !/review_code/.test(preview?.systemMessage ?? ""));
 
     await page.locator(".composer-input").fill("/help");
     await page.waitForSelector(".command-menu", { timeout: 10_000 });
     await page.locator(".composer-input").press("Enter");
     await page.waitForSelector(".help-modal", { timeout: 10_000 });
-    await page.getByRole("button", { name: /Add skills to an agent/ }).click();
+    await page.getByRole("button", { name: /Use skills on demand/ }).click();
     await page.waitForSelector(".help-article", { timeout: 10_000 });
     const helpText = await page.locator(".help-article").innerText();
     check(
       "help guide has the skills article",
       /Where skills come from/.test(helpText) &&
-        /Commands in the composer/.test(helpText) &&
-        /\/review/.test(helpText),
+        /\/skills/.test(helpText) &&
+        /Skills library/.test(helpText) &&
+        /version/i.test(helpText),
+    );
+    await page.waitForFunction(
+      () => {
+        const images = [...document.querySelectorAll(".help-article img")];
+        return images.length >= 2 && images.every((image) => image.complete);
+      },
+      { timeout: 10_000 },
+    );
+    const guideImages = await page.evaluate(() =>
+      [...document.querySelectorAll(".help-article img")].map((image) => ({
+        src: image.src,
+        complete: image.complete,
+        width: image.naturalWidth,
+      })),
+    );
+    console.log("  guide images:", JSON.stringify(guideImages));
+    check(
+      "help guide has the skills screenshots",
+      guideImages.length >= 2 && guideImages.every((image) => image.complete && image.width > 0),
     );
     await shot(page, "04-help-skills");
     await page.getByRole("button", { name: "Close help" }).click();

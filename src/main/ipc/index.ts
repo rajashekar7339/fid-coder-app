@@ -1,11 +1,19 @@
 import fs from "fs";
+import path from "path";
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { channels } from "../../shared/channels";
 import { isApprovalAction } from "../../shared/approval";
 import { normalizeModelId } from "../../shared/model";
-import { normalizeSkillIds } from "../../shared/skills";
+import { skillVersionLabel } from "../../shared/skills";
 import { normalizeToolProfile } from "../../shared/tool-profile";
-import type { AgentInput, ApprovalAction, RoutineInput, RoutinePatch, SkillSource } from "../../shared/types";
+import type {
+  AgentInput,
+  ApprovalAction,
+  RoutineInput,
+  RoutinePatch,
+  SkillInstallResult,
+  SkillSource,
+} from "../../shared/types";
 import type { BrowserManager } from "../browser/browser-manager";
 import type { CheckpointStore } from "../workspace/checkpoints";
 import { assertCron, nextRunIso } from "../routines/cron";
@@ -24,6 +32,7 @@ import type { Scheduler } from "../routines/scheduler";
 import { clearSecret, secretKeys, setSecret } from "../secrets";
 import { readImpactSelection } from "../release-impact/index";
 import { listSkillInfo, readSkill, skillRoots } from "../skills";
+import { installSkill, planSkillImport } from "../skills/install";
 import { userSkillsDir } from "../paths";
 import { createAgentsFile, ruleFilePath, workspaceRules } from "../workspace/workspace-rules";
 
@@ -213,11 +222,19 @@ export function registerIpc(services: AppServices): void {
     (_event, workspaceDir: string | null, id: string, source?: SkillSource) =>
       readSkill(skillRoots(cleanWorkspace(workspaceDir)), String(id ?? ""), source),
   );
-  ipcMain.handle(channels.skillsOpenFolder, async () => {
-    const dir = userSkillsDir();
-    fs.mkdirSync(dir, { recursive: true });
-    const error = await shell.openPath(dir);
-    if (error) throw new Error(error);
+  ipcMain.handle(channels.skillsInstall, async (): Promise<SkillInstallResult> => {
+    const source =
+      process.env.FID_CODER_SKILL_IMPORT_DIR?.trim() || (await pickSkillSource(services.getWindow()));
+    if (!source) return { status: "cancelled" };
+    const plan = planSkillImport(source);
+    if ("error" in plan) throw new Error(plan.error);
+    const dest = userSkillsDir();
+    const previous = readSkill([{ root: dest, source: "app" }], plan.id, "app");
+    const exists = fs.existsSync(path.join(dest, plan.id));
+    if (exists && !(await confirmSkillReplace(services.getWindow(), plan.id, previous))) {
+      return { status: "cancelled" };
+    }
+    return { status: "installed", skill: installSkill(plan, dest, exists), previous };
   });
 
   ipcMain.handle(channels.dialogPickFolder, async () => {
@@ -228,6 +245,34 @@ export function registerIpc(services: AppServices): void {
     if (result.canceled) return null;
     return result.filePaths[0] ?? null;
   });
+}
+
+async function pickSkillSource(parent: BrowserWindow | null): Promise<string | null> {
+  const result = parent
+    ? await dialog.showOpenDialog(parent, { properties: ["openDirectory"] })
+    : await dialog.showOpenDialog({ properties: ["openDirectory"] });
+  if (result.canceled) return null;
+  return result.filePaths[0] ?? null;
+}
+
+async function confirmSkillReplace(
+  parent: BrowserWindow | null,
+  id: string,
+  previous: { version: string | null } | null,
+): Promise<boolean> {
+  const options = {
+    type: "warning" as const,
+    buttons: ["Replace", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+    title: "Replace skill",
+    message: `A skill named ${id} is already installed${previous ? ` (${skillVersionLabel(previous.version)})` : ""}.`,
+    detail: "Replace it with the selected skill?",
+  };
+  const result = parent
+    ? await dialog.showMessageBox(parent, options)
+    : await dialog.showMessageBox(options);
+  return result.response === 0;
 }
 
 function cleanWorkspace(value: unknown): string | null {
@@ -247,7 +292,6 @@ function cleanAgent(input: AgentInput): AgentInput {
     model: normalizeModelId(input?.model),
     toolProfile: normalizeToolProfile(input?.toolProfile),
     memoryEnabled: input.memoryEnabled !== false,
-    skillIds: normalizeSkillIds(input?.skillIds),
   };
 }
 

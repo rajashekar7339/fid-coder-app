@@ -7,6 +7,7 @@ import {
   Search,
   Settings,
   Trash2,
+  Wrench,
   X,
 } from "lucide-react";
 import type { CopilotUsageView } from "../../../shared/copilot-usage";
@@ -32,6 +33,7 @@ type Props = {
   onEdit: (agent: Agent) => void;
   onDelete: (agent: Agent) => void;
   onSettings: () => void;
+  onSkills: () => void;
   onHelp: () => void;
 };
 
@@ -84,6 +86,7 @@ export function Sidebar({
   onEdit,
   onDelete,
   onSettings,
+  onSkills,
   onHelp,
 }: Props) {
   const [query, setQuery] = useState("");
@@ -266,6 +269,10 @@ export function Sidebar({
           </div>
           <p>Agents use this PC for browser, files, and shell.</p>
         </div>
+        <button type="button" className="help-row" aria-label="Open skills" onClick={onSkills}>
+          <Wrench size={15} aria-hidden="true" />
+          <span>Skills</span>
+        </button>
         <button type="button" className="help-row" aria-label="Open help and guide" onClick={onHelp}>
           <CircleHelp size={15} aria-hidden="true" />
           <span>Help &amp; guide</span>

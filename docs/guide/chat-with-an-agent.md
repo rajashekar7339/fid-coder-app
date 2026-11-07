@@ -16,19 +16,18 @@ While the agent runs, its current tool step is highlighted in the open tool card
 
 The conversation is saved in the local SQLite database. When Fid Coder rebuilds a Copilot session, it sends the last 30 messages, clipped to 12,000 characters, so the agent has recent context.
 
-## See the agent's skills
-
-When an agent has skills, a thin **Skills** row appears under the agent name with one chip per active skill. Skills shape every reply for that agent. Add or remove them in the agent editor; other agents keep their own lists.
-
 ## Use a command
 
 Type `/` in the composer, or choose **Commands** next to the model picker, to open the command list.
 
+- `/skills <skill-id> <task>` — follow an installed skill for this message.
+- `/skills` — open the Skills library.
 - `/review` — review uncommitted changes, staged changes, a branch, a PR number, or a path.
-- `/skills` — open this agent's skills editor.
 - `/help` — open this guide.
 
 Use ↑/↓ to move, Enter or Tab to select, and Escape to close. A command that needs a workspace or developer tools shows the reason in the list. The empty conversation also shows the available commands as chips.
+
+The **Skills** row at the bottom of the sidebar opens the library. It lists every installed skill, its source, version, and size, and has the **Upload skill** button. Skills are global; nothing is added to an agent until you use `/skills`.
 
 ## Ask for a code review
 

@@ -24,7 +24,7 @@ src/
     chat/runner.ts
     browser/browser-manager.ts
     history/        history.ts
-    skills/         index.ts
+    skills/         index.ts, install.ts
     routines/       scheduler.ts, cron.ts, notify.ts
     workspace/      checkpoints.ts, explore-session.ts, review-session.ts, workspace-brief.ts, workspace-rules.ts
     release-impact/ config, collect, adapters, and the analyze engine
@@ -44,6 +44,7 @@ src/
       settings/     SettingsDialog
       desk/         AgentDesk, ContextDialog, DiffView, ImpactReport
       routines/     RoutinesDialog
+      skills/       SkillsDialog
       help/         HelpDialog, GuideContent
       ui/           Modal, Switch, ConfirmDialog, BrandMark, UsageBar, ModelSelect
     lib/            fid, format, guide, markdown, schedule, highlight
@@ -78,8 +79,10 @@ docs/
 |---|---|
 | Types and channel names | `src/shared` |
 | A built-in skill | `skills/<skill-id>/SKILL.md` |
-| Skill parsing, selection, and prompt text | `src/shared/skills.ts` |
+| Skill parsing, matching, and prompt text | `src/shared/skills.ts` |
 | Skill discovery | `src/main/skills/index.ts` |
+| Skill upload | `src/main/skills/install.ts` |
+| The Skills library | `src/renderer/components/skills/SkillsDialog.tsx` |
 | A composer command | `src/shared/commands.ts` and the menu in `src/renderer/components/chat/ChatView.tsx` |
 | A read-only review | `src/tools/review/review.ts` and `src/main/workspace/review-session.ts` |
 | A Copilot tool | `src/tools/<area>/<file>.ts` |
@@ -90,7 +93,7 @@ docs/
 | A screen | `src/renderer/components/<screen>` |
 | Its CSS | a section in `src/renderer/styles/index.css` |
 
-Skills are discovered from `skills/`, the workspace `.github/skills`, `.agents/skills`, and `.claude/skills`, `~/.copilot/skills`, `~/.agents/skills`, and the app data `skills/` folder. The workspace copy wins, then the app data copy, then Copilot, then built-in. `skills/<id>/SKILL.md` needs `name` and `description` frontmatter.
+Skills are discovered from the workspace `.skills`, `.github/skills`, `.agents/skills`, and `.claude/skills`, the app data `skills/` folder, `~/.copilot/skills`, `~/.agents/skills`, and built-in `skills/`. The first copy of an id wins. A skill is used for one message with `/skills <id> <task>`; uploads go to the app data `skills/` folder. `skills/<id>/SKILL.md` needs `name` and `description` frontmatter; `version` is optional and shown in the Skills library.
 
 Import a tool by its file name, for example `./browser/browser`. TypeScript resolves `./db` to `db/index.ts`. It does not resolve `./browser` to `browser/browser.ts`.
 

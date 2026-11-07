@@ -18,6 +18,7 @@ import type {
   SettingsView,
   SkillCatalog,
   SkillContent,
+  SkillInstallResult,
   SkillSource,
   WorkspaceRuleFile,
 } from "./types";
@@ -97,6 +98,6 @@ export interface FidApi {
   skills: {
     list: (workspaceDir?: string | null) => Promise<SkillCatalog>;
     read: (workspaceDir: string | null, id: string, source: SkillSource) => Promise<SkillContent | null>;
-    openFolder: () => Promise<void>;
+    install: () => Promise<SkillInstallResult>;
   };
 }

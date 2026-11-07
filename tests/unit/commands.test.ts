@@ -20,6 +20,9 @@ test("parses a command and its target", () => {
   assert.equal(parseCommand("/review staged")?.args, "staged");
   assert.equal(parseCommand("/review pr 123")?.args, "pr 123");
   assert.equal(parseCommand("/review branch main")?.args, "branch main");
+  assert.equal(parseCommand("/skills write-lean tighten the parser")?.command.id, "skills");
+  assert.equal(parseCommand("/skills write-lean tighten the parser")?.args, "write-lean tighten the parser");
+  assert.equal(command("skills").ui, undefined);
   assert.equal(parseCommand("/unknown"), null);
   assert.equal(parseCommand("review"), null);
 });
