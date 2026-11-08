@@ -15,7 +15,6 @@ Fid Coder is a Windows desktop app for local AI agents. Each agent chats through
 npm install
 npm run dev
 ```
-
 `npm run dev` builds the main and preload processes, starts Vite on `127.0.0.1:5173`, and launches Electron. Set `FID_CODER_DEVTOOLS=1` to open DevTools, or `FID_CODER_USER_DATA=<folder>` to run against an isolated profile.
 
 `build:node` clears `dist` first. Without that, compiled files from an older source layout (`dist/main/ipc.js`) shadow the current modules (`dist/main/ipc/index.js`) and Electron runs old handlers.
