@@ -2,7 +2,11 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { citationPattern, parseCitation } from "../../src/shared/citations.ts";
+import {
+  citationPattern,
+  collectCitations,
+  parseCitation,
+} from "../../src/shared/citations.ts";
 
 test("parses relative, absolute, and range citations", () => {
   assert.deepEqual(parseCitation("src/main/chat/runner.ts:420"), {
@@ -15,12 +19,23 @@ test("parses relative, absolute, and range citations", () => {
     line: 420,
     endLine: 438,
   });
+  assert.deepEqual(parseCitation("bench.ps1:12–18"), {
+    path: "bench.ps1",
+    line: 12,
+    endLine: 18,
+  });
+  assert.deepEqual(parseCitation("bench.ps1:12—18"), {
+    path: "bench.ps1",
+    line: 12,
+    endLine: 18,
+  });
   assert.deepEqual(parseCitation("C:\\repo\\src\\foo.ts:12"), {
     path: "C:\\repo\\src\\foo.ts",
     line: 12,
     endLine: null,
   });
   assert.equal(parseCitation("README.md:1")?.path, "README.md");
+  assert.equal(parseCitation("ModelFile.opt:10-25")?.path, "ModelFile.opt");
 });
 
 test("rejects non-citations and malformed line ranges", () => {
@@ -36,4 +51,21 @@ test("finds citations without matching a URL path", () => {
     "See src/main/chat/runner.ts:420 and README.md:1, not https://github.com/org/repo/src/foo.ts:12.";
   const found = [...text.matchAll(citationPattern())].map((match) => match[0]);
   assert.deepEqual(found, ["src/main/chat/runner.ts:420", "README.md:1"]);
+});
+
+test("collects unique citations in source order", () => {
+  const text =
+    "Use `src/a.ts:10-12`, `src/b.ts:4`, and `src/a.ts:10–12`, then `bench.ps1:34–42`.";
+  assert.deepEqual(
+    collectCitations(text).map((citation) => [
+      citation.path,
+      citation.line,
+      citation.endLine,
+    ]),
+    [
+      ["src/a.ts", 10, 12],
+      ["src/b.ts", 4, null],
+      ["bench.ps1", 34, 42],
+    ],
+  );
 });

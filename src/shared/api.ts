@@ -72,7 +72,12 @@ export interface FidApi {
     openRule: (agentId: string, path: string) => Promise<void>;
     map: (agentId: string) => Promise<WorkspaceMapView | null>;
     buildMap: (agentId: string) => Promise<WorkspaceMapView>;
-    file: (agentId: string, path: string, line?: number | null) => Promise<WorkspaceFilePeek>;
+    file: (
+      agentId: string,
+      path: string,
+      line?: number | null,
+      endLine?: number | null,
+    ) => Promise<WorkspaceFilePeek>;
   };
   routines: {
     list: (agentId: string) => Promise<Routine[]>;

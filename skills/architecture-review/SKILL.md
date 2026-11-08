@@ -1,7 +1,7 @@
 ---
 name: Review architecture
 description: Review a codebase's architecture: components, runtime flows, boundaries, coupling, risks, and test gaps. Report only.
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Review architecture
@@ -22,7 +22,7 @@ Use these sections, in this order:
 
 1. **System in one paragraph** — what it does and the constraints that shape it.
 2. **Components** — a table with Component, Responsibility, Key files, and Depends on.
-3. **Key flows** — two or three Mermaid `sequenceDiagram` blocks, each followed by numbered steps with `path:line`.
+3. **Key flows** — two or three Mermaid `flowchart` blocks (TD or LR), each followed by numbered steps with `path:line`. Put `path:line` in node labels so the app can link nodes to code.
 4. **Boundaries and coupling** — what owns which state, where a change crosses a seam, and which dependencies are implicit.
 5. **Risks** — a table with Severity, Evidence (`path:line`), Impact, and What would break.
 6. **Test and observability gaps** — what the architecture makes hard to verify, not only which tests are missing.
@@ -32,7 +32,7 @@ Use these sections, in this order:
 
 - Cite `path:line` for every component, risk, and flow step. If you cannot cite it, mark it inferred or leave it out.
 - Keep the component table and risks table short enough to read. Prefer the five most important entries over an exhaustive inventory.
-- Use a `flowchart` only for module structure; use `sequenceDiagram` for runtime behavior. Keep node labels short.
+- Prefer a `flowchart` for module structure, control flow, and data flow. Use `sequenceDiagram` only when ordering between actors over time is the point. Keep each diagram to about 12 nodes, keep node labels short, and put `path:line` in the node that maps to a file.
 - Do not edit files, run shell commands, change git, or use the browser.
 - Do not recommend the full test suite as a substitute for an actual risk.
 - If the repository is large, state the scope you reviewed instead of implying you read everything.

@@ -19,7 +19,7 @@ Where execution starts, with path:line.
 ## Components
 A table with Component, Responsibility, Key files, and Depends on. Use only dependencies you verified.
 ## Key flows
-Two short runtime flows. Use a Mermaid sequenceDiagram for each, then numbered steps with path:line.
+Two short runtime flows. Use a Mermaid flowchart (TD or LR) for each, then numbered steps with path:line. Put a path:line in the label of a node that maps to a file.
 ## Suggested reading order
 Five files, each with one sentence explaining why it matters.
 ## Build and test
@@ -27,7 +27,7 @@ The commands the repository documents.
 ## Risks and unknowns
 What looks fragile, coupled, untested, or unverified. Say which are inferred.
 
-Cite path:line for every component and risk. Do not invent files. Keep the whole answer under 1,800 words. Use a Mermaid flowchart only for a module overview; use sequenceDiagram for runtime flows.`;
+Cite path:line for every component and risk. Do not invent files. Keep the whole answer under 1,800 words. Prefer a Mermaid flowchart for module structure and runtime flow; use sequenceDiagram only when ordering between actors over time is the point. Keep each diagram to about 12 nodes.`;
 
 export async function architectureMapKey(root: string): Promise<string> {
   const [head, status] = await Promise.all([

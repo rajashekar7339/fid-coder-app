@@ -36,7 +36,7 @@ test("agent instructions stay in the system message and memory stays separate", 
 
     assert.match(view.systemMessage, /Read project and give me full description of it/);
     assert.doesNotMatch(view.systemMessage, /PowerShell benchmark harness/);
-    assert.match(view.systemMessage, /fenced mermaid sequenceDiagram/);
+    assert.match(view.systemMessage, /fenced mermaid flowchart/);
     assert.equal(view.memorySummary, summary);
   } finally {
     db.close();

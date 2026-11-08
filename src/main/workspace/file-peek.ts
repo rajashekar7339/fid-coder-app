@@ -10,6 +10,7 @@ export function readWorkspaceFile(
   workspaceDir: string,
   requested: string,
   line: number | null = null,
+  lineEnd: number | null = null,
 ): WorkspaceFilePeek {
   if (!requested.trim()) throw new Error("Choose a file to read");
   const file = resolveInside(workspaceDir, requested);
@@ -35,20 +36,26 @@ export function readWorkspaceFile(
       endLine: 0,
       totalLines: 0,
       line: null,
+      lineEnd: null,
       truncated: false,
     };
   }
 
   const target = line === null || !Number.isFinite(line) ? null : Math.min(totalLines, Math.max(1, Math.floor(line)));
+  const requestedEnd =
+    lineEnd === null || !Number.isFinite(lineEnd) ? null : Math.floor(lineEnd);
+  const targetEnd =
+    target === null ? null : Math.min(totalLines, Math.max(target, requestedEnd ?? target));
   const startLine = target === null ? 1 : Math.max(1, target - CONTEXT_LINES);
-  const endLine = Math.min(totalLines, startLine + WINDOW_LINES - 1);
+  const windowEnd = Math.min(totalLines, startLine + WINDOW_LINES - 1);
   return {
     path: relativeInside(workspaceDir, file),
-    text: lines.slice(startLine - 1, endLine).join("\n"),
+    text: lines.slice(startLine - 1, windowEnd).join("\n"),
     startLine,
-    endLine,
+    endLine: windowEnd,
     totalLines,
     line: target,
-    truncated: startLine > 1 || endLine < totalLines,
+    lineEnd: target !== null && targetEnd !== null && targetEnd > target ? targetEnd : null,
+    truncated: startLine > 1 || windowEnd < totalLines,
   };
 }

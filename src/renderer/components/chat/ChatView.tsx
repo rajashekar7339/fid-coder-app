@@ -28,6 +28,7 @@ import {
   Wrench,
   type LucideIcon,
 } from "lucide-react";
+import type { Citation } from "../../../shared/citations";
 import { groupToolCalls, liveTurnSettled, projectThread, userTurnAccepted, type LiveTool, type LiveTurn } from "../../../shared/chat-thread";
 import { COMMANDS, commandAvailability, filterCommands, parseCommand, type CommandInfo } from "../../../shared/commands";
 import {
@@ -59,7 +60,7 @@ import {
 } from "../../lib/format";
 import { AgentAvatar } from "../agents/AgentAvatar";
 import { ApprovalCard } from "../approvals/ApprovalCard";
-import { FilePeekDialog } from "./FilePeekDialog";
+import { FilePeekDialog, type FilePeekRequest } from "./FilePeekDialog";
 import { MessageContent } from "./MessageContent";
 import { ProjectMapDialog } from "./ProjectMapDialog";
 import { ModelSelect } from "../ui/ModelSelect";
@@ -234,7 +235,7 @@ export function ChatView({
   const [savingModel, setSavingModel] = useState(false);
   const [savingMode, setSavingMode] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
-  const [filePeek, setFilePeek] = useState<{ path: string; line: number } | null>(null);
+  const [filePeek, setFilePeek] = useState<FilePeekRequest | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
   const [skillCatalog, setSkillCatalog] = useState<SkillInfo[]>([]);
@@ -264,6 +265,17 @@ export function ChatView({
     },
     [agent.id],
   );
+
+  const openFile = useCallback(
+    (path: string, line: number, endLine: number | null, related: Citation[]) => {
+      setFilePeek({ path, line, endLine, related });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    setFilePeek(null);
+  }, [agent.id]);
 
   const projected = projectThread(messages, live, agent.id);
   const draftCommand = parseCommand(draft);
@@ -909,7 +921,7 @@ export function ChatView({
                           );
                         });
                       }}
-                      onOpenFile={(path, line) => setFilePeek({ path, line })}
+                      onOpenFile={openFile}
                     />
                   )}
                 </Fragment>
@@ -1268,17 +1280,15 @@ export function ChatView({
           agent={agent}
           signedIn={signedIn}
           onClose={() => setMapOpen(false)}
-          onOpenFile={(path, line) => setFilePeek({ path, line })}
+          onOpenFile={openFile}
         />
       ) : null}
-      {filePeek ? (
-        <FilePeekDialog
-          agentId={agent.id}
-          path={filePeek.path}
-          line={filePeek.line}
-          onClose={() => setFilePeek(null)}
-        />
-      ) : null}
+      <FilePeekDialog
+        key={agent.id}
+        agentId={agent.id}
+        request={filePeek}
+        onClose={() => setFilePeek(null)}
+      />
     </main>
   );
 }
@@ -1313,7 +1323,7 @@ function MessageRow({
   streaming: boolean;
   copied: boolean;
   onCopy: (content: string) => void;
-  onOpenFile: (path: string, line: number) => void;
+  onOpenFile: (path: string, line: number, endLine: number | null, related: Citation[]) => void;
 }) {
   if (message.role === "user") {
     return (

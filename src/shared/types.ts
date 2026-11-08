@@ -268,6 +268,7 @@ export type WorkspaceFilePeek = {
   endLine: number;
   totalLines: number;
   line: number | null;
+  lineEnd: number | null;
   truncated: boolean;
 };
 

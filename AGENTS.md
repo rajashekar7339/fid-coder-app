@@ -94,7 +94,7 @@ docs/
 | Enhancing a draft | `src/shared/enhance-prompt.ts`, `src/main/chat/enhance.ts`, and `Runner.enhanceDraft` |
 | Ask mode and read-only tools | `readOnly` on the agent, `askTools` in `src/tools/registry.ts`, and `askMode` in `src/main/chat/runner.ts` |
 | The project map | `src/main/workspace/architecture-map.ts`, `workspace_maps` in SQLite, and `ProjectMapDialog.tsx` |
-| Path:line citations and file preview | `src/shared/citations.ts`, `src/renderer/lib/inline-markdown.tsx`, and `FilePeekDialog.tsx` |
+| Path:line citations and the code reader | `src/shared/citations.ts`, `src/renderer/lib/inline-markdown.tsx`, and `FilePeekDialog.tsx` |
 | Starter prompts | `src/shared/starters.ts` and the empty state in `ChatView.tsx` |
 | The Skills library | `src/renderer/components/skills/SkillsDialog.tsx` |
 | A composer command | `src/shared/commands.ts` and the menu in `src/renderer/components/chat/ChatView.tsx` |
@@ -111,6 +111,8 @@ Skills are discovered from the workspace `.skills`, `.github/skills`, `.agents/s
 Enhance is manual and one-shot. The renderer calls `chat.enhance` only from the Enhance button; it writes nothing to SQLite, opens no agent session, and never sends. Do not call it from `send`, `runTurn`, or a routine path.
 
 Ask mode is a tool boundary, not a prompt preference. `readOnly` filters the agent's normal profile through `askTools(profile)`: workspace agents keep reads, search, git/PR reads, history, and the read-only explorer; Browser & Jira agents keep Jira reads, browser navigate/snapshot, and history. Neither gets write, shell, click, or type tools. The project map is built only after the user chooses **Build map** or **Refresh map**; opening a saved map or the dialog never calls a model. The map is cached by workspace in `workspace_maps` and marked stale when the git key changes. Do not generate it on agent creation or on a normal turn.
+
+Citations keep their line range. Clicking one opens a read-only reader with syntax highlighting, tabs, back/forward history, and `Alt+Left`/`Alt+Right`. The reader lists every code reference in the answer, so any cited file or range can be opened as a tab without closing it. A Mermaid `flowchart` node whose label contains `path:line` is clickable, and a diagram with citations shows a linked-code list. Prefer flowcharts for architecture, control flow, and data flow; use `sequenceDiagram` only when ordering between actors over time is the point. Keep a diagram to about 12 nodes and put `path:line` in the node that maps to a file.
 
 Import a tool by its file name, for example `./browser/browser`. TypeScript resolves `./db` to `db/index.ts`. It does not resolve `./browser` to `browser/browser.ts`.
 
