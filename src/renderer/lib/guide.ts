@@ -1,3 +1,9 @@
+import askModeImage from "../../../docs/guide/images/ask-mode.png";
+import enhancePromptImage from "../../../docs/guide/images/enhance-prompt.png";
+import projectMapImage from "../../../docs/guide/images/project-map.png";
+import skillsLibraryImage from "../../../docs/guide/images/skills-library.png";
+import skillsUseImage from "../../../docs/guide/images/skills-use.png";
+
 export type GuideArticle = {
   id: string;
   title: string;
@@ -30,9 +36,19 @@ const SOURCES: GuideSource[] = [
     id: "chat-with-an-agent",
     title: "Chat with an agent",
     group: "Using Fid Coder",
-    summary: "Send messages, follow tool steps, switch models, stop a turn, and approve deletes, pushes, and downloads.",
-    readMinutes: 4,
+    summary:
+      "Send messages, improve a draft, follow tool steps, read token and credit usage, switch models, stop a turn, and approve deletes, pushes, and downloads.",
+    readMinutes: 6,
     file: "chat-with-an-agent.md",
+  },
+  {
+    id: "understand-a-codebase",
+    title: "Understand a codebase",
+    group: "Using Fid Coder",
+    summary:
+      "Use Ask mode, starter prompts, the project map, architecture review, flow diagrams, and clickable file evidence without making code changes.",
+    readMinutes: 6,
+    file: "understand-a-codebase.md",
   },
   {
     id: "schedule-a-routine",
@@ -49,6 +65,15 @@ const SOURCES: GuideSource[] = [
     summary: "Give a developer agent a folder, native file and git tools, and a workspace brief.",
     readMinutes: 5,
     file: "work-in-a-workspace.md",
+  },
+  {
+    id: "use-skills",
+    title: "Use skills on demand",
+    group: "Using Fid Coder",
+    summary:
+      "Browse or upload skills, check their versions, and use one with /skills. A used skill can be loaded again when a later message needs it.",
+    readMinutes: 5,
+    file: "use-skills.md",
   },
   {
     id: "connect-accounts",
@@ -72,6 +97,14 @@ const IMAGES = import.meta.glob("../../../docs/guide/images/*", {
   import: "default",
 }) as Record<string, string>;
 
+const EXPLICIT_IMAGES: Record<string, string> = {
+  "ask-mode.png": askModeImage,
+  "enhance-prompt.png": enhancePromptImage,
+  "project-map.png": projectMapImage,
+  "skills-library.png": skillsLibraryImage,
+  "skills-use.png": skillsUseImage,
+};
+
 function docFor(file: string): string {
   const entry = Object.entries(DOCS).find(
     ([path]) => path === `../../../docs/guide/${file}` || path.endsWith(`/${file}`),
@@ -86,6 +119,8 @@ export const GUIDE_ARTICLES: GuideArticle[] = SOURCES.map(({ file, ...article })
 
 export function guideImage(path: string): string {
   const name = path.split("/").pop() ?? path;
+  const explicit = EXPLICIT_IMAGES[name];
+  if (explicit) return explicit;
   const entry = Object.entries(IMAGES).find(([key]) => key.endsWith(`/${name}`));
   return entry?.[1] ?? path;
 }

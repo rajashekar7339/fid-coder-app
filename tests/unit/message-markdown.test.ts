@@ -2,7 +2,11 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isAsciiDiagram, parseMessageBlocks } from "../../src/renderer/lib/message-markdown.ts";
+import {
+  isAsciiDiagram,
+  isMermaidBlock,
+  parseMessageBlocks,
+} from "../../src/renderer/lib/message-markdown.ts";
 
 test("parses a GFM table with alignment and stops at the next paragraph", () => {
   const blocks = parseMessageBlocks(
@@ -105,4 +109,13 @@ test("detects box-drawing and ASCII flow diagrams", () => {
   assert.equal(isAsciiDiagram(ascii, ""), true);
   assert.equal(isAsciiDiagram('const label = "| a | b |";', "ts"), false);
   assert.equal(isAsciiDiagram("a | b\n--- | ---\n1 | 2", "text"), false);
+});
+
+test("recognizes Mermaid fences and unlabelled sequence or module diagrams", () => {
+  assert.equal(isMermaidBlock("mermaid", "sequenceDiagram\n  A->>B: hi"), true);
+  assert.equal(isMermaidBlock("", "sequenceDiagram\n  A->>B: hi"), true);
+  assert.equal(isMermaidBlock("", "flowchart LR\n  A --> B"), true);
+  assert.equal(isMermaidBlock("", "erDiagram\n  USER ||--o{ ORDER : places"), true);
+  assert.equal(isMermaidBlock("ts", "sequenceDiagram"), false);
+  assert.equal(isMermaidBlock("", "const a = 1;"), false);
 });

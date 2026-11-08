@@ -1,6 +1,6 @@
 # Fid Coder
 
-Fid Coder is a Windows desktop app for local AI agents. Each agent chats through GitHub Copilot, uses tools for files, shell, git, Jira, and a local browser, and can run on a schedule. Agents, transcripts, plans, file checkpoints, and settings stay on this machine.
+Fid Coder is a Windows desktop app for local AI agents. Each agent chats through GitHub Copilot, uses tools for files, shell, git, Jira, and a local browser, and can run on a schedule. Ask mode gives an agent a read-only set of tools: workspace reads and git for code questions, or Jira reads and page reading for Browser &amp; Jira agents. Agents, transcripts, file checkpoints, and settings stay on this machine.
 
 ## Requirements
 
@@ -32,7 +32,11 @@ npm run dev
 | `npm test` | Unit and integration tests |
 | `npm run test:unit` | Fast tests against source files |
 | `npm run test:integration` | Tests against compiled `dist` output; builds first |
-| `npm run test:features` | Live Electron harness for plans, changes/revert, rules, and the context inspector. Needs Copilot sign-in and runs against a temporary profile. |
+| `npm run test:features` | Live Electron harness for changes/revert, rules, and the context inspector. Needs Copilot sign-in and runs against a temporary profile. |
+| `npm run test:skills` | Deterministic Electron harness for Ask mode, starters, the project map, citations, full-screen diagrams, the Skills library, command menu, and help screenshots. |
+| `npm run test:skills-reuse` | Live harness for using a skill once and reloading it on a later turn. Needs Copilot and two turns. |
+| `npm run test:map` | Live harness for building the read-only project map and reopening its cache. Needs Copilot and one turn. |
+| `npm run test:enhance` | Live harness for Enhance Prompt: one real rewrite, Undo, skips, and no-send checks. Needs Copilot. |
 | `npm run dist:win` | Build the portable Windows app into `release/` |
 
 ## Project layout
@@ -47,6 +51,10 @@ src/
 ```
 
 `AGENTS.md` has the detailed folder map and the rules for adding a tool, IPC handler, screen, or database method.
+
+## Contributing
+
+Read `CONTRIBUTING.md` before starting a feature. It covers the review-first loop, layer checklist, UI rules, help docs, and test levels.
 
 ## Data
 

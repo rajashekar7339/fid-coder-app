@@ -2,35 +2,68 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } f
 import {
   ArrowDown,
   ArrowUp,
+  BookOpen,
+  Bug,
   Check,
   ChevronDown,
   Clock3,
   Copy,
   FileText,
   Folder,
+  GitBranch,
   Globe2,
   Keyboard,
-  ListChecks,
   Loader2,
+  Map as MapIcon,
   MousePointerClick,
+  Network,
   PanelRight,
   ScanSearch,
+  ShieldCheck,
+  Slash,
+  Sparkles,
   Square,
   Terminal,
+  Undo2,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
 import { groupToolCalls, liveTurnSettled, projectThread, userTurnAccepted, type LiveTool, type LiveTurn } from "../../../shared/chat-thread";
+import { COMMANDS, commandAvailability, filterCommands, parseCommand, type CommandInfo } from "../../../shared/commands";
+import {
+  filterSkills,
+  matchSkillInvocation,
+  MAX_SKILL_CHARS,
+  skillVersionLabel,
+  SKILL_SOURCE_LABELS,
+} from "../../../shared/skills";
 import { summarizeTool } from "../../../shared/summary";
-import type { Agent, ApprovalAction, ApprovalRequest, ChatEvent, CopilotModel, Message, PlanStep } from "../../../shared/types";
+import { WORKSPACE_STARTERS, type Starter } from "../../../shared/starters";
+import type {
+  Agent,
+  ApprovalAction,
+  ApprovalRequest,
+  ChatEvent,
+  CopilotModel,
+  Message,
+  SkillInfo,
+} from "../../../shared/types";
 import { agentSubtitle } from "../../lib/agent-display";
 import { errorText, fid } from "../../lib/fid";
-import { formatClock, formatDay, formatNextRun } from "../../lib/format";
+import {
+  formatClock,
+  formatCount,
+  formatDay,
+  formatFullTimestamp,
+  formatNextRun,
+} from "../../lib/format";
 import { AgentAvatar } from "../agents/AgentAvatar";
 import { ApprovalCard } from "../approvals/ApprovalCard";
+import { FilePeekDialog } from "./FilePeekDialog";
 import { MessageContent } from "./MessageContent";
+import { ProjectMapDialog } from "./ProjectMapDialog";
 import { ModelSelect } from "../ui/ModelSelect";
-import { PlanStrip } from "./PlanStrip";
+import { TokenUsage } from "./TokenUsage";
 
 type Props = {
   agent: Agent;
@@ -47,12 +80,17 @@ type Props = {
   onStartSignIn: () => void;
   onRetryModels: () => void;
   onToggleDesk: () => void;
+  onOpenSkills: () => void;
+  onOpenHelp: () => void;
+  skillSeed: string | null;
+  onSkillSeedUsed: () => void;
+  skillsRevision: number;
   onUpdated: (agent: Agent) => void;
   onActivity: () => void;
   onAuthRequired: () => void;
 };
 
-type ToolMeta = { label: string; active: string; Icon: LucideIcon };
+type ToolMeta = { label: string; active: string; Icon: LucideIcon; command?: string };
 
 const TOOL_META: Record<string, ToolMeta> = {
   browser_navigate: { label: "Opened a page", active: "Opening a page", Icon: Globe2 },
@@ -73,11 +111,26 @@ const TOOL_META: Record<string, ToolMeta> = {
   gh_pr_view: { label: "Read a pull request", active: "Reading a pull request", Icon: Terminal },
   gh_pr_diff: { label: "Read a pull request diff", active: "Reading a pull request diff", Icon: Terminal },
   explore_code: { label: "Explored the code", active: "Exploring the code", Icon: ScanSearch },
-  set_plan: { label: "Updated the plan", active: "Updating the plan", Icon: ListChecks },
+  use_skill: { label: "Used a skill", active: "Loading a skill", Icon: Wrench },
+  skill_read: { label: "Read a skill file", active: "Reading a skill file", Icon: FileText },
+  review_code: { label: "Reviewed a change", active: "Reviewing a change", Icon: ScanSearch, command: "review" },
   history_first: { label: "Read the first message", active: "Reading the first message", Icon: Clock3 },
   history_search: { label: "Searched history", active: "Searching history", Icon: ScanSearch },
   history_turn: { label: "Read an earlier turn", active: "Reading an earlier turn", Icon: FileText },
   history_context: { label: "Loaded history", active: "Loading history", Icon: FileText },
+};
+
+const COMMAND_ICONS: Record<string, LucideIcon> = {
+  review: ScanSearch,
+  skills: Wrench,
+  help: BookOpen,
+};
+
+const STARTER_ICONS: Record<Starter["id"], LucideIcon> = {
+  architecture: Network,
+  flow: GitBranch,
+  review: ShieldCheck,
+  troubleshoot: Bug,
 };
 
 const liveByAgent = new Map<string, LiveTurn>();
@@ -121,6 +174,34 @@ function signInRequired(message: string): boolean {
   return /not signed in|no github oauth token|copilot hmac key|not authenticated/i.test(message);
 }
 
+type SkillMatch = { skill: SkillInfo; task: string } | { error: string };
+
+function skillPickerQuery(value: string): string | null {
+  if (!/^\/skills(?:\s|$)/i.test(value)) return null;
+  const rest = value.slice("/skills".length);
+  if (!rest.startsWith(" ")) return null;
+  const query = rest.trimStart();
+  return /\s/.test(query) ? null : query;
+}
+
+function skillHintFor(
+  draft: string,
+  command: ReturnType<typeof parseCommand>,
+  match: SkillMatch | null,
+  state: "loading" | "ready" | "error",
+): string | null {
+  if (command?.command.id !== "skills") return null;
+  if (draft.trim() === "/skills") return "Open the Skills library, or type /skills <skill> <task>.";
+  if (state === "loading") return "Loading skills…";
+  if (state === "error") return "Skills could not be loaded. Use the skill id or open Skills.";
+  if (!match) return null;
+  if ("error" in match) return match.error;
+  const label = `${match.skill.name} · ${skillVersionLabel(match.skill.version)}`;
+  return match.task
+    ? `${label} · applies to this message only.`
+    : `${label} · add the task for this message.`;
+}
+
 export function ChatView({
   agent,
   models,
@@ -136,25 +217,42 @@ export function ChatView({
   onStartSignIn,
   onRetryModels,
   onToggleDesk,
+  onOpenSkills,
+  onOpenHelp,
+  skillSeed,
+  onSkillSeedUsed,
+  skillsRevision,
   onUpdated,
   onActivity,
   onAuthRequired,
 }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [live, setLiveState] = useState<LiveTurn | null>(() => liveByAgent.get(agent.id) ?? null);
-  const [plan, setPlan] = useState<PlanStep[] | null>(null);
   const [draft, setDraft] = useState("");
   const [running, setRunning] = useState(() => liveByAgent.has(agent.id));
   const [error, setError] = useState<string | null>(null);
   const [savingModel, setSavingModel] = useState(false);
+  const [savingMode, setSavingMode] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [filePeek, setFilePeek] = useState<{ path: string; line: number } | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
+  const [skillCatalog, setSkillCatalog] = useState<SkillInfo[]>([]);
+  const [skillCatalogState, setSkillCatalogState] = useState<"loading" | "ready" | "error">("loading");
+  const [commandsOpen, setCommandsOpen] = useState(false);
+  const [commandIndex, setCommandIndex] = useState(0);
+  const [skillPickerIndex, setSkillPickerIndex] = useState(0);
+  const [skillPickerClosed, setSkillPickerClosed] = useState(false);
+  const [enhancing, setEnhancing] = useState(false);
+  const [enhanceStatus, setEnhanceStatus] = useState<string | null>(null);
+  const [undoDraft, setUndoDraft] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
   const pinned = useRef(true);
   const generation = useRef(0);
   const messageLoad = useRef(0);
   const sendLock = useRef(false);
+  const enhanceLock = useRef(false);
 
   const updateLive = useCallback(
     (updater: (current: LiveTurn | null) => LiveTurn | null) => {
@@ -168,6 +266,158 @@ export function ChatView({
   );
 
   const projected = projectThread(messages, live, agent.id);
+  const draftCommand = parseCommand(draft);
+  const pickerQuery = skillPickerQuery(draft);
+  const skillMatches = filterSkills(skillCatalog, pickerQuery ?? "");
+  const activeSkill = skillMatches[skillPickerIndex] ?? null;
+  const skillPickerOpen = !commandsOpen && !skillPickerClosed && pickerQuery !== null;
+  const skillInvocation =
+    draftCommand?.command.id === "skills" && skillCatalogState === "ready"
+      ? matchSkillInvocation(skillCatalog, draftCommand.args)
+      : null;
+  const commandQuery = draft.startsWith("/") ? draft.slice(1).split(/\s/)[0] : "";
+  const commandMatches = filterCommands(commandQuery);
+  const activeCommand = commandMatches[commandIndex] ?? null;
+  const commandDraft = draft.startsWith("/")
+    ? COMMANDS.find(
+        (command) => draft.trim() === `/${command.id}` || draft.trim().startsWith(`/${command.id} `),
+      )
+    : null;
+  const commandHint =
+    !commandsOpen && commandDraft && commandDraft.id !== "skills" ? commandDraft.description : null;
+  const skillHint = skillPickerOpen
+    ? null
+    : skillHintFor(draft, draftCommand, skillInvocation, skillCatalogState);
+  const hint = !commandsOpen && !skillPickerOpen ? (skillHint ?? commandHint) : null;
+  const canEnhance =
+    settingsReady && signedIn && !running && !enhancing && draft.trim().length > 0;
+  const enhanceHint = enhancing ? "Enhancing your draft…" : enhanceStatus;
+
+  useEffect(() => {
+    let cancelled = false;
+    setSkillCatalogState("loading");
+    void fid()
+      .skills.list(agent.workspaceDir)
+      .then((catalog) => {
+        if (cancelled) return;
+        setSkillCatalog(catalog.skills);
+        setSkillCatalogState("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setSkillCatalogState("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [agent.workspaceDir, skillsRevision]);
+
+  useEffect(() => {
+    setCommandIndex(0);
+  }, [commandQuery, commandsOpen]);
+
+  useEffect(() => {
+    setSkillPickerIndex(0);
+  }, [pickerQuery, skillPickerOpen]);
+
+  useEffect(() => {
+    setSkillPickerClosed(false);
+  }, [draft]);
+
+  useEffect(() => {
+    if (!skillSeed) return;
+    const seeded = parseCommand(skillSeed);
+    const id = seeded?.command.id === "skills" ? seeded.args.trim() : "";
+    setDraft((current) => (id ? draftWithSkill(current, id) : skillSeed));
+    setCommandsOpen(false);
+    setUndoDraft(null);
+    setEnhanceStatus(null);
+    onSkillSeedUsed();
+    window.requestAnimationFrame(() => {
+      const input = composer.current;
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
+  }, [skillSeed, onSkillSeedUsed]);
+
+  useEffect(() => {
+    if (!commandsOpen && !skillPickerOpen) return;
+    const close = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".composer")) return;
+      setCommandsOpen(false);
+      setSkillPickerClosed(true);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [commandsOpen, skillPickerOpen]);
+
+  function commandUnavailable(command: CommandInfo): string | null {
+    if (command.id === "review" && !signedIn) return "Sign in to Copilot first.";
+    return commandAvailability(command, agent.toolProfile, Boolean(agent.workspaceDir));
+  }
+
+  function chooseCommand(command: CommandInfo) {
+    if (commandUnavailable(command)) return;
+    setCommandsOpen(false);
+    setCommandIndex(0);
+    // A dialog command should not throw away a normal draft the user typed.
+    const commandDraft = draft.trimStart().startsWith("/");
+    if (command.id === "skills") {
+      if (commandDraft) setDraft("");
+      onOpenSkills();
+      return;
+    }
+    if (command.ui) {
+      if (commandDraft) setDraft("");
+      if (command.id === "help") onOpenHelp();
+      return;
+    }
+    setDraft(`/${command.id} `);
+    window.requestAnimationFrame(() => composer.current?.focus());
+  }
+
+  function draftWithSkill(current: string, id: string): string {
+    const text = current.trim();
+    if (!text) return `/skills ${id} `;
+    const parsed = parseCommand(text);
+    if (!parsed) return `/skills ${id} ${text}`;
+    if (parsed.command.id !== "skills") return `/skills ${id} `;
+    const matched =
+      skillCatalogState === "ready" ? matchSkillInvocation(skillCatalog, parsed.args) : null;
+    const task =
+      matched && !("error" in matched)
+        ? matched.task.trim()
+        : parsed.args.trim().split(/\s+/).slice(1).join(" ");
+    return task ? `/skills ${id} ${task}` : `/skills ${id} `;
+  }
+
+  function chooseSkill(skill: SkillInfo) {
+    setCommandsOpen(false);
+    setSkillPickerClosed(true);
+    setDraft((current) => draftWithSkill(current, skill.id));
+    window.requestAnimationFrame(() => {
+      const input = composer.current;
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
+  }
+
+  function applyStarter(starter: Starter) {
+    setDraft(starter.prompt);
+    setCommandsOpen(false);
+    setSkillPickerClosed(true);
+    setUndoDraft(null);
+    setEnhanceStatus(null);
+    setError(null);
+    window.requestAnimationFrame(() => {
+      const input = composer.current;
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(starter.prompt.length, starter.prompt.length);
+    });
+  }
 
   useEffect(() => {
     const gen = ++generation.current;
@@ -198,14 +448,6 @@ export function ChatView({
       .catch((caught: unknown) => {
         if (!cancelled && generation.current === gen) setError(errorText(caught));
       });
-
-    void fid()
-      .plans.get(agent.id)
-      .then((next) => {
-        if (cancelled || generation.current !== gen) return;
-        setPlan(next && next.steps.length > 0 ? next.steps : null);
-      })
-      .catch(() => undefined);
 
     const id = fid().chat.onEvent((event: ChatEvent) => {
       if (event.agentId !== agent.id || generation.current !== gen) return;
@@ -252,8 +494,8 @@ export function ChatView({
           return { ...current, tools };
         });
       }
-      if (event.type === "plan") {
-        setPlan(event.steps.length > 0 ? event.steps : null);
+      if (event.type === "usage") {
+        updateLive((current) => (current ? { ...current, usage: event.usage } : current));
       }
       if (event.type === "done" || event.type === "error") {
         if (event.type === "error") {
@@ -326,13 +568,81 @@ export function ChatView({
     setShowJump((current) => (current === !atBottom ? current : !atBottom));
   }
 
+  async function enhancePrompt() {
+    if (!canEnhance || enhanceLock.current) return;
+    const original = draft;
+    enhanceLock.current = true;
+    setEnhancing(true);
+    setError(null);
+    setEnhanceStatus(null);
+    setUndoDraft(null);
+    setCommandsOpen(false);
+    setSkillPickerClosed(true);
+    try {
+      const result = await fid().chat.enhance(agent.id, original);
+      if (result.status === "enhanced") {
+        setDraft(result.text);
+        setUndoDraft(original);
+        setEnhanceStatus("Enhanced. Review it, then send.");
+        window.requestAnimationFrame(() => {
+          const input = composer.current;
+          if (!input) return;
+          input.focus();
+          input.setSelectionRange(result.text.length, result.text.length);
+        });
+      } else {
+        setEnhanceStatus(result.reason);
+      }
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      enhanceLock.current = false;
+      setEnhancing(false);
+    }
+  }
+
+  function undoEnhance() {
+    if (undoDraft === null) return;
+    setDraft(undoDraft);
+    setUndoDraft(null);
+    setEnhanceStatus(null);
+    setError(null);
+    window.requestAnimationFrame(() => composer.current?.focus());
+  }
+
   function send() {
-    sendText(draft);
+    if (enhancing) return;
+    const text = draft.trim();
+    if (text === "/skills") {
+      onOpenSkills();
+      return;
+    }
+    if (skillCatalogState === "ready") {
+      const parsed = parseCommand(text);
+      if (parsed?.command.id === "skills") {
+        const matched = matchSkillInvocation(skillCatalog, parsed.args);
+        if ("error" in matched) {
+          setError(matched.error);
+          return;
+        }
+        if (!matched.task) {
+          setError("Add the task after the skill name.");
+          return;
+        }
+      }
+    }
+    sendText(text);
   }
 
   function sendText(raw: string) {
     const text = raw.trim();
-    if (!text || running || sendLock.current) return;
+    if (!text || running || enhancing || sendLock.current) return;
+    const uiCommand = COMMANDS.find((command) => command.ui && text === `/${command.id}`);
+    if (uiCommand) {
+      chooseCommand(uiCommand);
+      return;
+    }
+    setCommandsOpen(false);
     sendLock.current = true;
     queueMicrotask(() => {
       sendLock.current = false;
@@ -343,6 +653,8 @@ export function ChatView({
     setShowJump(false);
     setDraft("");
     setError(null);
+    setUndoDraft(null);
+    setEnhanceStatus(null);
     setRunning(true);
     updateLive(() => blankLive(startedAt, { userText: text }));
     void fid()
@@ -373,7 +685,7 @@ export function ChatView({
   }
 
   async function changeModel(model: string) {
-    if (model === agent.model || savingModel || running) return;
+    if (model === agent.model || savingModel || savingMode || running) return;
     setSavingModel(true);
     setError(null);
     try {
@@ -384,6 +696,7 @@ export function ChatView({
         workspaceDir: agent.workspaceDir,
         model,
         toolProfile: agent.toolProfile,
+        readOnly: agent.readOnly,
         memoryEnabled: agent.memoryEnabled,
       });
       onUpdated(saved);
@@ -391,6 +704,29 @@ export function ChatView({
       setError(errorText(caught));
     } finally {
       setSavingModel(false);
+    }
+  }
+
+  async function changeMode(readOnly: boolean) {
+    if (readOnly === agent.readOnly || savingMode || savingModel || running || enhancing) return;
+    setSavingMode(true);
+    setError(null);
+    try {
+      const saved = await fid().agents.update(agent.id, {
+        name: agent.name,
+        description: agent.description,
+        systemPrompt: agent.systemPrompt,
+        workspaceDir: agent.workspaceDir,
+        model: agent.model,
+        toolProfile: agent.toolProfile,
+        readOnly,
+        memoryEnabled: agent.memoryEnabled,
+      });
+      onUpdated(saved);
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      setSavingMode(false);
     }
   }
 
@@ -424,12 +760,31 @@ export function ChatView({
             </div>
             <div className="chat-sub">
               {agentSubtitle(agent)}
-              <span className="slash">/</span>
-              Local browser
+              {agent.toolProfile === "browser" ? (
+                <>
+                  <span className="slash">/</span>
+                  Local browser
+                </>
+              ) : agent.workspaceDir ? (
+                <>
+                  <span className="slash">/</span>
+                  Workspace
+                </>
+              ) : null}
             </div>
           </div>
         </div>
         <div className="chat-actions">
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Open project map"
+            title="Map this project's architecture"
+            disabled={!agent.workspaceDir}
+            onClick={() => setMapOpen(true)}
+          >
+            <MapIcon size={15} />
+          </button>
           <button
             type="button"
             className={`icon-button ${deskOpen ? "is-active" : ""}`}
@@ -458,11 +813,13 @@ export function ChatView({
             <p>{agentSubtitle(agent)}</p>
             <div className="empty-chips">
               <span>
-                <Globe2 size={12} /> Local browser
+                {agent.toolProfile === "browser" ? <Globe2 size={12} /> : <Folder size={12} />}
+                {agent.toolProfile === "browser" ? "Local browser" : agent.workspaceDir ? "Workspace" : "No workspace"}
               </span>
-              {agent.workspaceDir ? (
-                <span>
-                  <Folder size={12} /> Workspace
+              {agent.workspaceDir || agent.readOnly ? (
+                <span className={agent.readOnly ? "is-read-only" : undefined}>
+                  {agent.readOnly ? <ShieldCheck size={12} /> : <Terminal size={12} />}
+                  {agent.readOnly ? "Ask mode" : "Agent mode"}
                 </span>
               ) : null}
               {agent.nextRoutineAt ? (
@@ -471,11 +828,52 @@ export function ChatView({
                 </span>
               ) : null}
             </div>
+            {agent.workspaceDir && signedIn ? (
+              <div className="starter-block">
+                <div className="starter-head">Understand this codebase</div>
+                <div className="starter-grid">
+                  {WORKSPACE_STARTERS.map((starter) => {
+                    const Icon = STARTER_ICONS[starter.id];
+                    return (
+                      <button
+                        key={starter.id}
+                        type="button"
+                        className="starter-card"
+                        title={starter.hint}
+                        onClick={() => applyStarter(starter)}
+                      >
+                        <Icon size={14} aria-hidden="true" />
+                        <span>
+                          <strong>{starter.label}</strong>
+                          <small>{starter.hint}</small>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+            {COMMANDS.some((command) => !commandUnavailable(command)) ? (
+              <div className="empty-commands">
+                {COMMANDS.filter((command) => !commandUnavailable(command)).map((command) => (
+                  <button
+                    key={command.id}
+                    type="button"
+                    className="empty-command"
+                    onClick={() => chooseCommand(command)}
+                  >
+                    /{command.id}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <p className="empty-hint">
               {!settingsReady
                 ? "Checking Copilot…"
                 : signedIn
-                  ? "Send a message to start."
+                  ? agent.workspaceDir
+                    ? "Pick a starting point, or type below."
+                    : "Send a message to start."
                   : "Sign in to Copilot, then send a message."}
             </p>
           </div>
@@ -489,7 +887,11 @@ export function ChatView({
               if (day) lastDay = day;
               return (
                 <Fragment key={item.kind === "message" ? item.message.id : item.id}>
-                  {showDay ? <div className="day-separator">{day}</div> : null}
+                  {showDay ? (
+                    <div className="day-separator" title={formatFullTimestamp(stamp)}>
+                      {day}
+                    </div>
+                  ) : null}
                   {item.kind === "tools" ? (
                     <ToolGroup calls={item.calls} pendingId={projected.pendingToolId} />
                   ) : (
@@ -507,6 +909,7 @@ export function ChatView({
                           );
                         });
                       }}
+                      onOpenFile={(path, line) => setFilePeek({ path, line })}
                     />
                   )}
                 </Fragment>
@@ -547,8 +950,6 @@ export function ChatView({
         </p>
       ) : null}
 
-      <PlanStrip steps={plan ?? []} running={running} />
-
       <form
         className="composer-dock"
         onSubmit={(event) => {
@@ -557,6 +958,92 @@ export function ChatView({
         }}
       >
         <div className="composer">
+          {commandsOpen ? (
+            <div id="composer-commands" className="command-menu" role="listbox" aria-label="Commands">
+              <div className="command-menu-head">
+                <span>Commands</span>
+                <span>type / to filter</span>
+              </div>
+              {commandMatches.length === 0 ? (
+                <div className="command-empty">No commands match.</div>
+              ) : (
+                commandMatches.map((command, index) => {
+                  const unavailable = commandUnavailable(command);
+                  const Icon = COMMAND_ICONS[command.id] ?? Wrench;
+                  return (
+                    <button
+                      key={command.id}
+                      type="button"
+                      role="option"
+                      aria-selected={index === commandIndex}
+                      className={`command-row ${index === commandIndex ? "is-active" : ""} ${unavailable ? "is-disabled" : ""}`}
+                      disabled={Boolean(unavailable)}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => chooseCommand(command)}
+                    >
+                      <Icon size={13} className="command-icon" aria-hidden="true" />
+                      <span className="command-copy">
+                        <span className="command-title">
+                          <span className="command-name">/{command.id}</span>
+                          <span className="command-label">{command.label}</span>
+                        </span>
+                        <span className="command-description">{unavailable ?? command.description}</span>
+                        {!unavailable ? <span className="command-usage">{command.usage}</span> : null}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+              <div className="command-foot">↑↓ move · Enter select · Esc close</div>
+            </div>
+          ) : null}
+          {skillPickerOpen ? (
+            <div id="composer-skills" className="command-menu skill-menu" role="listbox" aria-label="Skills">
+              <div className="command-menu-head">
+                <span>Skills</span>
+                <span>{skillCatalogState === "ready" ? `${skillMatches.length} found` : "loading"}</span>
+              </div>
+              {skillCatalogState === "loading" ? (
+                <div className="command-empty">Loading skills…</div>
+              ) : skillCatalogState === "error" ? (
+                <div className="command-empty">Skills could not be loaded.</div>
+              ) : skillMatches.length === 0 ? (
+                <div className="command-empty">No skills match.</div>
+              ) : (
+                skillMatches.map((skill, index) => (
+                  <button
+                    key={`${skill.source}:${skill.id}`}
+                    type="button"
+                    role="option"
+                    aria-selected={index === skillPickerIndex}
+                    className={`command-row ${index === skillPickerIndex ? "is-active" : ""}`}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => chooseSkill(skill)}
+                  >
+                    <Wrench size={13} className="command-icon" aria-hidden="true" />
+                    <span className="command-copy">
+                      <span className="command-title">
+                        <span className="skill-menu-name">{skill.name}</span>
+                        <span className="skill-menu-id">{skill.id}</span>
+                      </span>
+                      <span className="command-description">{skill.description}</span>
+                      <span className="command-usage">
+                        {SKILL_SOURCE_LABELS[skill.source]} · {skillVersionLabel(skill.version)} ·{" "}
+                        {formatCount(skill.chars)} chars
+                        {skill.chars > MAX_SKILL_CHARS ? " · will be truncated" : ""}
+                      </span>
+                    </span>
+                  </button>
+                ))
+              )}
+              <div className="command-foot skill-menu-foot">
+                <span>↑↓ move · Enter select · Esc close</span>
+                <button type="button" onClick={onOpenSkills}>
+                  Open Skills
+                </button>
+              </div>
+            </div>
+          ) : null}
           <textarea
             ref={composer}
             rows={1}
@@ -572,10 +1059,88 @@ export function ChatView({
                     : "Sign in to Copilot to chat"
             }
             disabled={!settingsReady || !signedIn}
+            readOnly={enhancing}
             aria-label={`Message ${agent.name}`}
+            aria-expanded={commandsOpen || skillPickerOpen}
+            aria-controls={commandsOpen ? "composer-commands" : skillPickerOpen ? "composer-skills" : undefined}
             title="Enter to send. Shift+Enter for a new line."
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              const value = event.target.value;
+              setDraft(value);
+              setUndoDraft(null);
+              setEnhanceStatus(null);
+              setCommandsOpen(/^\/[a-z-]*$/i.test(value));
+            }}
             onKeyDown={(event) => {
+              if (skillPickerOpen) {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setSkillPickerIndex((index) =>
+                    skillMatches.length === 0 ? 0 : (index + 1) % skillMatches.length,
+                  );
+                  return;
+                }
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setSkillPickerIndex((index) =>
+                    skillMatches.length === 0
+                      ? 0
+                      : (index - 1 + skillMatches.length) % skillMatches.length,
+                  );
+                  return;
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setSkillPickerClosed(true);
+                  return;
+                }
+                if (
+                  (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey)) &&
+                  !event.nativeEvent.isComposing
+                ) {
+                  if (activeSkill) {
+                    event.preventDefault();
+                    chooseSkill(activeSkill);
+                    return;
+                  }
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    return;
+                  }
+                }
+              }
+              if (commandsOpen) {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setCommandIndex((index) =>
+                    commandMatches.length === 0 ? 0 : (index + 1) % commandMatches.length,
+                  );
+                  return;
+                }
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setCommandIndex((index) =>
+                    commandMatches.length === 0
+                      ? 0
+                      : (index - 1 + commandMatches.length) % commandMatches.length,
+                  );
+                  return;
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setCommandsOpen(false);
+                  return;
+                }
+                if (
+                  (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey)) &&
+                  !event.nativeEvent.isComposing &&
+                  activeCommand
+                ) {
+                  event.preventDefault();
+                  chooseCommand(activeCommand);
+                  return;
+                }
+              }
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 send();
@@ -583,13 +1148,70 @@ export function ChatView({
             }}
           />
           <div className="composer-bottom">
+            <div className="mode-switch" role="group" aria-label="Agent mode">
+              <button
+                type="button"
+                className={agent.readOnly ? "is-active" : ""}
+                aria-pressed={agent.readOnly}
+                disabled={running || savingMode || savingModel || enhancing}
+                title="Ask mode: read-only tools for this agent. No edits, clicks, or commands."
+                onClick={() => void changeMode(true)}
+              >
+                Ask mode
+              </button>
+              <button
+                type="button"
+                className={!agent.readOnly ? "is-active" : ""}
+                aria-pressed={!agent.readOnly}
+                disabled={running || savingMode || savingModel || enhancing}
+                title="Agent mode: full tools for this agent. Writes and actions need approval where required."
+                onClick={() => void changeMode(false)}
+              >
+                Agent mode
+              </button>
+            </div>
             <ModelSelect
               value={agent.model}
               models={models}
-              disabled={running || savingModel}
+              disabled={running || savingModel || savingMode}
               className="model-picker-compact"
               onChange={(model) => void changeModel(model)}
             />
+            <button
+              type="button"
+              className="composer-command"
+              aria-label="Show commands"
+              aria-expanded={commandsOpen}
+              aria-controls="composer-commands"
+              title="Show commands (type /)"
+              onClick={() => {
+                setCommandsOpen((open) => !open);
+                window.requestAnimationFrame(() => composer.current?.focus());
+              }}
+            >
+              <Slash size={11} aria-hidden="true" />
+              Commands
+            </button>
+            <button
+              type="button"
+              className="composer-command composer-enhance"
+              aria-label="Enhance prompt"
+              aria-busy={enhancing}
+              title={
+                enhancing
+                  ? "Rewriting the draft…"
+                  : "Rewrite this draft with a cheap model. Nothing is sent."
+              }
+              disabled={!canEnhance}
+              onClick={() => void enhancePrompt()}
+            >
+              {enhancing ? (
+                <Loader2 size={11} className="spin" aria-hidden="true" />
+              ) : (
+                <Sparkles size={11} aria-hidden="true" />
+              )}
+              {enhancing ? "Enhancing…" : "Enhance"}
+            </button>
             {agent.nextRoutineAt ? (
               <span className="composer-context">
                 <Clock3 size={10} aria-hidden="true" />
@@ -619,14 +1241,44 @@ export function ChatView({
                 type="submit"
                 className="send-button"
                 aria-label="Send message"
-                disabled={!settingsReady || !signedIn || !draft.trim()}
+                disabled={!settingsReady || !signedIn || !draft.trim() || enhancing}
               >
                 <ArrowUp size={15} />
               </button>
             )}
           </div>
         </div>
+        {enhanceHint ? (
+          <div className="command-hint enhance-hint">
+            <span role="status">{enhanceHint}</span>
+            {!enhancing && undoDraft !== null ? (
+              <button type="button" className="enhance-undo" onClick={undoEnhance}>
+                <Undo2 size={11} aria-hidden="true" />
+                Undo
+              </button>
+            ) : null}
+          </div>
+        ) : hint ? (
+          <p className="command-hint">{hint}</p>
+        ) : null}
       </form>
+
+      {mapOpen ? (
+        <ProjectMapDialog
+          agent={agent}
+          signedIn={signedIn}
+          onClose={() => setMapOpen(false)}
+          onOpenFile={(path, line) => setFilePeek({ path, line })}
+        />
+      ) : null}
+      {filePeek ? (
+        <FilePeekDialog
+          agentId={agent.id}
+          path={filePeek.path}
+          line={filePeek.line}
+          onClose={() => setFilePeek(null)}
+        />
+      ) : null}
     </main>
   );
 }
@@ -654,18 +1306,26 @@ function MessageRow({
   streaming,
   copied,
   onCopy,
+  onOpenFile,
 }: {
   agent: Agent;
   message: Message;
   streaming: boolean;
   copied: boolean;
   onCopy: (content: string) => void;
+  onOpenFile: (path: string, line: number) => void;
 }) {
   if (message.role === "user") {
     return (
       <div className="user-message">
         <div className="user-bubble">{message.content}</div>
-        <span className="user-time">{formatClock(message.createdAt)}</span>
+        <time
+          className="user-time"
+          dateTime={message.createdAt}
+          title={formatFullTimestamp(message.createdAt)}
+        >
+          {formatClock(message.createdAt)}
+        </time>
       </div>
     );
   }
@@ -674,18 +1334,27 @@ function MessageRow({
       <div className="message-head">
         <AgentAvatar agent={agent} size="xs" />
         <span className="message-author">{agent.name}</span>
-        <span className="message-time">{formatClock(message.createdAt)}</span>
+        <time
+          className="message-time"
+          dateTime={message.createdAt}
+          title={formatFullTimestamp(message.createdAt)}
+        >
+          {formatClock(message.createdAt)}
+        </time>
       </div>
       <div className="message-body">
-        <MessageContent text={message.content} streaming={streaming} />
+        <MessageContent text={message.content} streaming={streaming} onOpenFile={onOpenFile} />
         {streaming ? <span className="stream-caret" /> : null}
       </div>
-      {!streaming ? (
-        <button type="button" className="message-copy" onClick={() => onCopy(message.content)}>
-          {copied ? <Check size={11} /> : <Copy size={11} />}
-          {copied ? "Copied" : "Copy"}
-        </button>
-      ) : null}
+      <div className="message-foot">
+        {message.usage ? <TokenUsage usage={message.usage} live={streaming} /> : null}
+        {!streaming ? (
+          <button type="button" className="message-copy" onClick={() => onCopy(message.content)}>
+            {copied ? <Check size={11} /> : <Copy size={11} />}
+            {copied ? "Copied" : "Copy"}
+          </button>
+        ) : null}
+      </div>
     </article>
   );
 }
@@ -724,8 +1393,14 @@ function ToolGroup({ calls, pendingId }: { calls: Message[]; pendingId: string |
                   <Icon size={12} className="tool-step-icon" aria-hidden="true" />
                 )}
                 <span className="tool-step-label">{pending ? meta.active : meta.label}</span>
-                <code>{split.name}</code>
-                <span className="tool-step-time">{formatClock(call.createdAt)}</span>
+                <code>{meta.command ? `/${meta.command}` : split.name}</code>
+                <time
+                  className="tool-step-time"
+                  dateTime={call.createdAt}
+                  title={formatFullTimestamp(call.createdAt)}
+                >
+                  {formatClock(call.createdAt)}
+                </time>
                 <ChevronDown size={10} className="tool-step-chevron" aria-hidden="true" />
               </summary>
               {split.body ? <pre>{split.body}</pre> : null}

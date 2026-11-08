@@ -3,7 +3,7 @@ import path from "path";
 import { StringDecoder } from "string_decoder";
 import { asRecord, optionalNumber, requiredString } from "../args";
 import { MAX_CHECKPOINT_BYTES, type AppTool } from "../types";
-import { resolveInside } from "../workspace";
+import { relativeInside, resolveInside, workspaceRoot } from "../workspace";
 
 const MAX_WRITE = 200_000;
 const DEFAULT_READ_LINES = 200;
@@ -81,6 +81,7 @@ export const fileTools: AppTool[] = [
       if (typeof content !== "string") throw new Error("content must be a string");
       if (content.length > MAX_WRITE) throw new Error("content is too large");
       const file = resolveInside(ctx.workspaceDir, requiredString(record, "path"));
+      assertWriteAllowed(ctx, file);
       const existing = existingFile(file);
       ctx.checkpoint?.capture(file, existing.previous, existing.existed);
       fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -104,6 +105,7 @@ export const fileTools: AppTool[] = [
     handler: async (args, ctx) => {
       const record = asRecord(args);
       const file = resolveInside(ctx.workspaceDir, requiredString(record, "path"));
+      assertWriteAllowed(ctx, file);
       return applyPatch(file, rawString(record, "old_string"), rawString(record, "new_string", true), (target, previous) =>
         ctx.checkpoint?.capture(target, previous, true),
       );
@@ -111,7 +113,16 @@ export const fileTools: AppTool[] = [
   },
 ];
 
-function lineWindow(record: Record<string, unknown>, fallback: number, max: number): { offset: number; limit: number } {
+function assertWriteAllowed(ctx: { workspaceDir: string | null; writeRoot?: string }, file: string): void {
+  const root = ctx.writeRoot?.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  if (!root) return;
+  const relative = relativeInside(workspaceRoot(ctx.workspaceDir), file);
+  if (relative !== root && !relative.startsWith(`${root}/`)) {
+    throw new Error(`This agent can only write files under ${root}/`);
+  }
+}
+
+export function lineWindow(record: Record<string, unknown>, fallback: number, max: number): { offset: number; limit: number } {
   const offset = Math.floor(optionalNumber(record, "offset", 1));
   const limit = Math.floor(optionalNumber(record, "limit", fallback));
   if (offset < 1) throw new Error("offset must be at least 1");
@@ -196,7 +207,7 @@ function replaceOnce(content: string, oldString: string, newString: string): str
   return content.slice(0, at) + newString + content.slice(at + oldString.length);
 }
 
-function readTextWindow(file: string, offset: number, limit: number): string {
+export function readTextWindow(file: string, offset: number, limit: number, toolName = "file_read"): string {
   let stat: fs.Stats;
   try {
     stat = fs.statSync(file);
@@ -252,7 +263,7 @@ function readTextWindow(file: string, offset: number, limit: number): string {
   const end = offset + lines.length - 1;
   const body = lines.map((line, index) => `${offset + index}|${line}`).join("\n");
   const header = hasMore
-    ? `Showing lines ${offset}-${end}. More lines follow. Call file_read with offset ${end + 1}.`
+    ? `Showing lines ${offset}-${end}. More lines follow. Call ${toolName} with offset ${end + 1}.`
     : `Showing lines ${offset}-${end} of ${lineNo}.`;
   return `${header}\n${body}`;
 }

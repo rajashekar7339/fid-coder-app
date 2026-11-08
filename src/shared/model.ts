@@ -16,33 +16,21 @@ export function isListedModelId(value: string): boolean {
   return value.toLowerCase() !== AUTO_MODEL_ID && MODEL_ID.test(value);
 }
 
-const COST_LABEL: Record<string, string> = {
-  low: "Lower cost",
-  medium: "Medium cost",
-  high: "Higher cost",
-  very_high: "Highest cost",
-};
-
 export type CatalogModel = {
   id?: unknown;
   name?: unknown;
   policy?: { state?: unknown };
-};
-
-export type CatalogPrice = {
-  id?: unknown;
-  priceCategory?: unknown;
+  provider?: { id?: unknown };
 };
 
 export function catalogModels(input: {
   clientModels?: CatalogModel[];
   sessionModels?: CatalogModel[];
-  priceCategories?: CatalogPrice[];
+  sessionCatalogAvailable?: boolean;
 }): CopilotModel[] {
-  const session = namedModels(input.sessionModels ?? []);
-  const prices = session.length > 0 ? [] : pricedModels(input.priceCategories ?? []);
-  const client = namedModels(input.clientModels ?? []);
-  return labelDuplicateNames(mergeModels(session, prices, client));
+  const source =
+    input.sessionCatalogAvailable === false ? (input.clientModels ?? []) : (input.sessionModels ?? []);
+  return labelDuplicateNames(namedModels(source));
 }
 
 function namedModels(items: CatalogModel[]): CopilotModel[] {
@@ -56,35 +44,11 @@ function namedModels(items: CatalogModel[]): CopilotModel[] {
   return models;
 }
 
-function pricedModels(items: CatalogPrice[]): CopilotModel[] {
-  const models: CopilotModel[] = [];
-  for (const item of items) {
-    const id = listedId(item?.id);
-    if (!id) continue;
-    const price = typeof item.priceCategory === "string" ? COST_LABEL[item.priceCategory] : undefined;
-    models.push({ id, name: price ? `${id} · ${price}` : id });
-  }
-  return models;
-}
-
 function listedId(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const id = value.trim();
   if (!isListedModelId(id) || id.toLowerCase().includes("free-auto")) return null;
   return id;
-}
-
-function mergeModels(...groups: CopilotModel[][]): CopilotModel[] {
-  const merged: CopilotModel[] = [];
-  const seen = new Set<string>();
-  for (const group of groups) {
-    for (const model of group) {
-      if (seen.has(model.id)) continue;
-      seen.add(model.id);
-      merged.push(model);
-    }
-  }
-  return merged;
 }
 
 function labelDuplicateNames(models: CopilotModel[]): CopilotModel[] {

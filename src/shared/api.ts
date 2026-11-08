@@ -12,14 +12,20 @@ import type {
   CopilotModel,
   FileDiff,
   Message,
-  PlanView,
   Routine,
   RoutineInput,
   RoutinePatch,
   SettingsView,
+  SkillCatalog,
+  SkillContent,
+  SkillInstallResult,
+  SkillSource,
+  WorkspaceFilePeek,
+  WorkspaceMapView,
   WorkspaceRuleFile,
 } from "./types";
 import type { CopilotUsageResult } from "./copilot-usage";
+import type { EnhanceResult } from "./enhance-prompt";
 
 export interface FidApi {
   agents: {
@@ -36,6 +42,7 @@ export interface FidApi {
     send: (agentId: string, text: string) => Promise<void>;
     running: (agentId: string) => Promise<boolean>;
     abort: (agentId: string) => Promise<void>;
+    enhance: (agentId: string, text: string) => Promise<EnhanceResult>;
     onEvent: (callback: (event: ChatEvent) => void) => number;
     offEvent: (id: number) => void;
   };
@@ -56,9 +63,6 @@ export interface FidApi {
     revert: (changeId: string) => Promise<void>;
     revertTurn: (turnId: string) => Promise<void>;
   };
-  plans: {
-    get: (agentId: string) => Promise<PlanView | null>;
-  };
   context: {
     preview: (agentId: string) => Promise<ContextView>;
   };
@@ -66,6 +70,9 @@ export interface FidApi {
     rules: (agentId: string) => Promise<WorkspaceRuleFile[]>;
     createRules: (agentId: string) => Promise<WorkspaceRuleFile[]>;
     openRule: (agentId: string, path: string) => Promise<void>;
+    map: (agentId: string) => Promise<WorkspaceMapView | null>;
+    buildMap: (agentId: string) => Promise<WorkspaceMapView>;
+    file: (agentId: string, path: string, line?: number | null) => Promise<WorkspaceFilePeek>;
   };
   routines: {
     list: (agentId: string) => Promise<Routine[]>;
@@ -90,5 +97,10 @@ export interface FidApi {
   };
   models: {
     list: () => Promise<CopilotModel[]>;
+  };
+  skills: {
+    list: (workspaceDir?: string | null) => Promise<SkillCatalog>;
+    read: (workspaceDir: string | null, id: string, source: SkillSource) => Promise<SkillContent | null>;
+    install: () => Promise<SkillInstallResult>;
   };
 }

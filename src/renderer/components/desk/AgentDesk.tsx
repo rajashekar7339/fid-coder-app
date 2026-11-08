@@ -67,18 +67,26 @@ export function AgentDesk({
   const [approvals, setApprovals] = useState<ApprovalRecord[]>([]);
   const [approvalsError, setApprovalsError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const shellEnabled = agent.toolProfile !== "browser";
-  const workspaceNote = !shellEnabled
-    ? "Browser and Jira"
-    : agent.workspaceDir
-      ? "Shell + files enabled"
-      : "Shell + files unavailable";
+  const workspaceNote =
+    agent.toolProfile === "browser"
+      ? agent.readOnly
+        ? "Ask mode. Read-only browsing and Jira."
+        : "Browser and Jira"
+      : agent.readOnly
+        ? agent.workspaceDir
+          ? "Ask mode. Reads files and git; no edits or commands."
+          : "Ask mode. Add a workspace for read-only file tools."
+        : agent.workspaceDir
+          ? "Agent mode. Shell + files enabled."
+          : "Shell + files unavailable";
 
   useEffect(() => {
     let stopped = false;
     let timer = 0;
     setPreview(null);
-    if (agent.toolProfile === "developer") return;
+    if (agent.toolProfile === "developer" || (agent.readOnly && agent.toolProfile !== "browser")) {
+      return;
+    }
     async function poll() {
       if (document.visibilityState === "visible") {
         try {
@@ -95,7 +103,7 @@ export function AgentDesk({
       stopped = true;
       window.clearTimeout(timer);
     };
-  }, [agent.id, agent.toolProfile]);
+  }, [agent.id, agent.toolProfile, agent.readOnly]);
 
   useEffect(() => {
     setDiff(null);
@@ -321,7 +329,7 @@ export function AgentDesk({
               <div className="browser-idle">
                 <Monitor size={19} aria-hidden="true" />
                 <p>
-                  {agent.toolProfile === "developer"
+                  {agent.toolProfile === "developer" || (agent.readOnly && agent.toolProfile !== "browser")
                     ? "This agent has no browser tools."
                     : "Appears here when this agent opens its local browser."}
                 </p>

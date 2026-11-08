@@ -23,6 +23,7 @@ const channels = {
   chatSend: "chat:send",
   chatRunning: "chat:running",
   chatAbort: "chat:abort",
+  chatEnhance: "chat:enhance",
   chatEvent: "chat:event",
   chatApproval: "chat:approval",
   approvalsPending: "approvals:pending",
@@ -35,11 +36,13 @@ const channels = {
   changesDiff: "changes:diff",
   changesRevert: "changes:revert",
   changesRevertTurn: "changes:revert-turn",
-  plansGet: "plans:get",
   contextPreview: "context:preview",
   workspaceRules: "workspace:rules",
   workspaceCreateRules: "workspace:create-rules",
   workspaceOpenRule: "workspace:open-rule",
+  workspaceMapGet: "workspace:map",
+  workspaceMapBuild: "workspace:map-build",
+  workspaceFileRead: "workspace:file-read",
   routinesList: "routines:list",
   routinesCreate: "routines:create",
   routinesUpdate: "routines:update",
@@ -56,6 +59,9 @@ const channels = {
   settingsClearJiraToken: "settings:clear-jira-token",
   dialogPickFolder: "dialog:pick-folder",
   modelsList: "models:list",
+  skillsList: "skills:list",
+  skillsRead: "skills:read",
+  skillsInstall: "skills:install",
 } as const;
 
 const listeners = new Map<number, (event: IpcRendererEvent, payload: ChatEvent) => void>();
@@ -76,6 +82,7 @@ const api: FidApi = {
     send: (agentId: string, text: string) => ipcRenderer.invoke(channels.chatSend, agentId, text),
     running: (agentId: string) => ipcRenderer.invoke(channels.chatRunning, agentId),
     abort: (agentId: string) => ipcRenderer.invoke(channels.chatAbort, agentId),
+    enhance: (agentId: string, text: string) => ipcRenderer.invoke(channels.chatEnhance, agentId, text),
     onEvent: (callback) => {
       const id = nextListener++;
       const listener = (_event: IpcRendererEvent, payload: ChatEvent) => callback(payload);
@@ -111,9 +118,6 @@ const api: FidApi = {
     revert: (changeId: string) => ipcRenderer.invoke(channels.changesRevert, changeId),
     revertTurn: (turnId: string) => ipcRenderer.invoke(channels.changesRevertTurn, turnId),
   },
-  plans: {
-    get: (agentId: string) => ipcRenderer.invoke(channels.plansGet, agentId),
-  },
   context: {
     preview: (agentId: string) => ipcRenderer.invoke(channels.contextPreview, agentId),
   },
@@ -121,6 +125,10 @@ const api: FidApi = {
     rules: (agentId: string) => ipcRenderer.invoke(channels.workspaceRules, agentId),
     createRules: (agentId: string) => ipcRenderer.invoke(channels.workspaceCreateRules, agentId),
     openRule: (agentId: string, path: string) => ipcRenderer.invoke(channels.workspaceOpenRule, agentId, path),
+    map: (agentId: string) => ipcRenderer.invoke(channels.workspaceMapGet, agentId),
+    buildMap: (agentId: string) => ipcRenderer.invoke(channels.workspaceMapBuild, agentId),
+    file: (agentId: string, path: string, line?: number | null) =>
+      ipcRenderer.invoke(channels.workspaceFileRead, agentId, path, line ?? null),
   },
   routines: {
     list: (agentId: string) => ipcRenderer.invoke(channels.routinesList, agentId),
@@ -145,6 +153,12 @@ const api: FidApi = {
   },
   models: {
     list: () => ipcRenderer.invoke(channels.modelsList),
+  },
+  skills: {
+    list: (workspaceDir?: string | null) => ipcRenderer.invoke(channels.skillsList, workspaceDir ?? null),
+    read: (workspaceDir: string | null, id: string, source) =>
+      ipcRenderer.invoke(channels.skillsRead, workspaceDir, id, source),
+    install: () => ipcRenderer.invoke(channels.skillsInstall),
   },
 };
 

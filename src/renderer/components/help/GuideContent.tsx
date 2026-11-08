@@ -1,5 +1,6 @@
 import { guideImage } from "../../lib/guide";
 import { renderInlineMarkdown } from "../../lib/inline-markdown";
+import { MermaidDiagram } from "../chat/MessageContent";
 
 type Block =
   | { type: "heading"; level: number; text: string }
@@ -60,6 +61,9 @@ export function GuideContent({ title, markdown }: { title: string; markdown: str
           );
         }
         if (block.type === "code") {
+          if (/^(mermaid|mmd)$/i.test(block.language.trim())) {
+            return <MermaidDiagram key={key} code={block.text} />;
+          }
           return (
             <div key={key} className="guide-code">
               <div className="guide-code-bar">{block.language || "Code"}</div>

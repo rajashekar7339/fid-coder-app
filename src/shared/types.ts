@@ -8,6 +8,7 @@ export type Agent = {
   workspaceDir: string | null;
   model: string;
   toolProfile: AgentToolProfile;
+  readOnly: boolean;
   memorySummary: string;
   memoryEnabled: boolean;
   lastActivityAt: string | null;
@@ -23,6 +24,22 @@ export type CopilotModel = {
 
 export type MessageRole = "user" | "assistant" | "tool";
 
+export type CreditStatus = "complete" | "partial" | "unavailable";
+
+export type TokenUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  reasoningTokens: number;
+  modelCalls: number;
+  model: string | null;
+  isAuto: boolean;
+  nanoAiu: number;
+  creditCalls: number;
+  creditStatus: CreditStatus;
+};
+
 export type Message = {
   id: string;
   agentId: string;
@@ -30,6 +47,7 @@ export type Message = {
   content: string;
   createdAt: string;
   turnId?: string | null;
+  usage?: TokenUsage | null;
 };
 
 export type Routine = {
@@ -44,20 +62,6 @@ export type Routine = {
   nextRunAt: string | null;
   lastStatus: string | null;
   createdAt: string;
-  updatedAt: string;
-};
-
-export type PlanStepStatus = "pending" | "in_progress" | "done";
-
-export type PlanStep = {
-  text: string;
-  status: PlanStepStatus;
-};
-
-export type PlanView = {
-  agentId: string;
-  turnId: string | null;
-  steps: PlanStep[];
   updatedAt: string;
 };
 
@@ -92,6 +96,37 @@ export type FileDiff = {
   note: string | null;
 };
 
+export type SkillSource = "workspace" | "app" | "copilot" | "builtin";
+
+export type SkillFile = {
+  path: string;
+  bytes: number;
+};
+
+export type SkillInfo = {
+  id: string;
+  name: string;
+  description: string;
+  version: string | null;
+  source: SkillSource;
+  chars: number;
+};
+
+export type SkillContent = SkillInfo & {
+  path: string;
+  body: string;
+  files: SkillFile[];
+};
+
+export type SkillCatalog = {
+  skills: SkillInfo[];
+  warnings: string[];
+};
+
+export type SkillInstallResult =
+  | { status: "installed"; skill: SkillInfo; previous: SkillInfo | null }
+  | { status: "cancelled" };
+
 export type WorkspaceRuleFile = {
   path: string;
   chars: number;
@@ -102,6 +137,7 @@ export type ContextView = {
   agentId: string;
   model: string;
   toolProfile: AgentToolProfile;
+  readOnly: boolean;
   systemMessage: string;
   memorySummary: string;
   workspaceBrief: string | null;
@@ -183,7 +219,7 @@ export type ChatEvent =
   | { agentId: string; type: "text"; text: string }
   | { agentId: string; type: "tool-start"; toolName: string; text?: string }
   | { agentId: string; type: "tool-end"; toolName: string; ok: boolean; text?: string }
-  | { agentId: string; type: "plan"; steps: PlanStep[]; turnId: string | null }
+  | { agentId: string; type: "usage"; usage: TokenUsage }
   | { agentId: string; type: "approval-request"; approval: ApprovalRequest }
   | {
       agentId: string;
@@ -215,7 +251,24 @@ export type AgentInput = {
   workspaceDir: string | null;
   model: string;
   toolProfile: AgentToolProfile;
+  readOnly?: boolean;
   memoryEnabled: boolean;
+};
+
+export type WorkspaceMapView = {
+  text: string;
+  generatedAt: string;
+  stale: boolean;
+};
+
+export type WorkspaceFilePeek = {
+  path: string;
+  text: string;
+  startLine: number;
+  endLine: number;
+  totalLines: number;
+  line: number | null;
+  truncated: boolean;
 };
 
 export type BrowserPreview = {

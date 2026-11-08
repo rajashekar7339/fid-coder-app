@@ -1,9 +1,19 @@
+import fs from "fs";
+import path from "path";
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { channels } from "../../shared/channels";
 import { isApprovalAction } from "../../shared/approval";
 import { normalizeModelId } from "../../shared/model";
+import { skillVersionLabel } from "../../shared/skills";
 import { normalizeToolProfile } from "../../shared/tool-profile";
-import type { AgentInput, ApprovalAction, RoutineInput, RoutinePatch } from "../../shared/types";
+import type {
+  AgentInput,
+  ApprovalAction,
+  RoutineInput,
+  RoutinePatch,
+  SkillInstallResult,
+  SkillSource,
+} from "../../shared/types";
 import type { BrowserManager } from "../browser/browser-manager";
 import type { CheckpointStore } from "../workspace/checkpoints";
 import { assertCron, nextRunIso } from "../routines/cron";
@@ -20,7 +30,11 @@ import type { AppDatabase } from "../db";
 import type { Runner } from "../chat/runner";
 import type { Scheduler } from "../routines/scheduler";
 import { clearSecret, secretKeys, setSecret } from "../secrets";
+import { listSkillInfo, readSkill, skillRoots } from "../skills";
+import { installSkill, planSkillImport } from "../skills/install";
+import { userSkillsDir } from "../paths";
 import { createAgentsFile, ruleFilePath, workspaceRules } from "../workspace/workspace-rules";
+import { readWorkspaceFile } from "../workspace/file-peek";
 
 type AppServices = {
   db: AppDatabase;
@@ -68,6 +82,9 @@ export function registerIpc(services: AppServices): void {
   ipcMain.handle(channels.chatAbort, async (_event, agentId: string) => {
     await runner.abort(agentId);
   });
+  ipcMain.handle(channels.chatEnhance, (_event, agentId: string, text: string) =>
+    runner.enhanceDraft(String(agentId ?? ""), String(text ?? "")),
+  );
   ipcMain.handle(channels.chatApproval, (_event, approvalId: string, action: ApprovalAction) => {
     if (!isApprovalAction(action)) throw new Error("Unknown approval action");
     return runner.resolveApproval(String(approvalId ?? ""), action);
@@ -91,7 +108,6 @@ export function registerIpc(services: AppServices): void {
   ipcMain.handle(channels.changesRevert, (_event, changeId: string) => checkpoints.revert(String(changeId ?? "")));
   ipcMain.handle(channels.changesRevertTurn, (_event, turnId: string) => checkpoints.revertTurn(String(turnId ?? "")));
 
-  ipcMain.handle(channels.plansGet, (_event, agentId: string) => db.getPlan(String(agentId ?? "")));
   ipcMain.handle(channels.contextPreview, (_event, agentId: string) =>
     runner.previewContext(String(agentId ?? "")),
   );
@@ -114,6 +130,24 @@ export function registerIpc(services: AppServices): void {
     const error = await shell.openPath(file);
     if (error) throw new Error(error);
   });
+  ipcMain.handle(channels.workspaceMapGet, (_event, agentId: string) =>
+    runner.getWorkspaceMap(String(agentId ?? "")),
+  );
+  ipcMain.handle(channels.workspaceMapBuild, (_event, agentId: string) =>
+    runner.buildWorkspaceMap(String(agentId ?? "")),
+  );
+  ipcMain.handle(
+    channels.workspaceFileRead,
+    (_event, agentId: string, relative: string, line?: number | null) => {
+      const agent = db.getAgent(String(agentId ?? ""));
+      if (!agent?.workspaceDir) throw new Error("Pick a workspace folder for this agent first");
+      return readWorkspaceFile(
+        agent.workspaceDir,
+        String(relative ?? ""),
+        typeof line === "number" ? line : null,
+      );
+    },
+  );
 
   ipcMain.handle(channels.routinesList, (_event, agentId: string) => db.listRoutines(agentId));
   ipcMain.handle(channels.routinesCreate, (_event, input: RoutineInput) => {
@@ -195,6 +229,28 @@ export function registerIpc(services: AppServices): void {
   });
 
   ipcMain.handle(channels.modelsList, () => listCopilotModels());
+  ipcMain.handle(channels.skillsList, (_event, workspaceDir?: string | null) =>
+    listSkillInfo(skillRoots(cleanWorkspace(workspaceDir))),
+  );
+  ipcMain.handle(
+    channels.skillsRead,
+    (_event, workspaceDir: string | null, id: string, source?: SkillSource) =>
+      readSkill(skillRoots(cleanWorkspace(workspaceDir)), String(id ?? ""), source),
+  );
+  ipcMain.handle(channels.skillsInstall, async (): Promise<SkillInstallResult> => {
+    const source =
+      process.env.FID_CODER_SKILL_IMPORT_DIR?.trim() || (await pickSkillSource(services.getWindow()));
+    if (!source) return { status: "cancelled" };
+    const plan = planSkillImport(source);
+    if ("error" in plan) throw new Error(plan.error);
+    const dest = userSkillsDir();
+    const previous = readSkill([{ root: dest, source: "app" }], plan.id, "app");
+    const exists = fs.existsSync(path.join(dest, plan.id));
+    if (exists && !(await confirmSkillReplace(services.getWindow(), plan.id, previous))) {
+      return { status: "cancelled" };
+    }
+    return { status: "installed", skill: installSkill(plan, dest, exists), previous };
+  });
 
   ipcMain.handle(channels.dialogPickFolder, async () => {
     const parent = services.getWindow();
@@ -204,6 +260,38 @@ export function registerIpc(services: AppServices): void {
     if (result.canceled) return null;
     return result.filePaths[0] ?? null;
   });
+}
+
+async function pickSkillSource(parent: BrowserWindow | null): Promise<string | null> {
+  const result = parent
+    ? await dialog.showOpenDialog(parent, { properties: ["openDirectory"] })
+    : await dialog.showOpenDialog({ properties: ["openDirectory"] });
+  if (result.canceled) return null;
+  return result.filePaths[0] ?? null;
+}
+
+async function confirmSkillReplace(
+  parent: BrowserWindow | null,
+  id: string,
+  previous: { version: string | null } | null,
+): Promise<boolean> {
+  const options = {
+    type: "warning" as const,
+    buttons: ["Replace", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+    title: "Replace skill",
+    message: `A skill named ${id} is already installed${previous ? ` (${skillVersionLabel(previous.version)})` : ""}.`,
+    detail: "Replace it with the selected skill?",
+  };
+  const result = parent
+    ? await dialog.showMessageBox(parent, options)
+    : await dialog.showMessageBox(options);
+  return result.response === 0;
+}
+
+function cleanWorkspace(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function cleanAgent(input: AgentInput): AgentInput {
@@ -218,6 +306,7 @@ function cleanAgent(input: AgentInput): AgentInput {
     workspaceDir: input.workspaceDir?.trim() || null,
     model: normalizeModelId(input?.model),
     toolProfile: normalizeToolProfile(input?.toolProfile),
+    readOnly: input.readOnly === true,
     memoryEnabled: input.memoryEnabled !== false,
   };
 }

@@ -9,6 +9,7 @@ import { ChatView } from "./components/chat/ChatView";
 import { ConfirmDialog } from "./components/ui/ConfirmDialog";
 import { HelpDialog } from "./components/help/HelpDialog";
 import { RoutinesDialog } from "./components/routines/RoutinesDialog";
+import { SkillsDialog } from "./components/skills/SkillsDialog";
 import { SettingsDialog, type SettingsSection, type SignInNote } from "./components/settings/SettingsDialog";
 import { Sidebar, type CopilotPresence } from "./components/sidebar/Sidebar";
 import { errorText, fid, hasFid } from "./lib/fid";
@@ -18,6 +19,7 @@ type Dialog =
   | { kind: "edit"; agentId: string }
   | { kind: "help" }
   | { kind: "routines" }
+  | { kind: "skills" }
   | { kind: "settings"; section: SettingsSection };
 
 const SIGN_IN_POLL_MS = 2000;
@@ -44,6 +46,8 @@ export function App() {
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
   const [decidingApproval, setDecidingApproval] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [skillSeed, setSkillSeed] = useState<string | null>(null);
+  const [skillsRevision, setSkillsRevision] = useState(0);
 
   const modelsRequest = useRef(0);
   const routinesRequest = useRef(0);
@@ -353,6 +357,18 @@ export function App() {
     setDialog({ kind: "help" });
   }
 
+  function openSkills() {
+    setDialog({ kind: "skills" });
+  }
+
+  const bumpSkills = useCallback(() => setSkillsRevision((value) => value + 1), []);
+  const consumeSkillSeed = useCallback(() => setSkillSeed(null), []);
+
+  function useSkill(id: string) {
+    setDialog(null);
+    setSkillSeed(`/skills ${id} `);
+  }
+
   function startSignInFromChat() {
     openSettings("copilot");
     void startSignIn();
@@ -403,6 +419,7 @@ export function App() {
           onEdit={openEdit}
           onDelete={setPendingDelete}
           onSettings={() => openSettings("copilot")}
+          onSkills={openSkills}
           onHelp={openHelp}
         />
 
@@ -446,6 +463,11 @@ export function App() {
               onStartSignIn={startSignInFromChat}
               onRetryModels={() => void refreshModels()}
               onToggleDesk={() => setDeskOpen((open) => !open)}
+              onOpenSkills={openSkills}
+              onOpenHelp={openHelp}
+              skillSeed={skillSeed}
+              onSkillSeedUsed={consumeSkillSeed}
+              skillsRevision={skillsRevision}
               onUpdated={(agent) => {
                 setAgents((current) => current.map((item) => (item.id === agent.id ? agent : item)));
               }}
@@ -517,6 +539,16 @@ export function App() {
       ) : null}
 
       {dialog?.kind === "help" ? <HelpDialog onClose={() => setDialog(null)} /> : null}
+
+      {dialog?.kind === "skills" ? (
+        <SkillsDialog
+          workspaceDir={selected?.workspaceDir ?? null}
+          hasAgent={Boolean(selected)}
+          onClose={() => setDialog(null)}
+          onUse={useSkill}
+          onChanged={bumpSkills}
+        />
+      ) : null}
 
       {dialog?.kind === "settings" ? (
         <SettingsDialog

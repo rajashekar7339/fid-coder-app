@@ -13,31 +13,33 @@ test("Auto is the default model id", () => {
   assert.throws(() => normalizeModelId("not a model"), /available model/);
 });
 
-test("model menu uses the session list, or price categories when that list is empty", () => {
-  const priced = catalogModels({
-    clientModels: [{ id: "auto", name: "Auto" }],
-    sessionModels: [],
-    priceCategories: [
-      { id: "gpt-4o", priceCategory: "medium" },
-      { id: "gpt-5.6-luna-free-auto", priceCategory: "low" },
-      { id: "claude-haiku-4.5", priceCategory: "low" },
-    ],
-  });
-  assert.deepEqual(
-    priced.map((model) => model.id),
-    ["gpt-4o", "claude-haiku-4.5"],
-  );
-  assert.equal(priced[0].name, "gpt-4o · Medium cost");
-
-  const named = catalogModels({
+test("model menu uses only session models, with a client fallback when the session catalog is unavailable", () => {
+  const session = catalogModels({
+    sessionCatalogAvailable: true,
     sessionModels: [
       { id: "gpt-5.4", name: "GPT-5.4" },
       { id: "old", name: "Old", policy: { state: "disabled" } },
     ],
-    priceCategories: [{ id: "gpt-4o", priceCategory: "medium" }],
+    clientModels: [{ id: "claude-haiku-4.5", name: "Claude Haiku" }],
   });
   assert.deepEqual(
-    named.map((model) => model.id),
+    session.map((model) => model.id),
     ["gpt-5.4"],
+  );
+
+  const empty = catalogModels({
+    sessionCatalogAvailable: true,
+    sessionModels: [],
+    clientModels: [{ id: "claude-haiku-4.5", name: "Claude Haiku" }],
+  });
+  assert.deepEqual(empty, []);
+
+  const fallback = catalogModels({
+    sessionCatalogAvailable: false,
+    clientModels: [{ id: "claude-haiku-4.5", name: "Claude Haiku" }],
+  });
+  assert.deepEqual(
+    fallback.map((model) => model.id),
+    ["claude-haiku-4.5"],
   );
 });

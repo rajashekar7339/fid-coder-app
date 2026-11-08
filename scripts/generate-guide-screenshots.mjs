@@ -19,28 +19,28 @@ const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = path.join(appDir, "docs", "guide", "images");
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), "fid-coder-guide-"));
 
-const vite = spawn(process.execPath, [path.join(appDir, "node_modules", "vite", "bin", "vite.js")], {
-  cwd: appDir,
-  stdio: ["ignore", "pipe", "pipe"],
-});
+writeDemoSkill(
+  "release-notes",
+  "Release notes",
+  "Draft release notes from merged pull requests.",
+  "1.2.0",
+  "Read the pull request titles and write three short sections: changes, risks, and testing gaps.",
+);
+fs.mkdirSync(path.join(userData, "skills", "release-notes", "references"), { recursive: true });
+fs.writeFileSync(
+  path.join(userData, "skills", "release-notes", "references", "template.md"),
+  "# Release notes\n\n## Changes\n\n## Risks\n\n## Testing gaps\n",
+);
+writeDemoSkill(
+  "test-plan",
+  "Test plan",
+  "Turn acceptance criteria into a short test plan.",
+  "2.0.1",
+  "List the happy path, edge cases, and the one regression that would block release.",
+);
 
-let viteLog = "";
-vite.stdout.on("data", (chunk) => {
-  viteLog += chunk.toString();
-});
-vite.stderr.on("data", (chunk) => {
-  viteLog += chunk.toString();
-});
-
-const deadline = Date.now() + 30000;
-while (!viteLog.includes("5173") && Date.now() < deadline) {
-  await new Promise((resolve) => setTimeout(resolve, 200));
-}
-if (!viteLog.includes("5173")) {
-  console.log(viteLog);
-  vite.kill();
-  throw new Error("Vite did not start");
-}
+let vite = null;
+await ensureVite();
 
 const app = await electron.launch({
   executablePath: path.join(appDir, "node_modules", "electron", "dist", "electron.exe"),
@@ -89,6 +89,12 @@ try {
   await page.waitForTimeout(500);
   await page.getByRole("button", { name: /JIRA Agent/ }).first().click();
   await page.waitForTimeout(400);
+  // Start the thread at the top so the sticky day label sits above the messages
+  // in the full-thread capture instead of covering them.
+  await page.locator(".chat-scroll").evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await page.waitForTimeout(250);
   await save(page.locator(".thread"), "chat-tool-steps.png");
 
   await app.evaluate(({ BrowserWindow }) => {
@@ -97,6 +103,24 @@ try {
   });
   await page.waitForTimeout(600);
 
+  await page.getByRole("button", { name: /Codebase Guide/ }).first().click();
+  await page.waitForSelector(".chat-empty", { timeout: 15000 });
+  await page.waitForTimeout(400);
+  await save(page.locator(".chat-pane"), "ask-mode.png");
+
+  await page.getByRole("button", { name: "Open project map" }).click();
+  await page.locator(".project-map-modal").waitFor({ state: "visible" });
+  await page.waitForFunction(
+    () => Boolean(document.querySelector(".project-map-modal .mermaid-diagram svg")),
+    { timeout: 20000 },
+  );
+  await page.waitForTimeout(500);
+  await save(page.locator(".project-map-modal"), "project-map.png");
+  await page.getByRole("button", { name: "Close project map" }).click();
+  await page.waitForTimeout(300);
+
+  await page.getByRole("button", { name: /JIRA Agent/ }).first().click();
+  await page.waitForTimeout(300);
   await page.getByRole("button", { name: "Manage routines" }).click();
   await page.locator(".routines-modal").waitFor({ state: "visible" });
   await page.waitForTimeout(500);
@@ -141,9 +165,40 @@ try {
   });
   await page.waitForTimeout(600);
   await save(modal, "workspace-tools.png");
+
+  await page.keyboard.press("Escape");
+  await modal.waitFor({ state: "hidden" });
+  await page.waitForTimeout(300);
+  await page.getByRole("button", { name: /JIRA Agent/ }).first().click();
+  await page.waitForTimeout(300);
+  await page.getByRole("button", { name: "Open skills" }).click();
+  await page.locator(".skills-modal").waitFor({ state: "visible" });
+  await page.waitForFunction(() => document.querySelectorAll(".skill-card").length >= 4, { timeout: 20000 });
+  await page.locator(".skill-card", { hasText: "Release notes" }).locator(".skill-card-copy").click();
+  await page.locator(".skills-modal .skill-reader pre").waitFor({ state: "visible" });
+  await page.evaluate(() => {
+    const path = document.querySelector(".skill-reader-path");
+    if (path) path.textContent = "%USERPROFILE%\\.fid_coder_app\\skills\\release-notes\\SKILL.md";
+  });
+  await page.waitForTimeout(400);
+  await save(page.locator(".skills-modal"), "skills-library.png");
+  await page.locator(".skill-card", { hasText: "Release notes" }).getByRole("button", { name: "Use" }).click();
+  await page.waitForSelector(".skills-modal", { state: "detached" });
+  await page.waitForFunction(
+    () => document.querySelector(".composer-input")?.value === "/skills release-notes ",
+    { timeout: 10000 },
+  );
+  await page.waitForTimeout(400);
+  await save(page.locator(".composer-dock"), "skills-use.png");
+  await page.locator(".composer-input").fill(
+    "so basically the login page is broken whenever the session cookie expires and then it keeps redirecting in a loop and I was wondering if you could take a look at the whole flow and fix it please thanks",
+  );
+  await page.waitForTimeout(300);
+  await save(page.locator(".composer-dock"), "enhance-prompt.png");
+  await page.locator(".composer-input").fill("");
 } finally {
   await app.close().catch(() => undefined);
-  vite.kill();
+  if (vite) vite.kill();
   try {
     fs.rmSync(userData, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   } catch {
@@ -155,6 +210,7 @@ async function captureAgentEditor(page) {
   await page.getByRole("button", { name: "New agent" }).first().click();
   const modal = page.locator(".agent-modal");
   await modal.waitFor({ state: "visible" });
+  await modal.getByRole("button", { name: /General agent/ }).click();
   await modal.getByLabel("Name").fill("Release notes");
   await modal.getByLabel("Role").fill("Release assistant");
   await modal
@@ -171,7 +227,7 @@ async function captureAgentEditor(page) {
   await modal.locator(".agent-form-scroll").evaluate((element) => {
     element.scrollTop = 0;
   });
-  await modal.locator(".modal-header").click();
+  await modal.getByLabel("Name").evaluate((element) => element.blur());
   await page.waitForTimeout(2500);
   await save(modal, "agent-editor.png");
   await page.keyboard.press("Escape");
@@ -271,10 +327,74 @@ async function seedDemoData(page) {
     updatedAt,
   );
 
-  database.prepare("UPDATE agents SET workspace_dir = ? WHERE id = ?").run("D:\\Projects\\my-app", git.id);
+  const demoWorkspace = "D:\\Projects\\my-app";
+  database.prepare("UPDATE agents SET workspace_dir = ? WHERE id = ?").run(demoWorkspace, git.id);
   database
     .prepare("UPDATE agents SET updated_at = ? WHERE id = ?")
     .run(new Date(now - 30 * 24 * 60 * 60_000).toISOString(), git.id);
+
+  const codebaseId = randomUUID();
+  database
+    .prepare(
+      `INSERT INTO agents (
+        id, name, description, system_prompt, workspace_dir, model, tool_profile, read_only,
+        memory_enabled, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      codebaseId,
+      "Codebase Guide",
+      "Ask about this repository",
+      "You are a codebase guide. Answer from the code, cite path:line, and use Mermaid for flows.",
+      demoWorkspace,
+      "auto",
+      "developer",
+      1,
+      1,
+      createdAt,
+      updatedAt,
+    );
+
+  const mapText = [
+    "## Overview",
+    "A small desktop app with a renderer, a main process, and a preload bridge. The renderer owns the conversation UI; the main process owns tools, approvals, and persistence.",
+    "",
+    "## Components",
+    "| Component | Responsibility | Key files | Depends on |",
+    "| --- | --- | --- | --- |",
+    "| Renderer | Conversation, composer, and project map | `src/renderer/App.tsx:18` | Preload bridge |",
+    "| Main | Turns, tools, and SQLite | `src/main/index.ts:24` | Workspace |",
+    "| Preload | Typed IPC bridge | `src/preload/index.ts:16` | Main IPC |",
+    "",
+    "## Key flow",
+    "```mermaid",
+    "sequenceDiagram",
+    "  participant U as User",
+    "  participant R as Renderer",
+    "  participant M as Main",
+    "  U->>R: Send a message",
+    "  R->>M: chat.send",
+    "  M-->>R: stream and tool events",
+    "  R-->>U: Answer",
+    "```",
+    "",
+    "## Suggested reading order",
+    "1. `src/main/index.ts:1` — process startup and services.",
+    "2. `src/preload/index.ts:16` — the IPC surface.",
+    "3. `src/renderer/App.tsx:29` — selected agent and dialogs.",
+    "4. `src/main/chat/runner.ts:261` — the turn lifecycle.",
+    "5. `src/main/db/index.ts:204` — persisted state and migrations.",
+    "",
+    "## Risks and unknowns",
+    "- The preload channel list is copied by hand; a missing name fails only at runtime.",
+    "- The workspace brief is cached by `HEAD`; uncommitted edits can make it stale.",
+  ].join("\n");
+  database
+    .prepare(
+      `INSERT INTO workspace_maps (workspace_dir, cache_key, text, generated_at)
+       VALUES (?, ?, ?, ?)`,
+    )
+    .run(demoWorkspace, "no-git", mapText, updatedAt);
   database.close();
 
   const secrets = await page.evaluate(async () => {
@@ -295,4 +415,55 @@ async function save(locator, name) {
   await locator.screenshot({ path: file, animations: "disabled" });
   const bytes = fs.statSync(file).size;
   console.log(`Wrote ${name} (${Math.round(bytes / 1024)} KB)`);
+}
+
+function writeDemoSkill(id, name, description, version, body) {
+  const dir = path.join(userData, "skills", id);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, "SKILL.md"),
+    `---\nname: ${name}\ndescription: ${description}\nversion: ${version}\n---\n\n${body}\n`,
+  );
+}
+
+async function ensureVite() {
+  if (await viteRunning()) {
+    console.log("vite: reusing the server on 5173");
+    return;
+  }
+  let log = "";
+  vite = spawn(
+    process.execPath,
+    [path.join(appDir, "node_modules", "vite", "bin", "vite.js"), "--port", "5173", "--strictPort"],
+    { cwd: appDir, stdio: ["ignore", "pipe", "pipe"] },
+  );
+  vite.stdout.on("data", (chunk) => {
+    log += chunk.toString();
+  });
+  vite.stderr.on("data", (chunk) => {
+    log += chunk.toString();
+  });
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    if (await viteRunning()) {
+      console.log("vite: started on 5173");
+      return;
+    }
+    await sleep(200);
+  }
+  console.log(log);
+  throw new Error("Vite did not start on 5173");
+}
+
+async function viteRunning() {
+  try {
+    const response = await fetch("http://127.0.0.1:5173", { signal: AbortSignal.timeout(1000) });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

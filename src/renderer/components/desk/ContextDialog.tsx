@@ -4,6 +4,12 @@ import type { Agent, ContextView } from "../../../shared/types";
 import { errorText, fid } from "../../lib/fid";
 import { Modal } from "../ui/Modal";
 
+const TOOL_LABELS: Record<string, string> = {
+  review_code: "/review",
+  use_skill: "use skill",
+  skill_read: "read skill file",
+};
+
 export function ContextDialog({ agent, onClose }: { agent: Agent; onClose: () => void }) {
   const [view, setView] = useState<ContextView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -63,9 +69,14 @@ export function ContextDialog({ agent, onClose }: { agent: Agent; onClose: () =>
               </div>
             </div>
             <p className="context-tools">
-              {view.toolProfile} profile · {view.tools.join(", ")}
+              {view.readOnly ? "Ask mode · read-only" : `Agent mode · ${view.toolProfile} profile`} ·{" "}
+              {view.tools.map((tool) => TOOL_LABELS[tool] ?? tool).join(", ")}
             </p>
-            <p className="context-note">Credentials are never included in the system message.</p>
+            <p className="context-note">
+              Credentials are never included in the system message. A skill's instructions are added only to the
+              message that loads it. Later messages see a short used-skills list and can load one again with
+              <code> use_skill</code>.
+            </p>
 
             <section className="context-section">
               <h3>System message</h3>

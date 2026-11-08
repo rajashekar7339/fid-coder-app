@@ -177,3 +177,185 @@ test("agents expose their latest activity and next routine", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("an older database with a skill_ids column still loads and updates agents", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-skills-"));
+  const file = path.join(dir, "app.sqlite");
+  const id = "22222222-2222-4222-8222-222222222222";
+  const raw = new DatabaseSync(file);
+  raw.exec(`
+    CREATE TABLE agents (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      system_prompt TEXT NOT NULL,
+      workspace_dir TEXT,
+      skill_ids TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  raw
+    .prepare(
+      "INSERT INTO agents (id, name, system_prompt, workspace_dir, skill_ids, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?, ?)",
+    )
+    .run(id, "Old skills", "Write code.", '["write-lean"]', "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z");
+  raw.close();
+
+  const db = new AppDatabase(file);
+  try {
+    const agent = db.getAgent(id);
+    assert.equal(agent.name, "Old skills");
+    assert.equal(agent.skillIds, undefined);
+    const updated = db.updateAgent(id, {
+      name: agent.name,
+      systemPrompt: agent.systemPrompt,
+      workspaceDir: agent.workspaceDir,
+      model: agent.model,
+      toolProfile: agent.toolProfile,
+      memoryEnabled: agent.memoryEnabled,
+    });
+    assert.equal(updated.name, "Old skills");
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("messages keep token usage and add the column on an older database", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-usage-"));
+  const file = path.join(dir, "app.sqlite");
+  const raw = new DatabaseSync(file);
+  raw.exec(`
+    CREATE TABLE messages (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `);
+  raw.close();
+
+  const db = new AppDatabase(file);
+  try {
+    const agent = db.createAgent({
+      name: "Usage",
+      systemPrompt: "Reply briefly.",
+      workspaceDir: null,
+      model: AUTO_MODEL_ID,
+    });
+    const usage = {
+      inputTokens: 1200,
+      outputTokens: 300,
+      cacheReadTokens: 640,
+      cacheWriteTokens: 0,
+      reasoningTokens: 40,
+      modelCalls: 2,
+      model: "gpt-5",
+      isAuto: false,
+      nanoAiu: 12_000_000,
+      creditCalls: 2,
+      creditStatus: "complete",
+    };
+    const saved = db.addMessage(agent.id, "assistant", "Hello", null, usage);
+    assert.deepEqual(saved.usage, usage);
+    const found = db.listMessages(agent.id).find((message) => message.id === saved.id);
+    assert.deepEqual(found?.usage, usage);
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("records used skills per agent and removes them with the agent", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-agent-skills-"));
+  const db = new AppDatabase(path.join(dir, "app.sqlite"));
+  try {
+    const agent = db.createAgent({
+      name: "Skill memory",
+      systemPrompt: "Reply briefly.",
+      workspaceDir: null,
+      model: AUTO_MODEL_ID,
+    });
+    db.markSkillUsed(agent.id, "review-change");
+    db.markSkillUsed(agent.id, "write-lean");
+    assert.deepEqual(db.listUsedSkillIds(agent.id), ["write-lean", "review-change"]);
+    db.markSkillUsed(agent.id, "review-change");
+    assert.deepEqual(db.listUsedSkillIds(agent.id), ["review-change", "write-lean"]);
+    assert.deepEqual(db.listUsedSkillIds(agent.id, 1), ["review-change"]);
+    db.deleteAgent(agent.id);
+    assert.deepEqual(db.listUsedSkillIds(agent.id), []);
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("lists the most recent user and assistant messages for enhance context", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-recent-conversation-"));
+  const db = new AppDatabase(path.join(dir, "app.sqlite"));
+  try {
+    const agent = db.createAgent({
+      name: "Enhance context",
+      systemPrompt: "Reply briefly.",
+      workspaceDir: null,
+      model: AUTO_MODEL_ID,
+    });
+    db.addMessage(agent.id, "user", "one");
+    db.addMessage(agent.id, "assistant", "two");
+    db.addMessage(agent.id, "tool", "tool output");
+    db.addMessage(agent.id, "user", "three");
+    db.addMessage(agent.id, "assistant", "four");
+    db.addMessage(agent.id, "user", "five");
+    assert.deepEqual(
+      db.listRecentConversation(agent.id).map((message) => `${message.role}:${message.content}`),
+      ["assistant:two", "user:three", "assistant:four", "user:five"],
+    );
+    assert.deepEqual(
+      db.listRecentConversation(agent.id, 2).map((message) => `${message.role}:${message.content}`),
+      ["assistant:four", "user:five"],
+    );
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("stores Ask mode and the cached project map", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-ask-map-"));
+  const db = new AppDatabase(path.join(dir, "app.sqlite"));
+  try {
+    const agent = db.createAgent({
+      name: "Guide",
+      systemPrompt: "Answer from the code.",
+      workspaceDir: dir,
+      model: "auto",
+      toolProfile: "developer",
+      readOnly: true,
+      memoryEnabled: false,
+    });
+    assert.equal(agent.readOnly, true);
+    const updated = db.updateAgent(agent.id, {
+      name: agent.name,
+      systemPrompt: agent.systemPrompt,
+      workspaceDir: agent.workspaceDir,
+      model: agent.model,
+      toolProfile: agent.toolProfile,
+      readOnly: false,
+      memoryEnabled: false,
+    });
+    assert.equal(updated.readOnly, false);
+
+    assert.equal(db.getWorkspaceMap(dir), null);
+    const first = db.setWorkspaceMap(dir, "key-1", "# Map\n\nFirst.");
+    assert.equal(first.cacheKey, "key-1");
+    assert.equal(db.getWorkspaceMap(dir).text, "# Map\n\nFirst.");
+    const second = db.setWorkspaceMap(dir, "key-2", "# Map\n\nSecond.");
+    assert.equal(second.cacheKey, "key-2");
+    assert.equal(db.getWorkspaceMap(dir).text, "# Map\n\nSecond.");
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+

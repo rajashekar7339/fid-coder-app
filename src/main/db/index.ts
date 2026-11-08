@@ -16,13 +16,11 @@ import type {
   FileChangeKind,
   Message,
   MessageRole,
-  PlanStep,
-  PlanView,
   Routine,
   RoutineInput,
   RoutinePatch,
+  TokenUsage,
 } from "../../shared/types";
-
 type AgentRow = {
   id: string;
   name: string;
@@ -31,6 +29,7 @@ type AgentRow = {
   workspace_dir: string | null;
   model: string | null;
   tool_profile: string | null;
+  read_only: number | null;
   memory_summary: string | null;
   memory_enabled: number;
   last_activity_at: string | null;
@@ -57,6 +56,7 @@ type MessageRow = {
   content: string;
   created_at: string;
   turn_id: string | null;
+  usage: string | null;
 };
 
 type TurnRow = {
@@ -84,13 +84,6 @@ type FileChangeRow = {
   created_at: string;
 };
 
-type PlanRow = {
-  agent_id: string;
-  turn_id: string | null;
-  steps: string;
-  updated_at: string;
-};
-
 type ApprovalRow = {
   id: string;
   agent_id: string;
@@ -115,6 +108,18 @@ type ApprovalRuleRow = {
   match: string;
   cwd: string;
   created_at: string;
+};
+
+export type WorkspaceMapRecord = {
+  cacheKey: string;
+  text: string;
+  generatedAt: string;
+};
+
+type WorkspaceMapRow = {
+  cache_key: string;
+  text: string;
+  generated_at: string;
 };
 
 export type TurnRecord = {
@@ -215,6 +220,7 @@ export class AppDatabase {
         workspace_dir TEXT,
         model TEXT NOT NULL DEFAULT 'auto',
         tool_profile TEXT NOT NULL DEFAULT 'all',
+        read_only INTEGER NOT NULL DEFAULT 0,
         memory_summary TEXT NOT NULL DEFAULT '',
         memory_turn_count INTEGER NOT NULL DEFAULT 0,
         memory_enabled INTEGER NOT NULL DEFAULT 1,
@@ -227,7 +233,8 @@ export class AppDatabase {
         agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
         role TEXT NOT NULL,
         content TEXT NOT NULL,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        usage TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_messages_agent ON messages(agent_id, created_at);
 
@@ -288,13 +295,6 @@ export class AppDatabase {
       );
       CREATE INDEX IF NOT EXISTS idx_file_changes_agent ON file_changes(agent_id);
 
-      CREATE TABLE IF NOT EXISTS plans (
-        agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
-        turn_id TEXT,
-        steps TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
       CREATE TABLE IF NOT EXISTS approvals (
         id TEXT PRIMARY KEY,
         agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -321,6 +321,21 @@ export class AppDatabase {
         UNIQUE(agent_id, kind, decision, match, cwd)
       );
       CREATE INDEX IF NOT EXISTS idx_approval_rules_agent ON approval_rules(agent_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS agent_skills (
+        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        skill_id TEXT NOT NULL,
+        used_at TEXT NOT NULL,
+        PRIMARY KEY (agent_id, skill_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_agent_skills_agent ON agent_skills(agent_id, used_at);
+
+      CREATE TABLE IF NOT EXISTS workspace_maps (
+        workspace_dir TEXT PRIMARY KEY,
+        cache_key TEXT NOT NULL,
+        text TEXT NOT NULL,
+        generated_at TEXT NOT NULL
+      );
     `);
     this.db
       .prepare("UPDATE approvals SET decision = 'deny', source = 'aborted', decided_at = ? WHERE decision = 'pending'")
@@ -329,7 +344,9 @@ export class AppDatabase {
     this.ensureAgentDescriptionColumn();
     this.ensureAgentMemoryColumns();
     this.ensureMessageTurnColumn();
+    this.ensureMessageUsageColumn();
     const addedToolProfile = this.ensureAgentToolProfileColumn();
+    this.ensureAgentReadOnlyColumn();
     const now = new Date().toISOString();
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(JIRA_NAME, now, OLD_JIRA_NAME);
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(GIT_NAME, now, OLD_GIT_NAME);
@@ -379,10 +396,22 @@ export class AppDatabase {
     return true;
   }
 
+  private ensureAgentReadOnlyColumn(): void {
+    const columns = this.db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+    if (columns.some((column) => column.name === "read_only")) return;
+    this.db.exec("ALTER TABLE agents ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0");
+  }
+
   private ensureMessageTurnColumn(): void {
     const columns = this.db.prepare("PRAGMA table_info(messages)").all() as { name: string }[];
     if (columns.some((column) => column.name === "turn_id")) return;
     this.db.exec("ALTER TABLE messages ADD COLUMN turn_id TEXT");
+  }
+
+  private ensureMessageUsageColumn(): void {
+    const columns = this.db.prepare("PRAGMA table_info(messages)").all() as { name: string }[];
+    if (columns.some((column) => column.name === "usage")) return;
+    this.db.exec("ALTER TABLE messages ADD COLUMN usage TEXT");
   }
 
   private removeSeededTodo(): void {
@@ -436,8 +465,9 @@ export class AppDatabase {
     this.db
       .prepare(
         `INSERT INTO agents (
-          id, name, description, system_prompt, workspace_dir, model, tool_profile, memory_enabled, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, name, description, system_prompt, workspace_dir, model, tool_profile, read_only, memory_enabled,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -447,6 +477,7 @@ export class AppDatabase {
         emptyToNull(input.workspaceDir),
         normalizeModelId(input.model),
         normalizeToolProfile(input.toolProfile),
+        input.readOnly === true ? 1 : 0,
         input.memoryEnabled ? 1 : 0,
         now,
         now,
@@ -460,7 +491,7 @@ export class AppDatabase {
       .prepare(
         `UPDATE agents
          SET name = ?, description = ?, system_prompt = ?, workspace_dir = ?, model = ?, tool_profile = ?,
-             memory_enabled = ?, updated_at = ?
+             read_only = ?, memory_enabled = ?, updated_at = ?
          WHERE id = ?`,
       )
       .run(
@@ -470,12 +501,36 @@ export class AppDatabase {
         emptyToNull(input.workspaceDir),
         normalizeModelId(input.model),
         normalizeToolProfile(input.toolProfile),
+        input.readOnly === true ? 1 : 0,
         input.memoryEnabled ? 1 : 0,
         now,
         id,
       );
     if (result.changes === 0) throw new Error("Agent not found");
     return this.requireAgent(id);
+  }
+
+  getWorkspaceMap(workspaceDir: string): WorkspaceMapRecord | null {
+    const row = this.db
+      .prepare("SELECT cache_key, text, generated_at FROM workspace_maps WHERE workspace_dir = ?")
+      .get(path.resolve(workspaceDir)) as WorkspaceMapRow | undefined;
+    if (!row) return null;
+    return { cacheKey: row.cache_key, text: row.text, generatedAt: row.generated_at };
+  }
+
+  setWorkspaceMap(workspaceDir: string, cacheKey: string, text: string): WorkspaceMapRecord {
+    const generatedAt = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO workspace_maps (workspace_dir, cache_key, text, generated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(workspace_dir) DO UPDATE SET
+           cache_key = excluded.cache_key,
+           text = excluded.text,
+           generated_at = excluded.generated_at`,
+      )
+      .run(path.resolve(workspaceDir), cacheKey, text, generatedAt);
+    return { cacheKey, text, generatedAt };
   }
 
   getMemoryTurnCount(id: string): number {
@@ -503,11 +558,35 @@ export class AppDatabase {
     this.db.prepare("DELETE FROM agents WHERE id = ?").run(id);
   }
 
+  markSkillUsed(agentId: string, skillId: string): void {
+    this.db
+      .prepare("INSERT OR REPLACE INTO agent_skills (agent_id, skill_id, used_at) VALUES (?, ?, ?)")
+      .run(agentId, skillId, new Date().toISOString());
+  }
+
+  listUsedSkillIds(agentId: string, limit = 8): string[] {
+    const rows = this.db
+      .prepare(
+        "SELECT skill_id FROM agent_skills WHERE agent_id = ? ORDER BY used_at DESC, rowid DESC LIMIT ?",
+      )
+      .all(agentId, limit) as Array<{ skill_id: string }>;
+    return rows.map((row) => row.skill_id);
+  }
+
   listMessages(agentId: string): Message[] {
     const rows = this.db
       .prepare("SELECT * FROM messages WHERE agent_id = ? ORDER BY created_at ASC, rowid ASC")
       .all(agentId) as MessageRow[];
     return rows.map(mapMessage);
+  }
+
+  listRecentConversation(agentId: string, limit = 4): Message[] {
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM messages WHERE agent_id = ? AND role IN ('user', 'assistant') ORDER BY created_at DESC, rowid DESC LIMIT ?",
+      )
+      .all(agentId, limit) as MessageRow[];
+    return rows.reverse().map(mapMessage);
   }
 
   firstUserMessages(agentId: string, limit = 1): Message[] {
@@ -584,13 +663,19 @@ export class AppDatabase {
     return rows.map(mapMessage);
   }
 
-  addMessage(agentId: string, role: MessageRole, content: string, turnId: string | null = null): Message {
+  addMessage(
+    agentId: string,
+    role: MessageRole,
+    content: string,
+    turnId: string | null = null,
+    usage: TokenUsage | null = null,
+  ): Message {
     const id = crypto.randomUUID();
     const createdAt = new Date().toISOString();
     this.db
-      .prepare("INSERT INTO messages (id, agent_id, role, content, created_at, turn_id) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(id, agentId, role, content, createdAt, turnId);
-    return { id, agentId, role, content, createdAt, turnId };
+      .prepare("INSERT INTO messages (id, agent_id, role, content, created_at, turn_id, usage) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(id, agentId, role, content, createdAt, turnId, usage ? JSON.stringify(usage) : null);
+    return { id, agentId, role, content, createdAt, turnId, usage };
   }
 
   createTurn(agentId: string, source: string): string {
@@ -715,33 +800,6 @@ export class AppDatabase {
       throw error;
     }
     return rows.map((row) => ({ id: row.id, agentId: row.agent_id }));
-  }
-
-  getPlan(agentId: string): PlanView | null {
-    const row = this.db.prepare("SELECT * FROM plans WHERE agent_id = ?").get(agentId) as PlanRow | undefined;
-    if (!row) return null;
-    return {
-      agentId,
-      turnId: row.turn_id,
-      steps: readPlanSteps(row.steps),
-      updatedAt: row.updated_at,
-    };
-  }
-
-  setPlan(agentId: string, turnId: string | null, steps: PlanStep[]): PlanView {
-    const updatedAt = new Date().toISOString();
-    this.db
-      .prepare(
-        `INSERT INTO plans (agent_id, turn_id, steps, updated_at)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(agent_id) DO UPDATE SET turn_id = excluded.turn_id, steps = excluded.steps, updated_at = excluded.updated_at`,
-      )
-      .run(agentId, turnId, JSON.stringify(steps), updatedAt);
-    return { agentId, turnId, steps, updatedAt };
-  }
-
-  clearPlan(agentId: string): void {
-    this.db.prepare("DELETE FROM plans WHERE agent_id = ?").run(agentId);
   }
 
   createApproval(input: {
@@ -955,6 +1013,7 @@ function mapAgent(row: AgentRow): Agent {
     workspaceDir: row.workspace_dir,
     model: readModel(row.model),
     toolProfile: normalizeToolProfile(row.tool_profile),
+    readOnly: row.read_only === 1,
     memorySummary: row.memory_summary ?? "",
     memoryEnabled: row.memory_enabled !== 0,
     lastActivityAt: row.last_activity_at,
@@ -972,7 +1031,36 @@ function mapMessage(row: MessageRow): Message {
     content: row.content,
     createdAt: row.created_at,
     turnId: row.turn_id ?? null,
+    usage: parseUsage(row.usage),
   };
+}
+
+function parseUsage(raw: string | null): TokenUsage | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<TokenUsage>;
+    if (typeof value.inputTokens !== "number" || typeof value.outputTokens !== "number") return null;
+    return {
+      inputTokens: value.inputTokens,
+      outputTokens: value.outputTokens,
+      cacheReadTokens: value.cacheReadTokens ?? 0,
+      cacheWriteTokens: value.cacheWriteTokens ?? 0,
+      reasoningTokens: value.reasoningTokens ?? 0,
+      modelCalls: value.modelCalls ?? 1,
+      model: value.model ?? null,
+      isAuto: value.isAuto === true,
+      nanoAiu: typeof value.nanoAiu === "number" ? Math.max(0, value.nanoAiu) : 0,
+      creditCalls: typeof value.creditCalls === "number" ? Math.max(0, value.creditCalls) : 0,
+      creditStatus:
+        value.creditStatus === "complete" ||
+        value.creditStatus === "partial" ||
+        value.creditStatus === "unavailable"
+          ? value.creditStatus
+          : "unavailable",
+    };
+  } catch {
+    return null;
+  }
 }
 
 function mapRoutine(row: RoutineRow): Routine {
@@ -1070,24 +1158,6 @@ function readApprovalDecision(value: string): "pending" | ApprovalDecision {
 
 function readApprovalSource(value: string | null): ApprovalSource | null {
   return value === "user" || value === "rule" || value === "timeout" || value === "aborted" ? value : null;
-}
-
-function readPlanSteps(raw: string): PlanStep[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return [];
-  }
-  if (!Array.isArray(parsed)) return [];
-  return parsed.filter((item): item is PlanStep => {
-    if (!item || typeof item !== "object") return false;
-    const step = item as { text?: unknown; status?: unknown };
-    return (
-      typeof step.text === "string" &&
-      (step.status === "pending" || step.status === "in_progress" || step.status === "done")
-    );
-  });
 }
 
 function readModel(value: string | null | undefined): string {

@@ -7,13 +7,14 @@ import {
   Search,
   Settings,
   Trash2,
+  Wrench,
   X,
 } from "lucide-react";
 import type { CopilotUsageView } from "../../../shared/copilot-usage";
 import { formatUsageCount, formatUsageReset } from "../../../shared/copilot-usage";
 import type { Agent } from "../../../shared/types";
 import { agentSubtitle, isRecentlyActive } from "../../lib/agent-display";
-import { formatRelativeTime } from "../../lib/format";
+import { formatActivityDay, formatFullTimestamp } from "../../lib/format";
 import { AgentAvatar } from "../agents/AgentAvatar";
 import { BrandMark } from "../ui/BrandMark";
 import { UsageBar, usageLevel } from "../ui/UsageBar";
@@ -32,6 +33,7 @@ type Props = {
   onEdit: (agent: Agent) => void;
   onDelete: (agent: Agent) => void;
   onSettings: () => void;
+  onSkills: () => void;
   onHelp: () => void;
 };
 
@@ -84,6 +86,7 @@ export function Sidebar({
   onEdit,
   onDelete,
   onSettings,
+  onSkills,
   onHelp,
 }: Props) {
   const [query, setQuery] = useState("");
@@ -225,8 +228,13 @@ export function Sidebar({
                     <span className="agent-name">{agent.name}</span>
                     <span className="agent-meta">{agentSubtitle(agent)}</span>
                   </span>
-                  <span className="agent-when">
-                    {agent.lastActivityAt ? formatRelativeTime(agent.lastActivityAt) : "New"}
+                  <span
+                    className="agent-when"
+                    title={
+                      agent.lastActivityAt ? formatFullTimestamp(agent.lastActivityAt) : undefined
+                    }
+                  >
+                    {agent.lastActivityAt ? formatActivityDay(agent.lastActivityAt) : "New"}
                   </span>
                 </button>
                 <button
@@ -266,6 +274,10 @@ export function Sidebar({
           </div>
           <p>Agents use this PC for browser, files, and shell.</p>
         </div>
+        <button type="button" className="help-row" aria-label="Open skills" onClick={onSkills}>
+          <Wrench size={15} aria-hidden="true" />
+          <span>Skills</span>
+        </button>
         <button type="button" className="help-row" aria-label="Open help and guide" onClick={onHelp}>
           <CircleHelp size={15} aria-hidden="true" />
           <span>Help &amp; guide</span>

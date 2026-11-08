@@ -16,18 +16,29 @@ The workspace is required for file, search, git, and shell tools. Without one, t
 - **Browser and Jira** cannot run commands or touch files. Use it for a saved Jira site, web research, or other browser work.
 - **Shell, search, git, and files** cannot control a browser or read Jira. Use it for code work.
 
+## Ask or Agent mode
+
+Use the **Ask mode / Agent mode** switch in the composer, before the model picker. **Ask mode** registers only read-only tools: discovery, reads, search, git and pull-request reads, and the read-only explorer. It cannot edit, run shell commands, use the browser, or change git. **Agent mode** gives the agent the full tool profile above.
+
+Use Ask for architecture questions, flow diagrams, troubleshooting from a log, and onboarding. Switch to Code when the agent needs to run a test or build command or make an edit. Ask mode is enforced by the tool list the model receives, not only by its instructions.
+
 ## What the agent can use
 
-Inside the workspace, a developer agent has:
+Inside the workspace, a developer agent in Agent mode has:
 
 - Folder and file discovery with `list_dir`, `glob_files`, and `search_text`.
 - Reading with `file_read` and `read_many`.
 - Editing with `apply_patch` for an existing file, and `file_write` to create a new one.
 - A read-only **explore_code** helper that returns a short brief with paths and line numbers. It is limited to 8 tool calls and 90 seconds.
+- A read-only **/review** command. It reads the diff and the code it touches and returns findings; it cannot edit files, run commands, or use the browser.
 - Git with `git_status`, `git_diff`, and `git_log`, plus `gh_pr_view` and `gh_pr_diff` for pull requests.
 - Commands with `shell_run` for builds, tests, and other work.
 
 The app also builds a workspace brief for the system message: the top of the folder tree, package scripts, Maven or Gradle clues, the README heading, the current branch, git status, and recent commits. It refreshes when the git HEAD changes.
+
+## Workspace skills
+
+Skills under `.skills`, `.github/skills`, `.agents/skills`, or `.claude/skills` in this folder appear in the **Skills** library with the **Workspace** source. They override a skill with the same folder name from your app skills folder, Copilot, or the built-in library. Add `.skills/<name>/SKILL.md` to share a rubric with the repository and its version with every agent that uses this workspace. Use `/skills <skill> <task>` in the chat to apply one to a message.
 
 ## Safety
 
