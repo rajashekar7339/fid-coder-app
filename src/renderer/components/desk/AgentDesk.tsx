@@ -14,7 +14,6 @@ import {
   X,
 } from "lucide-react";
 import { approvalRecordLabel } from "../../../shared/approval";
-import type { SelectedTests } from "../../../shared/release-impact/types";
 import type {
   Agent,
   ApprovalRecord,
@@ -32,7 +31,6 @@ import { ApprovalHistoryDialog } from "../approvals/ApprovalHistoryDialog";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { ContextDialog } from "./ContextDialog";
 import { DiffView } from "./DiffView";
-import { ImpactReport } from "./ImpactReport";
 import { Modal } from "../ui/Modal";
 import { Switch } from "../ui/Switch";
 
@@ -69,8 +67,6 @@ export function AgentDesk({
   const [approvals, setApprovals] = useState<ApprovalRecord[]>([]);
   const [approvalsError, setApprovalsError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [impact, setImpact] = useState<SelectedTests | null>(null);
-  const [impactError, setImpactError] = useState<string | null>(null);
   const workspaceNote =
     agent.toolProfile === "browser"
       ? agent.readOnly
@@ -80,23 +76,15 @@ export function AgentDesk({
         ? agent.workspaceDir
           ? "Ask mode. Reads files and git; no edits or commands."
           : "Ask mode. Add a workspace for read-only file tools."
-        : agent.toolProfile === "analyst"
-          ? agent.workspaceDir
-            ? "Release analysis. Writes under artifacts/."
-            : "Pick a workspace to analyze a release."
-          : agent.workspaceDir
-            ? "Agent mode. Shell + files enabled."
-            : "Shell + files unavailable";
+        : agent.workspaceDir
+          ? "Agent mode. Shell + files enabled."
+          : "Shell + files unavailable";
 
   useEffect(() => {
     let stopped = false;
     let timer = 0;
     setPreview(null);
-    if (
-      agent.toolProfile === "developer" ||
-      agent.toolProfile === "analyst" ||
-      (agent.readOnly && agent.toolProfile !== "browser")
-    ) {
+    if (agent.toolProfile === "developer" || (agent.readOnly && agent.toolProfile !== "browser")) {
       return;
     }
     async function poll() {
@@ -116,33 +104,6 @@ export function AgentDesk({
       window.clearTimeout(timer);
     };
   }, [agent.id, agent.toolProfile, agent.readOnly]);
-
-  useEffect(() => {
-    let stopped = false;
-    let timer = 0;
-    setImpact(null);
-    setImpactError(null);
-    if (agent.toolProfile !== "analyst" || !agent.workspaceDir) return;
-    async function poll() {
-      if (document.visibilityState === "visible") {
-        try {
-          const next = await fid().impact.latest(agent.id);
-          if (!stopped) {
-            setImpact(next);
-            setImpactError(null);
-          }
-        } catch (caught) {
-          if (!stopped) setImpactError(errorText(caught));
-        }
-      }
-      if (!stopped) timer = window.setTimeout(() => void poll(), 5000);
-    }
-    void poll();
-    return () => {
-      stopped = true;
-      window.clearTimeout(timer);
-    };
-  }, [agent.id, agent.toolProfile, agent.workspaceDir]);
 
   useEffect(() => {
     setDiff(null);
@@ -339,8 +300,6 @@ export function AgentDesk({
         </header>
 
         <div className="desk-scroll">
-          {agent.toolProfile === "analyst" ? <ImpactReport selection={impact} error={impactError} /> : null}
-          {agent.toolProfile === "analyst" ? null : (
           <section className="desk-section is-first">
             <div className="desk-section-head">
               <span>Browser</span>
@@ -377,7 +336,6 @@ export function AgentDesk({
               </div>
             )}
           </section>
-          )}
 
           <section className="desk-section">
             <div className="desk-section-head">

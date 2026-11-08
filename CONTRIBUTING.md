@@ -104,7 +104,6 @@ Run the smallest set that proves the change, then the relevant end-to-end path.
 | Live UI | `npm run test:map` | One real project-map build, read-only workspace check, and cached reopen. Needs Copilot. |
 | Live UI | `npm run test:enhance` | One real rewrite, Undo, skips, and no-send checks. Needs Copilot. |
 | Live UI | `npm run test:features` | Changes/revert, workspace rules, context inspector. Needs Copilot. |
-| Live UI | `npm run test:release-impact` | Analyst desk and release-impact CLI. |
 
 Rules:
 

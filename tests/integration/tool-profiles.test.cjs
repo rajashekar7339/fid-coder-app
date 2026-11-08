@@ -13,17 +13,6 @@ test("developer tools include patch, git, and explore, and the browser profile d
   }
 });
 
-test("analyst tools analyze a release and do not include shell or browser", () => {
-  const analyst = toolsForAgent("analyst").map((tool) => tool.name);
-  for (const name of ["impact_analyze", "file_read", "file_write", "git_diff", "search_text"]) {
-    assert.equal(analyst.includes(name), true, name);
-  }
-  assert.equal(analyst.includes("shell_run"), false);
-  assert.equal(analyst.includes("browser_navigate"), false);
-  assert.equal(analyst.includes("explore_code"), false);
-  assert.equal(analyst.includes("review_code"), false);
-});
-
 test("the review subagent cannot edit, run shell, or browse", () => {
   const names = reviewTools().map((tool) => tool.name);
   for (const name of ["git_status", "git_diff", "git_log", "gh_pr_view", "gh_pr_diff", "file_read", "read_many", "search_text"]) {

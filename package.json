@@ -18,9 +18,7 @@
     "test:features": "npm run build:node && node tests/e2e-live/changes-context.e2e.mjs",
     "test:skills": "npm run build:node && node tests/e2e-live/skills.e2e.mjs",
     "test:model-switch": "npm run build:node && electron tests/e2e-live/model-switch.e2e.cjs",
-    "test:release-impact": "npm run build:node && node tests/e2e-live/release-impact.e2e.mjs",
     "start": "electron .",
-    "release-impact": "node dist/cli/release-impact.js",
     "test:skills-reuse": "npm run build:node && node tests/e2e-live/skills-reuse.e2e.mjs",
     "test:map": "npm run build:node && node tests/e2e-live/project-map.e2e.mjs",
     "test:enhance": "npm run build:node && node tests/e2e-live/enhance-prompt.e2e.mjs"

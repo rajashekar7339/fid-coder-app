@@ -30,7 +30,6 @@ import type { AppDatabase } from "../db";
 import type { Runner } from "../chat/runner";
 import type { Scheduler } from "../routines/scheduler";
 import { clearSecret, secretKeys, setSecret } from "../secrets";
-import { readImpactSelection } from "../release-impact/index";
 import { listSkillInfo, readSkill, skillRoots } from "../skills";
 import { installSkill, planSkillImport } from "../skills/install";
 import { userSkillsDir } from "../paths";
@@ -108,12 +107,6 @@ export function registerIpc(services: AppServices): void {
   ipcMain.handle(channels.changesDiff, (_event, changeId: string) => checkpoints.diff(String(changeId ?? "")));
   ipcMain.handle(channels.changesRevert, (_event, changeId: string) => checkpoints.revert(String(changeId ?? "")));
   ipcMain.handle(channels.changesRevertTurn, (_event, turnId: string) => checkpoints.revertTurn(String(turnId ?? "")));
-
-  ipcMain.handle(channels.impactLatest, (_event, agentId: string) => {
-    const agent = db.getAgent(String(agentId ?? ""));
-    if (!agent?.workspaceDir) return null;
-    return readImpactSelection(agent.workspaceDir);
-  });
 
   ipcMain.handle(channels.contextPreview, (_event, agentId: string) =>
     runner.previewContext(String(agentId ?? "")),

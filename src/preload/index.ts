@@ -37,7 +37,6 @@ const channels = {
   changesRevert: "changes:revert",
   changesRevertTurn: "changes:revert-turn",
   contextPreview: "context:preview",
-  impactLatest: "impact:latest",
   workspaceRules: "workspace:rules",
   workspaceCreateRules: "workspace:create-rules",
   workspaceOpenRule: "workspace:open-rule",
@@ -121,9 +120,6 @@ const api: FidApi = {
   },
   context: {
     preview: (agentId: string) => ipcRenderer.invoke(channels.contextPreview, agentId),
-  },
-  impact: {
-    latest: (agentId: string) => ipcRenderer.invoke(channels.impactLatest, agentId),
   },
   workspace: {
     rules: (agentId: string) => ipcRenderer.invoke(channels.workspaceRules, agentId),

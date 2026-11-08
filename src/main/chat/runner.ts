@@ -60,9 +60,6 @@ import {
 import { skillTurnPrompt, usedSkillsPrompt } from "../../shared/skills";
 import { workspaceBrief } from "../workspace/workspace-brief";
 import { workspaceRules, type WorkspaceRules } from "../workspace/workspace-rules";
-import { IMPACT_OUTPUT_ROOT } from "../../shared/release-impact/paths";
-
-const ANALYST_HINT = `Call impact_analyze before choosing tests. Lead with the must-run and should-run tests, grouped by folder, and the uncovered areas. If fullRegression is true, name that trigger as well. Do not answer with only "run the full suite". A large diff, a large suite, or low mapping coverage is not a reason to recommend the full suite. Use file_read on the files it names. Cite path:line. Write the final report with file_write under ${IMPACT_OUTPUT_ROOT}/ only. Do not edit source or automation repos.`;
 
 const WORKSPACE_HINT =
   "A workspace brief is included below. Use it before searching. Explore with list_dir, glob_files, search_text, file_read, and read_many. For an unfamiliar area, call explore_code with a specific question. It returns a short brief and does not edit. Edit an existing file with apply_patch. Use file_write only to create a file. Use git_status, git_diff, and git_log for git. Use gh_pr_view and gh_pr_diff for a pull request. Use shell_run for builds, tests, and other commands. Do not use shell_run to list folders, search files, or read files.";
@@ -564,7 +561,6 @@ export class Runner {
       workspaceDir,
       skillDir: skillContext.dir,
       skills: skillContext.skills,
-      writeRoot: agent.toolProfile === "analyst" && !readOnly ? IMPACT_OUTPUT_ROOT : undefined,
       model: agent.model,
       turnId: turnId ?? undefined,
       browser: this.browser,
@@ -753,7 +749,7 @@ export class Runner {
     }
     if (workspaceTools && agent.workspaceDir) {
       lines.push(`Workspace folder: ${agent.workspaceDir}`);
-      if (!readOnly) lines.push(agent.toolProfile === "analyst" ? ANALYST_HINT : WORKSPACE_HINT);
+      if (!readOnly) lines.push(WORKSPACE_HINT);
       brief = await workspaceBrief(agent.workspaceDir);
       if (brief) lines.push(brief);
     }

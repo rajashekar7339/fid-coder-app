@@ -21,8 +21,6 @@ import type {
   RoutinePatch,
   TokenUsage,
 } from "../../shared/types";
-import { ANALYST_DESCRIPTION, ANALYST_NAME, ANALYST_PROMPT, PREVIOUS_ANALYST_PROMPTS } from "../release-impact/preset";
-
 type AgentRow = {
   id: string;
   name: string;
@@ -206,8 +204,6 @@ export class AppDatabase {
     this.db.exec("PRAGMA foreign_keys = ON");
     this.migrate();
     this.seed();
-    this.ensureReleaseAnalyst();
-    this.refreshAnalystPrompt();
   }
 
   close(): void {
@@ -429,34 +425,6 @@ export class AppDatabase {
       if (!/^[0-9a-f-]{36}$/i.test(row.id)) continue;
       fs.rmSync(path.join(path.dirname(this.file), "browser-profiles", row.id), { recursive: true, force: true });
     }
-  }
-
-  private ensureReleaseAnalyst(): void {
-    if (this.getSetting("seeded_release_analyst") === "1") return;
-    const existing = this.db.prepare("SELECT id FROM agents WHERE name = ?").get(ANALYST_NAME);
-    if (!existing) {
-      const now = new Date().toISOString();
-      this.db
-        .prepare(
-          `INSERT INTO agents (id, name, description, system_prompt, workspace_dir, model, tool_profile, created_at, updated_at)
-           VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
-        )
-        .run(crypto.randomUUID(), ANALYST_NAME, ANALYST_DESCRIPTION, ANALYST_PROMPT, AUTO_MODEL_ID, "analyst", now, now);
-    }
-    this.setSetting("seeded_release_analyst", "1");
-  }
-
-  private refreshAnalystPrompt(): void {
-    if (this.getSetting("analyst_prompt_rev") === "2") return;
-    const row = this.db.prepare("SELECT id, system_prompt FROM agents WHERE name = ?").get(ANALYST_NAME) as
-      | { id: string; system_prompt: string }
-      | undefined;
-    if (row && PREVIOUS_ANALYST_PROMPTS.includes(row.system_prompt)) {
-      this.db
-        .prepare("UPDATE agents SET system_prompt = ?, updated_at = ? WHERE id = ?")
-        .run(ANALYST_PROMPT, new Date().toISOString(), row.id);
-    }
-    this.setSetting("analyst_prompt_rev", "2");
   }
 
   private seed(): void {

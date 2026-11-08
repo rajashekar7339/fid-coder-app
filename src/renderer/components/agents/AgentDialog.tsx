@@ -252,10 +252,9 @@ export function AgentDialog({
               <option value="all">All tools — browser, Jira, shell, search, git, and files</option>
               <option value="browser">Browser and Jira</option>
               <option value="developer">Shell, search, git, and files</option>
-              <option value="analyst">Release analyst — search, git, and impact analysis</option>
             </select>
             <span className="field-note">
-              Browser and Jira agents cannot run commands or touch files. Shell, search, git, and files agents cannot control a browser or read Jira. The release analyst writes reports under artifacts/ and does not edit source repos.
+              Browser and Jira agents cannot run commands or touch files. Shell, search, git, and files agents cannot control a browser or read Jira.
             </span>
           </div>
 
@@ -290,9 +289,7 @@ export function AgentDialog({
             <span className="field-note">
               {toolProfile === "browser"
                 ? "Browser and Jira agents do not use a workspace folder."
-                : toolProfile === "analyst"
-                  ? "Point this at the folder that contains .release-impact/config.json. Reports are written under artifacts/."
-                  : "Without a folder, this agent cannot use shell, search, git, or file tools."}
+                : "Without a folder, this agent cannot use shell, search, git, or file tools."}
             </span>
           </div>
 

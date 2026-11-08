@@ -118,7 +118,6 @@ const TOOL_META: Record<string, ToolMeta> = {
   history_search: { label: "Searched history", active: "Searching history", Icon: ScanSearch },
   history_turn: { label: "Read an earlier turn", active: "Reading an earlier turn", Icon: FileText },
   history_context: { label: "Loaded history", active: "Loading history", Icon: FileText },
-  impact_analyze: { label: "Analyzed the release", active: "Analyzing the release", Icon: ScanSearch },
 };
 
 const COMMAND_ICONS: Record<string, LucideIcon> = {

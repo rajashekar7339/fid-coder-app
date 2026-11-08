@@ -26,7 +26,6 @@ import type {
 } from "./types";
 import type { CopilotUsageResult } from "./copilot-usage";
 import type { EnhanceResult } from "./enhance-prompt";
-import type { SelectedTests } from "./release-impact/types";
 
 export interface FidApi {
   agents: {
@@ -66,9 +65,6 @@ export interface FidApi {
   };
   context: {
     preview: (agentId: string) => Promise<ContextView>;
-  };
-  impact: {
-    latest: (agentId: string) => Promise<SelectedTests | null>;
   };
   workspace: {
     rules: (agentId: string) => Promise<WorkspaceRuleFile[]>;

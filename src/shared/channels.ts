@@ -22,7 +22,6 @@ export const channels = {
   changesRevert: "changes:revert",
   changesRevertTurn: "changes:revert-turn",
   contextPreview: "context:preview",
-  impactLatest: "impact:latest",
   workspaceRules: "workspace:rules",
   workspaceCreateRules: "workspace:create-rules",
   workspaceOpenRule: "workspace:open-rule",

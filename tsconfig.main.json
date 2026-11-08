@@ -16,5 +16,5 @@
     "noUnusedParameters": true,
     "types": ["node"]
   },
-  "include": ["src/main/**/*", "src/tools/**/*", "src/shared/**/*", "src/cli/**/*"]
+  "include": ["src/main/**/*", "src/tools/**/*", "src/shared/**/*"]
 }

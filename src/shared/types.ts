@@ -1,4 +1,4 @@
-export type AgentToolProfile = "all" | "browser" | "developer" | "analyst";
+export type AgentToolProfile = "all" | "browser" | "developer";
 
 export type Agent = {
   id: string;

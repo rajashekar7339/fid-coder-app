@@ -5776,47 +5776,6 @@ kbd {
   line-height: 1.45;
 }
 
-.impact-banner {
-  margin: 8px 0 0;
-  padding: 7px 8px;
-  border-radius: 6px;
-  background: rgba(155, 216, 133, 0.08);
-  color: var(--success);
-  font-size: 12px;
-}
-
-.impact-banner.is-full {
-  background: rgba(242, 146, 134, 0.1);
-  color: var(--danger);
-}
-
-.impact-list {
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.impact-list li + li {
-  margin-top: 6px;
-}
-
-.impact-id {
-  display: block;
-  color: var(--lime);
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-
-.impact-name,
-.impact-file {
-  display: block;
-}
-
-.impact-file {
-  color: var(--faint-2);
-  font-size: 11px;
-}
-
 /* ---------- Approvals ---------- */
 
 .approval-desk-list {

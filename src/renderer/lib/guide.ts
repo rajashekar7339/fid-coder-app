@@ -76,14 +76,6 @@ const SOURCES: GuideSource[] = [
     file: "use-skills.md",
   },
   {
-    id: "analyze-a-release",
-    title: "Analyze a release",
-    group: "Using Fid Coder",
-    summary: "Run the release-impact engine, check the config, and use the analyst agent.",
-    readMinutes: 5,
-    file: "analyze-a-release.md",
-  },
-  {
     id: "connect-accounts",
     title: "Connect Copilot, GitHub, and Jira",
     group: "Using Fid Coder",

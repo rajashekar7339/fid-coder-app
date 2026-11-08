@@ -37,8 +37,6 @@ npm run dev
 | `npm run test:skills-reuse` | Live harness for using a skill once and reloading it on a later turn. Needs Copilot and two turns. |
 | `npm run test:map` | Live harness for building the read-only project map and reopening its cache. Needs Copilot and one turn. |
 | `npm run test:enhance` | Live harness for Enhance Prompt: one real rewrite, Undo, skips, and no-send checks. Needs Copilot. |
-| `npm run test:release-impact` | Live Electron harness for the analyst desk and release-impact CLI. Pauses 3 seconds before each UI click; set `FID_RUN_AGENT=1` to send one real Copilot turn. |
-| `npm run release-impact -- <command>` | Run the release-impact CLI (`init`, `doctor`, `analyze`, `explain`) |
 | `npm run dist:win` | Build the portable Windows app into `release/` |
 
 ## Project layout
@@ -57,27 +55,6 @@ src/
 ## Contributing
 
 Read `CONTRIBUTING.md` before starting a feature. It covers the review-first loop, layer checklist, UI rules, help docs, and test levels.
-
-## Release impact analysis
-
-The release-impact engine compares prod and candidate git refs and selects the tests that should run. A team supplies one `.release-impact/config.json`; the engine contains no repo or team names. The app also seeds a **Release Impact Analyst** agent with the analyst tool profile.
-
-```powershell
-# Build the CLI in the app folder.
-cd D:\fid-coder-desktop-app
-npm run build:node
-
-# Run the CLI from the team workspace, not from the app folder.
-cd C:\work\release-workspace
-node D:\fid-coder-desktop-app\dist\cli\release-impact.js init --template playwright
-# edit .release-impact/config.json
-node D:\fid-coder-desktop-app\dist\cli\release-impact.js doctor
-node D:\fid-coder-desktop-app\dist\cli\release-impact.js analyze --dry-run
-node D:\fid-coder-desktop-app\dist\cli\release-impact.js analyze
-node D:\fid-coder-desktop-app\dist\cli\release-impact.js explain TC-1042
-```
-
-The app limits an analyst's file writes and engine outputs to `artifacts/`. Keep `outputs.report` and `outputs.selection` under that folder. The CLI can use `--output <dir>` to move both files when run outside the app.
 
 ## Data
 

@@ -125,39 +125,7 @@ test("new databases seed agents on Auto", () => {
     assert.equal(agents.find((agent) => agent.name === "JIRA Agent")?.description, "Jira teammate");
     assert.equal(agents.find((agent) => agent.name === "JIRA Agent")?.toolProfile, "browser");
     assert.equal(agents.find((agent) => agent.name === "GIT PR Review")?.toolProfile, "developer");
-    assert.equal(agents.find((agent) => agent.name === "Release Impact Analyst")?.toolProfile, "analyst");
     assert.ok(agents.every((agent) => agent.lastActivityAt === null));
-  } finally {
-    db.close();
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("an existing database gains the release analyst once", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-analyst-seed-"));
-  const file = path.join(dir, "app.sqlite");
-  let db = new AppDatabase(file);
-  try {
-    const seeded = db.listAgents().find((agent) => agent.name === "Release Impact Analyst");
-    assert.ok(seeded);
-    db.deleteAgent(seeded.id);
-    db.setSetting("seeded_release_analyst", "0");
-  } finally {
-    db.close();
-  }
-
-  db = new AppDatabase(file);
-  try {
-    const restored = db.listAgents().find((agent) => agent.name === "Release Impact Analyst");
-    assert.equal(restored?.toolProfile, "analyst");
-    db.deleteAgent(restored.id);
-  } finally {
-    db.close();
-  }
-
-  db = new AppDatabase(file);
-  try {
-    assert.equal(db.listAgents().some((agent) => agent.name === "Release Impact Analyst"), false);
   } finally {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });
@@ -390,3 +358,4 @@ test("stores Ask mode and the cached project map", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+

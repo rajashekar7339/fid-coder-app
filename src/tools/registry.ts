@@ -6,7 +6,6 @@ import { fileTools } from "./files/files";
 import { gitTools } from "./git/git";
 import { historyTools } from "./history/history";
 import { jiraTools } from "./jira/jira";
-import { impactTools } from "./release/impact";
 import { reviewCodeTool } from "./review/review";
 import { shellTools } from "./shell/shell";
 import type { AppTool } from "./types";
@@ -65,14 +64,6 @@ export function allTools(): AppTool[] {
 
 export function toolsForAgent(profile: AgentToolProfile): AppTool[] {
   if (profile === "browser") return [...browserTools, ...jiraTools, ...historyTools];
-  if (profile === "analyst") {
-    return [
-      ...exploreTools,
-      ...fileTools,
-      ...gitTools,
-      ...impactTools,
-    ];
-  }
   if (profile === "developer") {
     return [
       ...shellTools,

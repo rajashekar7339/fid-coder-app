@@ -15,9 +15,8 @@ The workspace is required for file, search, git, and shell tools. Without one, t
 - **All tools** combines the local browser and Jira with files, search, git, and shell.
 - **Browser and Jira** cannot run commands or touch files. Use it for a saved Jira site, web research, or other browser work.
 - **Shell, search, git, and files** cannot control a browser or read Jira. Use it for code work.
-- **Release analyst** reads git and the release-impact config, runs `impact_analyze`, and writes reports under `artifacts/`. It cannot edit source or automation repos, run shell commands, or use the browser.
 
-## Ask or Code
+## Ask or Agent mode
 
 Use the **Ask mode / Agent mode** switch in the composer, before the model picker. **Ask mode** registers only read-only tools: discovery, reads, search, git and pull-request reads, and the read-only explorer. It cannot edit, run shell commands, use the browser, or change git. **Agent mode** gives the agent the full tool profile above.
 

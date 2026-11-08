@@ -38,7 +38,6 @@ test("marks workspace and profile requirements", () => {
   const review = command("review");
   assert.equal(commandAvailability(review, "developer", false), "Set a workspace folder first.");
   assert.equal(commandAvailability(review, "browser", true), "Needs developer tools.");
-  assert.equal(commandAvailability(review, "analyst", true), "Needs developer tools.");
   assert.equal(commandAvailability(review, "developer", true), null);
   assert.equal(commandAvailability(command("help"), "browser", false), null);
   assert.equal(commandAvailability(command("skills"), "browser", false), null);
