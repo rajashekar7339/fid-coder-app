@@ -138,13 +138,14 @@ export function registerIpc(services: AppServices): void {
   );
   ipcMain.handle(
     channels.workspaceFileRead,
-    (_event, agentId: string, relative: string, line?: number | null) => {
+    (_event, agentId: string, relative: string, line?: number | null, endLine?: number | null) => {
       const agent = db.getAgent(String(agentId ?? ""));
       if (!agent?.workspaceDir) throw new Error("Pick a workspace folder for this agent first");
       return readWorkspaceFile(
         agent.workspaceDir,
         String(relative ?? ""),
         typeof line === "number" ? line : null,
+        typeof endLine === "number" ? endLine : null,
       );
     },
   );

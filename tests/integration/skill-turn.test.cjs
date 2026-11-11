@@ -116,7 +116,10 @@ test("a used skill stays available through use_skill without its body in the pro
       true,
     );
     assert.equal(second.getContext().skillDir, undefined);
-    assert.equal(second.getContext().skills[0].id, "demo");
+    assert.equal(
+      second.getContext().skills.some((skill) => skill.id === "demo"),
+      true,
+    );
     assert.equal(opened[1].disconnected, true);
 
     assert.equal(
@@ -149,13 +152,9 @@ test("a used skill stays available through use_skill without its body in the pro
       fourth.tools.some((tool) => tool.name === "use_skill"),
       true,
     );
-    assert.deepEqual(
-      fourth
-        .getContext()
-        .skills.map((skill) => skill.id)
-        .sort(),
-      ["demo", "other"],
-    );
+    const fourthSkills = fourth.getContext().skills.map((skill) => skill.id);
+    assert.equal(fourthSkills.includes("demo"), true);
+    assert.equal(fourthSkills.includes("other"), true);
     assert.deepEqual(db.listUsedSkillIds(agent.id), ["other", "demo"]);
   } finally {
     db.close();
@@ -163,7 +162,7 @@ test("a used skill stays available through use_skill without its body in the pro
   }
 });
 
-test("a conversation with no used skill gets no skill tool or prompt", async () => {
+test("a conversation with no used skill can discover installed skills", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fid-skill-none-"));
   const db = new AppDatabase(path.join(root, "app.sqlite"));
   try {
@@ -172,9 +171,18 @@ test("a conversation with no used skill gets no skill tool or prompt", async () 
     await runner.runTurn({ agentId: agent.id, text: "hello", source: "chat" });
     const input = opened[opened.length - 1].input;
     assert.doesNotMatch(input.systemMessage, /Skills used earlier in this conversation/);
+    assert.match(input.systemMessage, /Installed skills are available through list_skills/);
     assert.equal(
-      input.tools.some((tool) => tool.name === "use_skill" || tool.name === "skill_read"),
-      false,
+      input.tools.some((tool) => tool.name === "list_skills"),
+      true,
+    );
+    assert.equal(
+      input.tools.some((tool) => tool.name === "use_skill"),
+      true,
+    );
+    assert.equal(
+      input.tools.some((tool) => tool.name === "skill_read"),
+      true,
     );
     assert.deepEqual(db.listUsedSkillIds(agent.id), []);
   } finally {

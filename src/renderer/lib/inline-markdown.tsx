@@ -1,8 +1,18 @@
 import type { ReactNode } from "react";
-import { citationPattern, parseCitation, type Citation } from "../../shared/citations";
+import {
+  citationPattern,
+  collectCitations,
+  parseCitation,
+  type Citation,
+} from "../../shared/citations";
 
 type Classes = { code: string; link: string };
-export type CitationHandler = (path: string, line: number) => void;
+export type CitationHandler = (
+  path: string,
+  line: number,
+  endLine: number | null,
+  related: Citation[],
+) => void;
 
 export function renderInlineMarkdown(
   text: string,
@@ -12,6 +22,7 @@ export function renderInlineMarkdown(
 ): ReactNode[] {
   const pattern = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\[[^\]]+\]\(https?:\/\/[^\s)]+\))|(\*[^*\n]+\*)/g;
   const nodes: ReactNode[] = [];
+  const related = onCitation ? collectCitations(text) : [];
   let last = 0;
   let count = 0;
 
@@ -29,7 +40,9 @@ export function renderInlineMarkdown(
       if (!citation) continue;
       const at = match.index ?? 0;
       if (at > cursor) nodes.push(value.slice(cursor, at));
-      nodes.push(citationLink(raw, citation, `${keyPrefix}-cite-${last}-${index}`, onCitation));
+      nodes.push(
+        citationLink(raw, citation, `${keyPrefix}-cite-${last}-${index}`, onCitation, related),
+      );
       cursor = at + raw.length;
       index += 1;
     }
@@ -47,7 +60,14 @@ export function renderInlineMarkdown(
       const citation = onCitation ? parseCitation(inner) : null;
       if (citation && onCitation) {
         nodes.push(
-          citationLink(inner, citation, key, onCitation, `${classes.code} md-citation md-citation-code`),
+          citationLink(
+            inner,
+            citation,
+            key,
+            onCitation,
+            related,
+            `${classes.code} md-citation md-citation-code`,
+          ),
         );
       } else {
         nodes.push(
@@ -81,6 +101,7 @@ function citationLink(
   citation: Citation,
   key: string,
   onCitation: CitationHandler,
+  related: Citation[],
   className = "md-citation",
 ): ReactNode {
   const range =
@@ -91,7 +112,7 @@ function citationLink(
       type="button"
       className={className}
       title={`Read ${citation.path} at ${range}`}
-      onClick={() => onCitation(citation.path, citation.line)}
+      onClick={() => onCitation(citation.path, citation.line, citation.endLine, related)}
     >
       {raw}
     </button>

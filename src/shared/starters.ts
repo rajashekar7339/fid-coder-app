@@ -11,14 +11,14 @@ export const WORKSPACE_STARTERS: Starter[] = [
     label: "Explain architecture",
     hint: "Read the repo and describe the main parts.",
     prompt:
-      "Explain the architecture of this repository. Start with a one-paragraph overview, then list the entry points and main modules with path:line references. Use a Mermaid flowchart if it helps.",
+      "Explain the architecture of this repository. Start with a one-paragraph overview, then list the entry points and main modules with path:line references. Use a Mermaid flowchart with short labels; put the path:line evidence in the prose.",
   },
   {
     id: "flow",
     label: "Trace a flow",
-    hint: "Follow one runtime path with a sequence diagram.",
+    hint: "Follow one runtime path with a flowchart.",
     prompt:
-      "Trace the main request or startup flow through this repository. Use a Mermaid sequenceDiagram, then add numbered steps with path:line references.",
+      "Trace the main request or startup flow through this repository. Use a Mermaid flowchart TD or LR with short labels, then add numbered steps with path:line references.",
   },
   {
     id: "review",

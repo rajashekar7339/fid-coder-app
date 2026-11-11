@@ -15,7 +15,7 @@ For a **Browser & Jira** agent, Ask mode keeps the read-only Jira tools and page
 When the thread is empty and the agent has a workspace, four starting points appear:
 
 - **Explain architecture** — a one-paragraph overview, entry points, and main modules.
-- **Trace a flow** — a Mermaid sequence diagram with numbered steps.
+- **Trace a flow** — a Mermaid flowchart with numbered steps.
 - **Review architecture** — the built-in `architecture-review` skill.
 - **Troubleshoot an error** — a prompt where you paste a stack trace or log.
 
@@ -27,7 +27,7 @@ Choose the map button in the chat header to open the project map. On first use i
 
 - an overview and entry points;
 - a component table with key files;
-- key runtime flows as Mermaid sequence diagrams;
+- key runtime flows as Mermaid flowcharts with clean labels;
 - a suggested reading order;
 - build and test commands;
 - risks and unknowns.
@@ -40,22 +40,21 @@ The map is cached for the workspace and marked **Up to date** or **The repositor
 
 `Review architecture` invokes the built-in skill. It returns a structured review: components, flows, boundaries, coupling, a risk table with evidence, test and observability gaps, and an explicit confidence and unknowns section. It is not a diff review; use `/review` for a change.
 
-Runtime flows use Mermaid sequence diagrams. Module structure uses a flowchart. Data models can use an ER diagram. Expand any diagram to a full-screen view, zoom it, copy it as an image, or switch to its source. The same actions work in the help guide.
+Flowcharts are the default for module structure, control flow, and data flows. Sequence diagrams are used when the order between actors over time is the point. Data models can use an ER diagram. Use component names, not file names or `path:line` references, in diagram labels; put the evidence in the prose and numbered steps. The reader's **Code references** list still shows every citation in the answer. Expand any diagram to a full-screen view, zoom it, copy it as an image, or switch to its source. Expand, zoom, copy, and source also work in the help guide.
 
 ```mermaid
-sequenceDiagram
-  participant U as You
-  participant A as Ask agent
-  participant W as Workspace
-  U->>A: Review architecture
-  A->>W: Read files, search, git
-  W-->>A: Evidence with path:line
-  A-->>U: Report, risks, and diagrams
+flowchart TD
+  U["You"] --> A["Ask agent"]
+  A --> W["Workspace reads"]
+  A --> R["Report, risks, and diagrams"]
+  W --> A
 ```
 
-## Evidence and file preview
+## Evidence and the code reader
 
-Architecture answers cite files as `path:line`, for example `src/main/chat/runner.ts:420`. Choose the citation to open a read-only preview with the line highlighted. The preview is limited to a window around the line; it does not modify the file.
+Architecture answers cite files as `path:line`, for example `src/main/chat/runner.ts:420`. Choose the citation to open the read-only code reader. It highlights the exact line range, adds syntax colors, and scrolls to the cited code. A **path:line** that names a range such as `bench.ps1:34-42` highlights the whole range.
+
+The reader keeps previously opened files in tabs, so you can compare two parts of the answer without leaving the app. The **Code references** list shows every citation in the answer; choose one to open it as a tab without closing the reader. Use **Back** and **Forward** (or `Alt+Left` and `Alt+Right`) to return to an earlier citation in the same file. **Copy path and line** copies a reference you can paste into a ticket or a chat. The reader is limited to a window around the citation; it does not modify the file.
 
 ## Troubleshooting
 

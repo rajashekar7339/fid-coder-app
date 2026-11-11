@@ -18,9 +18,23 @@ test("reads a window around a citation line and clamps the target", () => {
     assert.equal(near.startLine, 1);
     assert.equal(near.endLine, 160);
     assert.equal(near.line, 2);
+    assert.equal(near.lineEnd, null);
     assert.equal(near.totalLines, 220);
     assert.match(near.text, /^line 1\n/);
     assert.equal(near.truncated, true);
+
+    const range = readWorkspaceFile(root, "src/demo.ts", 34, 42);
+    assert.equal(range.line, 34);
+    assert.equal(range.lineEnd, 42);
+    assert.equal(range.startLine, 1);
+
+    const clamped = readWorkspaceFile(root, "src/demo.ts", 34, 999);
+    assert.equal(clamped.line, 34);
+    assert.equal(clamped.lineEnd, 220);
+
+    const reversed = readWorkspaceFile(root, "src/demo.ts", 42, 34);
+    assert.equal(reversed.line, 42);
+    assert.equal(reversed.lineEnd, null);
 
     const middle = readWorkspaceFile(root, "src/demo.ts", 120);
     assert.equal(middle.startLine, 60);
@@ -34,6 +48,7 @@ test("reads a window around a citation line and clamps the target", () => {
 
     const noLine = readWorkspaceFile(root, "src/demo.ts");
     assert.equal(noLine.line, null);
+    assert.equal(noLine.lineEnd, null);
     assert.equal(noLine.startLine, 1);
     assert.equal(noLine.endLine, 160);
   } finally {
@@ -53,6 +68,7 @@ test("rejects traversal, missing files, and binary data", () => {
     assert.equal(empty.totalLines, 0);
     assert.equal(empty.text, "");
     assert.equal(empty.line, null);
+    assert.equal(empty.lineEnd, null);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

@@ -56,6 +56,16 @@ function prepare() {
     "export const first = 1;\nexport const second = 2;\nexport const third = 3;\n",
     "utf8",
   );
+  fs.writeFileSync(
+    path.join(workspace, "src", "other.ts"),
+    "export const other = 4;\n",
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(workspace, "src", "third.ts"),
+    "export const third = 5;\n",
+    "utf8",
+  );
   writeSkill(
     path.join(workspace, ".github", "skills", "project-review", "SKILL.md"),
     "Project review",
@@ -98,14 +108,13 @@ function seedProjectMap() {
   database.exec("PRAGMA busy_timeout = 5000");
   const text = [
     "## Demo map",
-    "The entry point is `src/demo.ts:2`.",
+    "- The entry point is `src/demo.ts:2-3`, the helper is `src/demo.ts:1`, and the renderer is `src/other.ts:1`.",
+    "The extra file is `src/third.ts:1`.",
     "",
     "```mermaid",
-    "sequenceDiagram",
-    "  participant U as User",
-    "  participant R as Renderer",
-    "  U->>R: Open the map",
-    "  R-->>U: Diagram and files",
+    "flowchart TD",
+    "  A[\"User\"] --> B[\"src/demo.ts:2-3\"]",
+    "  B --> C[\"src/other.ts:1\"]",
     "```",
   ].join("\n");
   database
@@ -287,22 +296,97 @@ async function main() {
     );
     await page.waitForSelector(".project-map-modal .mermaid-diagram svg", { timeout: 20_000 });
     check("the project map renders its Mermaid flow", true);
+    const diagramText = await page.locator(".project-map-modal .mermaid-diagram").innerText();
+    check(
+      "diagram labels hide code references",
+      !/src\/demo\.ts|src\/other\.ts/.test(diagramText),
+      diagramText.replace(/\s+/g, " ").slice(0, 140),
+    );
+    check(
+      "the diagram has no linked-code strip",
+      (await page.locator(".project-map-modal .mermaid-links").count()) === 0,
+    );
     await page.getByRole("button", { name: "Expand diagram" }).click();
     await page.waitForSelector(".mermaid-overlay", { timeout: 10_000 });
     check("a diagram opens full screen", true);
     await page.getByRole("button", { name: "Close full-screen diagram" }).click();
     await page.waitForSelector(".mermaid-overlay", { state: "detached", timeout: 10_000 });
-    await page.locator(".project-map-modal .md-citation").first().click();
-    await page.waitForSelector(".file-peek-modal", { timeout: 10_000 });
-    await page.waitForSelector(".file-peek-code, .file-peek-empty", { timeout: 10_000 });
+
+    await page
+      .locator(".project-map-modal .md-list .md-citation", { hasText: "src/demo.ts:2-3" })
+      .click();
+    await page.waitForSelector(".file-peek-code", { timeout: 10_000 });
+    await page.waitForFunction(
+      () => document.querySelectorAll(".file-peek-line.is-target").length === 2,
+      null,
+      { timeout: 10_000 },
+    );
     const peek = await page.locator(".file-peek-modal").innerText();
     const targetLines = await page.locator(".file-peek-line.is-target").count();
+    const highlighted = await page.locator(".file-peek-code .hljs-keyword").count();
     check(
-      "a citation opens a read-only file preview",
+      "a citation opens the read-only code reader",
       /src\/demo\.ts/.test(peek) && /second/.test(peek),
       peek.replace(/\s+/g, " ").slice(0, 160),
     );
-    check("the cited line is highlighted", targetLines === 1, String(targetLines));
+    check("the whole cited range is highlighted", targetLines === 2, String(targetLines));
+    check("the reader highlights the language", highlighted > 0, String(highlighted));
+    const referenceCount = await page.locator(".file-peek-ref").count();
+    const referenceText = await page.locator(".file-peek-refs").innerText();
+    check("the reader lists every citation in the answer", referenceCount === 4, String(referenceCount));
+    check(
+      "the reference list includes citations from other blocks",
+      /third\.ts/.test(referenceText),
+      referenceText.replace(/\s+/g, " ").slice(0, 140),
+    );
+
+    await page.getByRole("button", { name: "Open src/other.ts:1" }).click();
+    await page.waitForFunction(
+      () => /src\/other\.ts/.test(document.querySelector(".file-peek-title")?.textContent ?? ""),
+      null,
+      { timeout: 10_000 },
+    );
+    const tabCount = await page.locator(".file-peek-tab").count();
+    check("previously opened files stay in tabs", tabCount === 2, String(tabCount));
+
+    await page.getByRole("button", { name: "Open src/demo.ts:2-3" }).click();
+    await page.waitForFunction(
+      () => document.querySelectorAll(".file-peek-line.is-target").length === 2,
+      null,
+      { timeout: 10_000 },
+    );
+    await page.waitForTimeout(250);
+    await shot(page, "06-code-reader");
+
+    await page.getByRole("button", { name: "Open src/demo.ts:1" }).click();
+    await page.waitForFunction(
+      () => document.querySelectorAll(".file-peek-line.is-target").length === 1,
+      null,
+      { timeout: 10_000 },
+    );
+    const back = page.getByRole("button", { name: "Back in file history" });
+    check("file history enables Back", await back.isEnabled());
+    await back.click();
+    await page.waitForFunction(
+      () => document.querySelectorAll(".file-peek-line.is-target").length === 2,
+      null,
+      { timeout: 10_000 },
+    );
+    check("Back returns to the previous citation range", true);
+    const forward = page.getByRole("button", { name: "Forward in file history" });
+    check("Forward is available after Back", await forward.isEnabled());
+    await forward.click();
+    await page.waitForFunction(
+      () => document.querySelectorAll(".file-peek-line.is-target").length === 1,
+      null,
+      { timeout: 10_000 },
+    );
+    check("Forward returns to the newer citation range", true);
+    await page.getByRole("tab", { name: "other.ts" }).click();
+    check(
+      "switching tabs opens the other file",
+      /src\/other\.ts/.test(await page.locator(".file-peek-title").innerText()),
+    );
     await page.getByRole("button", { name: "Close file preview" }).click();
     await page.waitForSelector(".file-peek-modal", { state: "detached", timeout: 10_000 });
     await page.getByRole("button", { name: "Close project map" }).click();
@@ -316,7 +400,7 @@ async function main() {
     const library = await page.locator(".skills-modal").innerText();
     check(
       "library shows all skills",
-      ["User lean", "Project review", "From dot skills", "Write lean", "Review a change"].every((name) =>
+      ["User lean", "Project review", "From dot skills", "Write lean", "Review a change", "Make an HTML report"].every((name) =>
         library.includes(name),
       ),
       library.replace(/\s+/g, " ").slice(0, 240),
@@ -479,7 +563,7 @@ async function main() {
     check("selecting a skill fills the command", picked.startsWith("/skills ") && !picked.endsWith("/skills "), picked);
     check(
       "skill hint shows the version and asks for the task",
-      /v1\.0\.0/.test(await page.locator(".command-hint").innerText().catch(() => "")) &&
+      /v\d+\.\d+\.\d+/.test(await page.locator(".command-hint").innerText().catch(() => "")) &&
         /add the task/i.test(await page.locator(".command-hint").innerText().catch(() => "")),
     );
     await shot(page, "03-skill-picker");

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Map as MapIcon, RefreshCw, X } from "lucide-react";
+import type { Citation } from "../../../shared/citations";
 import type { Agent, WorkspaceMapView } from "../../../shared/types";
 import { errorText, fid } from "../../lib/fid";
 import { formatFullTimestamp } from "../../lib/format";
@@ -10,7 +11,7 @@ type Props = {
   agent: Agent;
   signedIn: boolean;
   onClose: () => void;
-  onOpenFile: (path: string, line: number) => void;
+  onOpenFile: (path: string, line: number, endLine: number | null, related: Citation[]) => void;
 };
 
 export function ProjectMapDialog({ agent, signedIn, onClose, onOpenFile }: Props) {

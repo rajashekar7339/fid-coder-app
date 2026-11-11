@@ -11,9 +11,10 @@ import {
   Plus,
   X,
 } from "lucide-react";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Mermaid, MermaidConfig } from "mermaid";
+import { collectCitations, stripCitations, type Citation } from "../../../shared/citations";
 import { highlightCode } from "../../lib/code-highlight";
 import { renderInlineMarkdown } from "../../lib/inline-markdown";
 import {
@@ -232,7 +233,12 @@ async function copyDiagramImage(code: string): Promise<void> {
 
 const INLINE_CLASSES = { code: "md-code", link: "md-link" };
 
-type OpenFile = (path: string, line: number) => void;
+type OpenFile = (
+  path: string,
+  line: number,
+  endLine: number | null,
+  related: Citation[],
+) => void;
 
 function renderInline(text: string, keyPrefix: string, onOpenFile?: OpenFile) {
   return renderInlineMarkdown(text, keyPrefix, INLINE_CLASSES, onOpenFile);
@@ -349,6 +355,7 @@ export function MermaidDiagram({ code, streaming = false }: { code: string; stre
   const [fullZoom, setFullZoom] = useState(1);
   const canvas = useRef<HTMLDivElement>(null);
   const closeExpanded = useRef<HTMLButtonElement>(null);
+  const cleanCode = useMemo(() => stripCitations(code), [code]);
 
   useEffect(() => {
     if (streaming) return;
@@ -360,7 +367,7 @@ export function MermaidDiagram({ code, streaming = false }: { code: string; stre
     setZoom(1);
     setScrollable(false);
     setExpanded(false);
-    void renderMermaidSvg(renderId, code, MERMAID_CONFIG)
+    void renderMermaidSvg(renderId, cleanCode, MERMAID_CONFIG)
       .then((rendered) => {
         if (active) setSvg(rendered);
       })
@@ -370,7 +377,7 @@ export function MermaidDiagram({ code, streaming = false }: { code: string; stre
     return () => {
       active = false;
     };
-  }, [code, streaming]);
+  }, [cleanCode, streaming]);
 
   useEffect(() => {
     if (!expanded) return;
@@ -427,7 +434,7 @@ export function MermaidDiagram({ code, streaming = false }: { code: string; stre
     });
   }
 
-  if (streaming) return <CodeBlock text={code} language="mermaid" />;
+  if (streaming) return <CodeBlock text={cleanCode} language="mermaid" />;
 
   return (
     <>
@@ -513,8 +520,8 @@ export function MermaidDiagram({ code, streaming = false }: { code: string; stre
                 Expand
               </button>
             ) : null}
-            {svg && !showSource && !error ? <CopyImageButton code={code} /> : null}
-            <CopyButton text={code} />
+            {svg && !showSource && !error ? <CopyImageButton code={cleanCode} /> : null}
+            <CopyButton text={cleanCode} />
           </div>
         </div>
         {error ? (
@@ -523,12 +530,12 @@ export function MermaidDiagram({ code, streaming = false }: { code: string; stre
               Could not render this diagram. Showing its source instead.
             </div>
             <pre>
-              <code>{code}</code>
+              <code>{cleanCode}</code>
             </pre>
           </>
         ) : showSource ? (
           <pre>
-            <code>{code}</code>
+            <code>{cleanCode}</code>
           </pre>
         ) : svg ? (
           <div ref={canvas} className="mermaid-canvas">
@@ -583,7 +590,7 @@ export function MermaidDiagram({ code, streaming = false }: { code: string; stre
                       <Plus size={11} />
                     </button>
                   </div>
-                  <CopyImageButton code={code} />
+                  <CopyImageButton code={cleanCode} />
                   <button
                     ref={closeExpanded}
                     type="button"
@@ -662,13 +669,25 @@ export const MessageContent = memo(function MessageContent({
   onOpenFile?: OpenFile;
 }) {
   const blocks = parseMessageBlocks(text);
+  const related = useMemo(() => collectCitations(text), [text]);
+  const openFile = useMemo<OpenFile | undefined>(
+    () =>
+      onOpenFile
+        ? (path, line, endLine) => onOpenFile(path, line, endLine, related)
+        : undefined,
+    [onOpenFile, related],
+  );
   return (
     <div className="md">
       {blocks.map((block, index) => {
         const key = `${block.type}-${index}`;
         if (block.type === "code") {
           return isMermaidBlock(block.language, block.text) ? (
-            <MermaidDiagram key={key} code={block.text} streaming={streaming} />
+            <MermaidDiagram
+              key={key}
+              code={block.text}
+              streaming={streaming}
+            />
           ) : (
             <CodeBlock key={key} text={block.text} language={block.language} />
           );
@@ -681,20 +700,20 @@ export const MessageContent = memo(function MessageContent({
               align={block.align}
               rows={block.rows}
               blockKey={key}
-              onOpenFile={onOpenFile}
+              onOpenFile={openFile}
             />
           );
         }
         if (block.type === "heading") {
           return (
             <p key={key} className={`md-heading md-h${block.level}`}>
-              {renderInline(block.text, key, onOpenFile)}
+              {renderInline(block.text, key, openFile)}
             </p>
           );
         }
         if (block.type === "list") {
           const items = block.items.map((item, itemIndex) => (
-            <li key={`${key}-${itemIndex}`}>{renderInline(item, `${key}-${itemIndex}`, onOpenFile)}</li>
+            <li key={`${key}-${itemIndex}`}>{renderInline(item, `${key}-${itemIndex}`, openFile)}</li>
           ));
           if (block.ordered) {
             return (
@@ -712,13 +731,13 @@ export const MessageContent = memo(function MessageContent({
         if (block.type === "quote") {
           return (
             <blockquote key={key} className="md-quote">
-              {renderInline(block.text, key, onOpenFile)}
+              {renderInline(block.text, key, openFile)}
             </blockquote>
           );
         }
         return (
           <p key={key} className="md-paragraph">
-            {renderInline(block.text, key, onOpenFile)}
+            {renderInline(block.text, key, openFile)}
           </p>
         );
       })}

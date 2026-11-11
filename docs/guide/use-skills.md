@@ -17,7 +17,7 @@ Fid Coder reads skills from:
 - **Workspace** — `.skills`, `.github/skills`, `.agents/skills`, and `.claude/skills` under the selected agent's workspace folder.
 - **Your skills** — `%USERPROFILE%\.fid_coder_app\skills`. Uploads go here.
 - **Copilot** — `~/.copilot/skills` and `~/.agents/skills`.
-- **Built-in** — the app's own `skills` folder. It starts with **Review a change**, **Review architecture**, and **Write lean**.
+- **Built-in** — the app's own `skills` folder. It starts with **Review a change**, **Review architecture**, **Write lean**, and **Make an HTML report**.
 
 The first copy of an id wins: workspace, then your skills, then Copilot, then built-in. The library lists the winning copy and reports hidden duplicates.
 
@@ -33,11 +33,17 @@ Type `/skills <skill-id> <task>` in the composer:
 
 The composer picker appears after `/skills ` and lists the installed skills. Choose one and add the task. The full instructions are added only to the message that loads them. They are not kept in the agent's system prompt.
 
-On later messages, the assistant sees a short list of skills used in this conversation: the id, name, and description, not the instructions. If a later message needs one, the assistant loads it with the read-only `use_skill` tool. You do not need to type `/skills` again. If the assistant does not pick it, use `/skills <skill-id> <task>` explicitly.
+On later messages, the assistant sees a short list of skills used in this conversation: the id, name, and description, not the instructions. It can also call the read-only `list_skills` tool to see every installed skill when it thinks a reusable procedure fits. If a later message needs one, the assistant loads it with the read-only `use_skill` tool. You do not need to type `/skills` again. If the assistant does not pick it, use `/skills <skill-id> <task>` explicitly.
 
 A skill can bundle supporting files next to `SKILL.md`, such as a checklist, template, or reference. They are copied with the skill, listed in the reader, and never added to the prompt automatically. When a skill is loaded, the assistant can read files inside that skill's folder with the read-only `skill_read` tool, and only when the skill asks it to. The app never runs bundled scripts automatically.
 
 Type `/skills` alone to open the Skills library.
+
+## Make an HTML report
+
+The built-in **Make an HTML report** skill turns an investigation into one standalone HTML page: a leadership brief, memo, comparison, status page, or incident review. Ask for one in normal language; the assistant can call `list_skills` and load this skill when it fits. The skill reads its built-in template, writes `reports/<slug>-<date>.html` inside the workspace, and keeps every source in a Sources section.
+
+It needs Agent mode and a workspace folder. Ask mode is read-only, so it cannot write the file. Open the report in a browser to read it, print it, or share it. The page has no scripts or external requests and includes a "Review before sharing" footer.
 
 ## Versions
 

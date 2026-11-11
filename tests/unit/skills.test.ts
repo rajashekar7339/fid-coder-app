@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import {
   MAX_SKILL_CHARS,
+  availableSkillsPrompt,
   filterSkills,
   matchSkillInvocation,
   parseSkillMarkdown,
@@ -129,9 +130,16 @@ test("builds a compact used-skills list", () => {
   assert.match(prompt, /only if the current message needs that skill/);
 });
 
+test("tells the model to discover skills through list_skills", () => {
+  const prompt = availableSkillsPrompt();
+  assert.match(prompt, /list_skills/);
+  assert.match(prompt, /use_skill/);
+  assert.match(prompt, /Do not list or load a skill for a simple answer/);
+});
+
 test("shipped skills parse and fit in one prompt", () => {
   const root = path.join(process.cwd(), "skills");
-  for (const id of ["write-lean", "review-change"]) {
+  for (const id of ["write-lean", "review-change", "architecture-review", "html-report"]) {
     const parsed = parseSkillMarkdown(fs.readFileSync(path.join(root, id, "SKILL.md"), "utf8"));
     assert.ok(parsed, id);
     const prompt = skillTurnPrompt(parsed);

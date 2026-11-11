@@ -37,6 +37,7 @@ const EXTENSIONS = [
   "bat",
   "gradle",
   "properties",
+  "opt",
   "txt",
   "log",
   "vue",
@@ -44,7 +45,7 @@ const EXTENSIONS = [
 ].join("|");
 
 const EXTENSION_SET = new Set(EXTENSIONS.split("|"));
-const CITATION_SOURCE = String.raw`(?<![\w/.])(?:[A-Za-z]:)?(?:[\w.@+~-]+[\\/])*[\w.@+~-]+\.(?:${EXTENSIONS}):\d+(?:-\d+)?(?![\w])`;
+const CITATION_SOURCE = String.raw`(?<![\w/.])(?:[A-Za-z]:)?(?:[\w.@+~-]+[\\/])*[\w.@+~-]+\.(?:${EXTENSIONS}):\d+(?:[-–—]\d+)?(?![\w])`;
 
 /** A fresh pattern each call keeps callers from sharing lastIndex state. */
 export function citationPattern(): RegExp {
@@ -54,7 +55,7 @@ export function citationPattern(): RegExp {
 export function parseCitation(raw: string): Citation | null {
   const value = raw.trim();
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return null;
-  const match = /^(.*\.([A-Za-z0-9]+)):(\d+)(?:-(\d+))?$/.exec(value);
+  const match = /^(.*\.([A-Za-z0-9]+)):(\d+)(?:[-–—](\d+))?$/.exec(value);
   if (!match) return null;
   const extension = (match[2] ?? "").toLowerCase();
   if (!EXTENSION_SET.has(extension)) return null;
@@ -66,4 +67,36 @@ export function parseCitation(raw: string): Citation | null {
     line,
     endLine: end !== null && Number.isFinite(end) && end >= line ? end : null,
   };
+}
+
+/** Citations in source order, with duplicates removed. */
+export function collectCitations(text: string): Citation[] {
+  const seen = new Set<string>();
+  const found: Citation[] = [];
+  for (const match of text.matchAll(citationPattern())) {
+    const citation = parseCitation(match[0]);
+    if (!citation) continue;
+    const key = `${citation.path}:${citation.line}:${citation.endLine ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    found.push(citation);
+  }
+  return found;
+}
+
+/** Removes path:line evidence from diagram labels while leaving the prose intact. */
+export function stripCitations(text: string): string {
+  let cleaned = text.replace(citationPattern(), "");
+  cleaned = cleaned.replace(/\(\s*\)/g, "");
+  cleaned = cleaned.replace(/<br\s*\/?>\s*(?=["\]])/gi, "");
+  cleaned = cleaned.replace(/(["'\[])\s*<br\s*\/?>/gi, "$1");
+  cleaned = cleaned.replace(/(<br\s*\/?>\s*){2,}/gi, "<br/>");
+  cleaned = cleaned.replace(/\s*[,;:]\s*(?=["\]])/g, "");
+  cleaned = cleaned.replace(/\s+[-–—]\s*(?=["\]])/g, "");
+  cleaned = cleaned.replace(/[ \t]+(?=["\]])/g, "");
+  cleaned = cleaned.replace(/[ \t]{2,}/g, " ");
+  cleaned = cleaned.replace(/\[\s*""\s*\]/g, '[" "]');
+  cleaned = cleaned.replace(/\[\s*''\s*\]/g, "[' ']");
+  cleaned = cleaned.replace(/\|\s*""\s*\|/g, '|" "|');
+  return cleaned;
 }

@@ -22,5 +22,5 @@ test("the review starter invokes the built-in skill and troubleshooting leaves r
   const troubleshoot = WORKSPACE_STARTERS.find((starter) => starter.id === "troubleshoot");
   assert.ok(troubleshoot?.prompt.endsWith("\n\n"));
   const flow = WORKSPACE_STARTERS.find((starter) => starter.id === "flow");
-  assert.match(flow?.prompt ?? "", /sequenceDiagram/);
+  assert.match(flow?.prompt ?? "", /flowchart/);
 });

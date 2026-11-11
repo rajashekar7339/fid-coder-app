@@ -39,7 +39,7 @@ test("the project map uses read-only evidence and a bounded prompt", async () =>
     assert.match(map, /## Overview/);
     assert.ok(opened, "a Copilot session was opened");
     assert.match(opened.systemMessage, /## Suggested reading order/);
-    assert.match(opened.systemMessage, /sequenceDiagram/);
+    assert.match(opened.systemMessage, /flowchart/);
     assert.match(opened.systemMessage, /at most 14 tool calls/);
     assert.equal(opened.tools.some((tool) => tool.name === "file_read"), true);
     assert.equal(opened.tools.some((tool) => tool.name === "apply_patch"), false);

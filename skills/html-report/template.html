@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<title>[Replace: Report title]</title>
+<style>
+  :root {
+    --paper:#f2f4f0; --surface:#fbfcf9; --surface-2:#e9ede7;
+    --ink:#14201d; --ink-soft:#4d5c56; --ink-faint:#75847d;
+    --line:#d5ddd4; --line-strong:#b8c5bb;
+    --accent:#0b6b57; --accent-ink:#084f41; --accent-soft:#dfeee8;
+    --amber:#a86200; --amber-soft:#f4e6cf;
+    --display:Georgia,"Times New Roman",serif;
+    --body:"Segoe UI",system-ui,-apple-system,sans-serif;
+    --mono:"Cascadia Mono",Consolas,"Courier New",monospace;
+  }
+  @media (prefers-color-scheme:dark) {
+    :root {
+      --paper:#0b1311; --surface:#111c18; --surface-2:#17241f;
+      --ink:#e6efe9; --ink-soft:#a3b2aa; --ink-faint:#7f9188;
+      --line:#26362f; --line-strong:#384b42;
+      --accent:#63d7b6; --accent-ink:#9fe8d3; --accent-soft:#16352c;
+      --amber:#e0a54a; --amber-soft:#352712;
+      color-scheme:dark;
+    }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:0 20px 72px; background:var(--paper); color:var(--ink); font-family:var(--body); font-size:16px; line-height:1.6; -webkit-font-smoothing:antialiased; }
+  .page { width:min(1120px,100%); margin:0 auto; }
+  h1,h2,h3,p { margin:0; }
+  h1,h2 { font-family:var(--display); font-weight:500; text-wrap:balance; }
+  h1 { font-size:clamp(2.4rem,4.8vw,3.9rem); line-height:1; letter-spacing:-.035em; }
+  h2 { font-size:clamp(1.7rem,3vw,2.4rem); line-height:1.06; letter-spacing:-.022em; }
+  h3 { font-size:1.02rem; font-weight:600; line-height:1.3; }
+  .eyebrow,.label,.role,.brand,.brandline,.cell-note,.pill,.callout-label,.step-num,.footer,.mono { font-family:var(--mono); }
+  .eyebrow { display:block; font-size:.67rem; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-faint); }
+  .masthead { border-top:2px solid var(--ink); padding-top:14px; }
+  .brandline { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px 24px; font-size:.68rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-faint); }
+  .brand { color:var(--ink); font-weight:500; letter-spacing:.12em; }
+  .hero { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(0,.75fr); gap:32px 56px; align-items:end; margin-top:46px; }
+  .hero-side { display:flex; flex-direction:column; gap:24px; min-width:0; }
+  .dek { max-width:58ch; font-size:clamp(1.02rem,1.35vw,1.16rem); line-height:1.55; color:var(--ink-soft); }
+  .ask-line { display:flex; flex-direction:column; gap:8px; padding-top:16px; border-top:1px solid var(--line-strong); }
+  .label { font-size:.67rem; letter-spacing:.14em; text-transform:uppercase; color:var(--accent-ink); }
+  .ask-line p { font-size:.95rem; color:var(--ink-soft); }
+  .ask-line strong { color:var(--ink); font-weight:600; }
+  section { margin-top:84px; }
+  .section-head { display:grid; grid-template-columns:124px minmax(0,1fr); gap:20px 32px; align-items:start; padding-top:16px; border-top:1px solid var(--line-strong); }
+  .section-head h2 { max-width:26ch; }
+  .section-head .eyebrow { padding-top:5px; }
+  .lede { margin-top:12px; max-width:70ch; font-size:.98rem; color:var(--ink-soft); }
+  .section-body { margin-top:30px; }
+  .section-body > p { max-width:76ch; font-size:.95rem; color:var(--ink-soft); }
+  .cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+  .card { display:flex; flex-direction:column; gap:10px; min-width:0; padding:20px; background:var(--surface); border:1px solid var(--line); border-top:3px solid var(--line-strong); border-radius:2px; }
+  .card:nth-child(3) { border-top-color:var(--accent); background:linear-gradient(180deg,var(--accent-soft),var(--surface) 62%); }
+  .card .role { font-size:.66rem; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-faint); }
+  .card:nth-child(3) .role { color:var(--accent-ink); }
+  .card h3 { font-size:1.12rem; }
+  .card p { font-size:.91rem; color:var(--ink-soft); }
+  .boundary { margin-top:auto; padding-top:12px; border-top:1px solid var(--line); font-family:var(--mono); font-size:.68rem; line-height:1.45; color:var(--ink-faint); }
+  .card:nth-child(3) .boundary { color:var(--accent-ink); }
+  .table-wrap { margin-top:22px; overflow-x:auto; border:1px solid var(--line); background:var(--surface); }
+  table { width:100%; border-collapse:collapse; font-size:.87rem; }
+  .compare { min-width:760px; }
+  .risk-table { min-width:760px; }
+  th,td { text-align:left; padding:13px 15px; border-bottom:1px solid var(--line); vertical-align:top; }
+  thead th { font-family:var(--mono); font-size:.66rem; letter-spacing:.1em; text-transform:uppercase; font-weight:500; color:var(--ink-faint); background:var(--surface-2); }
+  tbody th { width:23%; font-weight:500; font-size:.83rem; color:var(--ink); background:var(--surface); }
+  tbody tr:last-child th,tbody tr:last-child td { border-bottom:0; }
+  td { color:var(--ink-soft); }
+  .risk-table td:first-child { color:var(--ink); font-weight:500; }
+  .pill { display:inline-block; white-space:nowrap; padding:2px 7px; border:1px solid var(--line-strong); border-radius:999px; font-size:.61rem; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-faint); background:var(--paper); }
+  .pill.yes { color:var(--accent-ink); border-color:var(--accent); background:var(--accent-soft); }
+  .pill.partial { color:var(--amber); border-color:var(--amber); background:var(--amber-soft); }
+  .cell-note { display:block; margin-top:4px; font-family:var(--body); font-size:.78rem; line-height:1.45; color:var(--ink-soft); }
+  .metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+  .metric { min-width:0; padding:20px; background:var(--surface); border:1px solid var(--line); }
+  .metric-value { display:block; font-family:var(--display); font-size:clamp(2.4rem,4vw,3.3rem); line-height:.95; letter-spacing:-.03em; font-variant-numeric:tabular-nums; }
+  .metric-label { display:block; margin-top:8px; font-size:.82rem; line-height:1.4; color:var(--ink-soft); }
+  .steps { list-style:none; margin:0; padding:0; }
+  .steps li { display:grid; grid-template-columns:54px minmax(0,1fr); gap:20px; padding:20px 0; border-top:1px solid var(--line); }
+  .steps li:first-child { border-top:0; padding-top:0; }
+  .step-num { padding-top:3px; font-size:.7rem; letter-spacing:.08em; color:var(--accent-ink); font-variant-numeric:tabular-nums; }
+  .steps p { margin-top:6px; max-width:74ch; font-size:.93rem; color:var(--ink-soft); }
+  .callout { margin-top:24px; padding:15px 18px; background:var(--amber-soft); border-left:3px solid var(--amber); }
+  .callout-label { display:block; margin-bottom:4px; font-size:.64rem; letter-spacing:.1em; text-transform:uppercase; color:var(--amber); }
+  .callout p { font-size:.88rem; color:var(--ink-soft); }
+  .quote { margin-top:84px; padding:34px 0 30px; border-top:2px solid var(--ink); border-bottom:1px solid var(--line); }
+  .quote p { max-width:34ch; font-family:var(--display); font-size:clamp(1.6rem,3vw,2.35rem); line-height:1.12; letter-spacing:-.02em; }
+  .sources { margin-top:28px; }
+  .sources ul { margin:10px 0 0; padding-left:18px; color:var(--ink-soft); font-size:.86rem; }
+  .sources li { margin-top:4px; }
+  .mono { font-family:var(--mono); font-size:.78rem; color:var(--ink-faint); }
+  .footer { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px 24px; margin-top:42px; padding-top:12px; border-top:1px solid var(--line); font-size:.65rem; letter-spacing:.04em; color:var(--ink-faint); }
+  @media (max-width:900px) {
+    .hero { grid-template-columns:1fr; gap:28px; }
+    .hero h1 { max-width:20ch; }
+    .cards,.metrics { grid-template-columns:1fr; }
+    .card:nth-child(3) { background:var(--surface); }
+  }
+  @media (max-width:700px) {
+    section { margin-top:62px; }
+    .section-head { grid-template-columns:1fr; gap:10px; }
+    .section-head .eyebrow { padding-top:0; }
+    .section-body { margin-top:22px; }
+    .steps li { grid-template-columns:38px minmax(0,1fr); gap:14px; }
+    .quote p { max-width:none; }
+  }
+  @media print {
+    :root { --paper:#fff; --surface:#fff; --surface-2:#f3f3f3; --ink:#111; --ink-soft:#333; --ink-faint:#555; --line:#ccc; --line-strong:#999; --accent:#0b6b57; --accent-ink:#084f41; --accent-soft:#eef6f2; --amber:#8a5200; --amber-soft:#f7efe2; }
+    body { padding:0; }
+    section,.card,.metric,.quote { break-inside:avoid; }
+  }
+</style>
+</head>
+<body>
+<!-- Replace every [Replace: ...] marker. Delete sections you do not need. Keep the CSS, the CSP meta tag, and the footer. -->
+<main class="page">
+  <header class="masthead">
+    <div class="brandline">
+      <span class="brand">Fid Coder</span>
+      <span>[Replace: Report type · Audience · Date]</span>
+    </div>
+    <div class="hero">
+      <h1>[Replace: State the decision or thesis in one sentence.]</h1>
+      <div class="hero-side">
+        <p class="dek">[Replace: One or two sentences that explain why the reader should care.]</p>
+        <div class="ask-line">
+          <span class="label">The ask</span>
+          <p><strong>[Replace: The decision or action you need.]</strong> [Replace: The cost, date, or tradeoff.]</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section>
+    <div class="section-head">
+      <span class="eyebrow">01 · [Replace: Label]</span>
+      <div>
+        <h2>[Replace: Section heading]</h2>
+        <p class="lede">[Replace: One sentence that frames the section.]</p>
+      </div>
+    </div>
+    <div class="section-body">
+      <p>[Replace: First short paragraph with the evidence.]</p>
+      <div class="callout">
+        <span class="callout-label">[Replace: Decision or warning]</span>
+        <p>[Replace: One sentence the reader must not miss.]</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="eyebrow">02 · [Replace: Label]</span>
+      <div>
+        <h2>[Replace: Section heading]</h2>
+        <p class="lede">[Replace: One sentence that frames the section.]</p>
+      </div>
+    </div>
+    <div class="section-body">
+      <div class="cards">
+        <div class="card">
+          <span class="role">[Replace: Role]</span>
+          <h3>[Replace: Item title]</h3>
+          <p>[Replace: One or two sentences.]</p>
+          <div class="boundary">[Replace: What it is good at. What it stops at.]</div>
+        </div>
+        <div class="card">
+          <span class="role">[Replace: Role]</span>
+          <h3>[Replace: Item title]</h3>
+          <p>[Replace: One or two sentences.]</p>
+          <div class="boundary">[Replace: What it is good at. What it stops at.]</div>
+        </div>
+        <div class="card">
+          <span class="role">[Replace: Role]</span>
+          <h3>[Replace: Item title]</h3>
+          <p>[Replace: One or two sentences.]</p>
+          <div class="boundary">[Replace: What it is good at. What it stops at.]</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="eyebrow">03 · [Replace: Label]</span>
+      <div>
+        <h2>[Replace: Section heading]</h2>
+        <p class="lede">[Replace: One sentence that frames the section.]</p>
+      </div>
+    </div>
+    <div class="section-body">
+      <div class="table-wrap">
+        <table class="compare">
+          <thead>
+            <tr>
+              <th>[Replace: Capability]</th>
+              <th>[Replace: Option A]</th>
+              <th>[Replace: Option B]</th>
+              <th>[Replace: Option C]</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">[Replace: Row label]</th>
+              <td><span class="pill yes">[Replace: Yes]</span><span class="cell-note">[Replace: Note.]</span></td>
+              <td><span class="pill partial">[Replace: Partial]</span><span class="cell-note">[Replace: Note.]</span></td>
+              <td><span class="pill yes">[Replace: Yes]</span><span class="cell-note">[Replace: Note.]</span></td>
+            </tr>
+            <tr>
+              <th scope="row">[Replace: Row label]</th>
+              <td><span class="pill">[Replace: No]</span><span class="cell-note">[Replace: Note.]</span></td>
+              <td><span class="pill yes">[Replace: Yes]</span><span class="cell-note">[Replace: Note.]</span></td>
+              <td><span class="pill yes">[Replace: Yes]</span><span class="cell-note">[Replace: Note.]</span></td>
+            </tr>
+            <tr>
+              <th scope="row">[Replace: Row label]</th>
+              <td><span class="pill">[Replace: No]</span><span class="cell-note">[Replace: Note.]</span></td>
+              <td><span class="pill partial">[Replace: Partial]</span><span class="cell-note">[Replace: Note.]</span></td>
+              <td><span class="pill yes">[Replace: Yes]</span><span class="cell-note">[Replace: Note.]</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="eyebrow">04 · [Replace: Label]</span>
+      <div>
+        <h2>[Replace: Section heading]</h2>
+        <p class="lede">[Replace: One sentence that frames the section.]</p>
+      </div>
+    </div>
+    <div class="section-body">
+      <div class="metrics">
+        <div class="metric"><span class="metric-value">[Replace: 20%]</span><span class="metric-label">[Replace: What this measures. Include the source in Sources.]</span></div>
+        <div class="metric"><span class="metric-value">[Replace: 30 min]</span><span class="metric-label">[Replace: What this measures. Include the source in Sources.]</span></div>
+        <div class="metric"><span class="metric-value">[Replace: 4 weeks]</span><span class="metric-label">[Replace: What this measures. Include the source in Sources.]</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="eyebrow">05 · [Replace: Label]</span>
+      <div>
+        <h2>[Replace: Section heading]</h2>
+        <p class="lede">[Replace: One sentence that frames the section.]</p>
+      </div>
+    </div>
+    <div class="section-body">
+      <ol class="steps">
+        <li><span class="step-num">01</span><div><h3>[Replace: Step title]</h3><p>[Replace: What happens and who owns it.]</p></div></li>
+        <li><span class="step-num">02</span><div><h3>[Replace: Step title]</h3><p>[Replace: What happens and who owns it.]</p></div></li>
+        <li><span class="step-num">03</span><div><h3>[Replace: Step title]</h3><p>[Replace: What happens and who owns it.]</p></div></li>
+      </ol>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="eyebrow">06 · [Replace: Label]</span>
+      <div>
+        <h2>[Replace: Section heading]</h2>
+        <p class="lede">[Replace: One sentence that frames the section.]</p>
+      </div>
+    </div>
+    <div class="section-body">
+      <div class="table-wrap">
+        <table class="risk-table">
+          <thead>
+            <tr><th>Risk</th><th>The honest answer</th><th>The next move</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>[Replace: Risk]</td><td>[Replace: What is true today.]</td><td>[Replace: What to do next.]</td></tr>
+            <tr><td>[Replace: Risk]</td><td>[Replace: What is true today.]</td><td>[Replace: What to do next.]</td></tr>
+            <tr><td>[Replace: Risk]</td><td>[Replace: What is true today.]</td><td>[Replace: What to do next.]</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <div class="quote">
+    <p>[Replace: The one sentence the reader should repeat.]</p>
+  </div>
+
+  <div class="sources">
+    <span class="eyebrow">Sources</span>
+    <ul>
+      <li><span class="mono">[Replace: path:line]</span> [Replace: What this source supports.]</li>
+      <li><span class="mono">[Replace: JIRA-123 or PR #123]</span> [Replace: What this source supports.]</li>
+      <li><span class="mono">[Replace: URL or report name]</span> [Replace: What this source supports.]</li>
+    </ul>
+  </div>
+
+  <div class="footer">
+    <span>Generated by Fid Coder · [Replace: date]</span>
+    <span>Review before sharing.</span>
+  </div>
+</main>
+</body>
+</html>

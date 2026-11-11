@@ -127,8 +127,8 @@ const api: FidApi = {
     openRule: (agentId: string, path: string) => ipcRenderer.invoke(channels.workspaceOpenRule, agentId, path),
     map: (agentId: string) => ipcRenderer.invoke(channels.workspaceMapGet, agentId),
     buildMap: (agentId: string) => ipcRenderer.invoke(channels.workspaceMapBuild, agentId),
-    file: (agentId: string, path: string, line?: number | null) =>
-      ipcRenderer.invoke(channels.workspaceFileRead, agentId, path, line ?? null),
+    file: (agentId: string, path: string, line?: number | null, endLine?: number | null) =>
+      ipcRenderer.invoke(channels.workspaceFileRead, agentId, path, line ?? null, endLine ?? null),
   },
   routines: {
     list: (agentId: string) => ipcRenderer.invoke(channels.routinesList, agentId),
