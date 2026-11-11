@@ -6,6 +6,7 @@ import {
   citationPattern,
   collectCitations,
   parseCitation,
+  stripCitations,
 } from "../../src/shared/citations.ts";
 
 test("parses relative, absolute, and range citations", () => {
@@ -68,4 +69,21 @@ test("collects unique citations in source order", () => {
       ["bench.ps1", 34, 42],
     ],
   );
+});
+
+test("strips citations and their separators from diagram labels", () => {
+  const source = [
+    "flowchart TD",
+    '  A["Setup instructions<br/>README-2.md:1–3"] -->|"run create command"| B["Model configuration<br/>Modelfile.opt:7–29"]',
+    '  C["Base model<br/>Modelfile.opt:10"]',
+    '  D["Metrics (bench.ps1:39–42)"]',
+    '  E["bench.ps1:12–18"]',
+  ].join("\n");
+  const cleaned = stripCitations(source);
+  assert.match(cleaned, /A\["Setup instructions"\]/);
+  assert.match(cleaned, /B\["Model configuration"\]/);
+  assert.match(cleaned, /C\["Base model"\]/);
+  assert.match(cleaned, /D\["Metrics"\]/);
+  assert.match(cleaned, /E\[" "\]/);
+  assert.doesNotMatch(cleaned, /README-2|Modelfile|bench\.ps1/);
 });

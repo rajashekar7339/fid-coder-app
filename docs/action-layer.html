@@ -1,0 +1,1005 @@
+<title>The Action Layer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=Newsreader:ital,wght@0,400;0,500;1,400;1,500&amp;display=swap">
+<style>
+  :root {
+    --paper: #f2f4f0;
+    --surface: #fbfcf9;
+    --surface-2: #e9ede7;
+    --ink: #14201d;
+    --ink-soft: #4d5c56;
+    --ink-faint: #75847d;
+    --line: #d5ddd4;
+    --line-strong: #b8c5bb;
+    --accent: #0b6b57;
+    --accent-ink: #084f41;
+    --accent-soft: #dfeee8;
+    --amber: #a86200;
+    --amber-soft: #f4e6cf;
+    --display: "Newsreader", Georgia, "Times New Roman", serif;
+    --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0b1311;
+      --surface: #111c18;
+      --surface-2: #17241f;
+      --ink: #e6efe9;
+      --ink-soft: #a3b2aa;
+      --ink-faint: #7f9188;
+      --line: #26362f;
+      --line-strong: #384b42;
+      --accent: #63d7b6;
+      --accent-ink: #9fe8d3;
+      --accent-soft: #16352c;
+      --amber: #e0a54a;
+      --amber-soft: #352712;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0b1311;
+    --surface: #111c18;
+    --surface-2: #17241f;
+    --ink: #e6efe9;
+    --ink-soft: #a3b2aa;
+    --ink-faint: #7f9188;
+    --line: #26362f;
+    --line-strong: #384b42;
+    --accent: #63d7b6;
+    --accent-ink: #9fe8d3;
+    --accent-soft: #16352c;
+    --amber: #e0a54a;
+    --amber-soft: #352712;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    padding-left: max(20px, env(safe-area-inset-left, 0px));
+    padding-right: max(20px, env(safe-area-inset-right, 0px));
+    padding-block: 0 72px;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { width: min(1120px, 100%); margin: 0 auto; }
+  h1, h2, h3, p { margin: 0; }
+  h1, h2 { font-family: var(--display); font-weight: 500; text-wrap: balance; }
+  h1 {
+    font-size: clamp(2.45rem, 4.8vw, 3.95rem);
+    line-height: 0.99;
+    letter-spacing: -0.035em;
+  }
+  h1 em { font-style: italic; color: var(--accent); }
+  h2 {
+    font-size: clamp(1.7rem, 3vw, 2.45rem);
+    line-height: 1.06;
+    letter-spacing: -0.022em;
+  }
+  h3 { font-size: 1.02rem; font-weight: 600; line-height: 1.3; }
+  a { color: var(--accent-ink); }
+  .mono { font-family: var(--mono); }
+  .eyebrow {
+    display: block;
+    font-family: var(--mono);
+    font-size: 0.67rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* Masthead */
+  .masthead { border-top: 2px solid var(--ink); padding-top: 14px; }
+  .brandline {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px 24px;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .brand { color: var(--ink); font-weight: 500; letter-spacing: 0.12em; }
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+    gap: 32px 56px;
+    align-items: end;
+    margin-top: 46px;
+  }
+  .hero-side { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+  .dek {
+    max-width: 58ch;
+    font-size: clamp(1.02rem, 1.35vw, 1.16rem);
+    line-height: 1.55;
+    color: var(--ink-soft);
+  }
+  .ask-line {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line-strong);
+  }
+  .ask-line .label {
+    font-family: var(--mono);
+    font-size: 0.67rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+  }
+  .ask-line p { font-size: 0.95rem; color: var(--ink-soft); }
+  .ask-line strong { color: var(--ink); font-weight: 600; }
+
+  /* Sections */
+  section { margin-top: 84px; }
+  .section-head {
+    display: grid;
+    grid-template-columns: 124px minmax(0, 1fr);
+    gap: 20px 32px;
+    align-items: start;
+    padding-top: 16px;
+    border-top: 1px solid var(--line-strong);
+  }
+  .section-head h2 { max-width: 26ch; }
+  .lede {
+    margin-top: 12px;
+    max-width: 70ch;
+    color: var(--ink-soft);
+    font-size: 0.98rem;
+  }
+  .section-body { margin-top: 30px; }
+  .section-head .eyebrow { padding-top: 5px; }
+
+  /* Layer cards */
+  .layer-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .layer {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+    padding: 20px 20px 18px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-top: 3px solid var(--line-strong);
+    border-radius: 2px;
+  }
+  .layer.is-fid {
+    border-top-color: var(--accent);
+    background: linear-gradient(180deg, var(--accent-soft), var(--surface) 62%);
+  }
+  .layer .role {
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .layer.is-fid .role { color: var(--accent-ink); }
+  .layer h3 { font-size: 1.13rem; }
+  .layer p { font-size: 0.91rem; color: var(--ink-soft); }
+  .layer .boundary {
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    line-height: 1.45;
+    color: var(--ink-faint);
+  }
+  .layer.is-fid .boundary { color: var(--accent-ink); }
+
+  /* Tables */
+  .table-wrap {
+    margin-top: 22px;
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    background: var(--surface);
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 0.87rem; }
+  .compare { min-width: 800px; }
+  .risk-table { min-width: 820px; }
+  th, td { text-align: left; padding: 13px 15px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th {
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 500;
+    color: var(--ink-faint);
+    background: var(--surface-2);
+  }
+  thead th.is-fid { color: var(--accent-ink); background: var(--accent-soft); }
+  tbody th {
+    width: 23%;
+    font-weight: 500;
+    font-size: 0.83rem;
+    color: var(--ink);
+    background: var(--surface);
+  }
+  tbody td.is-fid { background: var(--accent-soft); }
+  tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
+  .pill {
+    display: inline-block;
+    white-space: nowrap;
+    padding: 2px 7px;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    font-family: var(--mono);
+    font-size: 0.61rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    background: var(--paper);
+  }
+  .pill.yes { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-soft); }
+  .pill.partial { color: var(--amber); border-color: var(--amber); background: var(--amber-soft); }
+  .pill.na { color: var(--ink-faint); border-style: dashed; }
+  .cell-note { display: block; margin-top: 4px; font-size: 0.78rem; line-height: 1.45; color: var(--ink-soft); }
+  .risk-table td { font-size: 0.86rem; color: var(--ink-soft); }
+  .risk-table td:first-child { color: var(--ink); font-weight: 500; }
+  .gap-tag {
+    display: inline-block;
+    margin-bottom: 5px;
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--amber);
+  }
+
+  /* Diagram */
+  .diagram {
+    margin: 26px 0 0;
+    padding: 18px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+  }
+  .diagram-scroll { overflow-x: auto; }
+  .diagram svg { display: block; width: 100%; min-width: 720px; height: auto; }
+  .diagram figcaption {
+    margin-top: 12px;
+    max-width: 88ch;
+    font-size: 0.78rem;
+    line-height: 1.55;
+    color: var(--ink-faint);
+  }
+  .svg-panel { fill: var(--surface); stroke: var(--line); }
+  .svg-agent { fill: var(--surface); stroke: var(--accent); }
+  .svg-node { fill: var(--surface-2); stroke: var(--line-strong); }
+  .svg-amber { fill: var(--amber-soft); stroke: var(--amber); }
+  .svg-line { stroke: var(--line-strong); fill: none; }
+  .svg-arrow { stroke: var(--ink-faint); fill: none; }
+  .svg-arrow-accent { stroke: var(--accent); fill: none; }
+  .svg-arrow-dash { stroke: var(--ink-faint); fill: none; stroke-dasharray: 4 4; }
+  .head-muted { fill: var(--ink-faint); }
+  .head-accent { fill: var(--accent); }
+  .svg-label { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em; fill: var(--ink-faint); text-transform: uppercase; }
+  .svg-label-accent { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em; fill: var(--accent-ink); text-transform: uppercase; }
+  .svg-title { font-family: var(--body); font-size: 14px; font-weight: 600; fill: var(--ink); }
+  .svg-sub { font-family: var(--body); font-size: 10.5px; fill: var(--ink-soft); }
+  .svg-node-title { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.1em; fill: var(--accent-ink); }
+  .svg-note { font-family: var(--mono); font-size: 9px; fill: var(--ink-faint); }
+  .svg-amber-title { font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em; fill: var(--amber); }
+  .svg-arrow-label { font-family: var(--mono); font-size: 9px; fill: var(--ink-faint); }
+
+  /* Points */
+  .point {
+    display: grid;
+    grid-template-columns: 104px minmax(0, 1fr);
+    gap: 16px 30px;
+    padding: 24px 0;
+    border-top: 1px solid var(--line);
+  }
+  .point:first-child { border-top: 0; padding-top: 0; }
+  .point-label .eyebrow { color: var(--accent-ink); padding-top: 3px; }
+  .point-copy { min-width: 0; }
+  .point-copy p { margin-top: 7px; max-width: 76ch; font-size: 0.94rem; color: var(--ink-soft); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 13px; }
+  .chip {
+    display: inline-block;
+    padding: 2px 7px;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    background: var(--surface);
+    font-family: var(--mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.02em;
+    color: var(--ink-soft);
+  }
+
+  /* Demo */
+  .demo { list-style: none; margin: 0; padding: 0; }
+  .demo li {
+    display: grid;
+    grid-template-columns: 54px minmax(0, 1fr);
+    gap: 20px;
+    padding: 20px 0;
+    border-top: 1px solid var(--line);
+  }
+  .demo li:first-child { border-top: 0; padding-top: 0; }
+  .demo-num {
+    padding-top: 3px;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--accent-ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .demo-copy { min-width: 0; }
+  .demo-copy p { margin-top: 6px; max-width: 74ch; font-size: 0.93rem; color: var(--ink-soft); }
+  .callout {
+    margin-top: 24px;
+    padding: 15px 18px;
+    background: var(--amber-soft);
+    border-left: 3px solid var(--amber);
+  }
+  .callout .callout-label {
+    display: block;
+    margin-bottom: 4px;
+    font-family: var(--mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--amber);
+  }
+  .callout p { font-size: 0.88rem; color: var(--ink-soft); }
+
+  /* Pilot */
+  .pilot-grid {
+    display: grid;
+    grid-template-columns: 1.15fr 1.15fr 0.9fr;
+    gap: 14px;
+  }
+  .pilot-card {
+    min-width: 0;
+    padding: 20px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+  }
+  .pilot-card .eyebrow { color: var(--accent-ink); }
+  .stat-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; margin-top: 8px; }
+  .stat-num {
+    font-family: var(--display);
+    font-size: clamp(2.4rem, 4vw, 3.3rem);
+    line-height: 0.95;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-label { font-size: 0.82rem; line-height: 1.4; color: var(--ink-soft); }
+  .stat-or {
+    margin: 4px 0;
+    font-family: var(--mono);
+    font-size: 0.63rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .pilot-card p { margin-top: 10px; font-size: 0.88rem; color: var(--ink-soft); }
+  .pilot-card .fine { font-size: 0.78rem; color: var(--ink-faint); }
+  .metric-list { list-style: none; margin: 10px 0 0; padding: 0; }
+  .metric-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 7px 0;
+    border-top: 1px solid var(--line);
+    font-size: 0.82rem;
+    color: var(--ink-soft);
+  }
+  .metric-list li:first-child { border-top: 0; padding-top: 0; }
+  .metric-list .unit { font-family: var(--mono); font-size: 0.66rem; color: var(--ink-faint); white-space: nowrap; }
+  .guardrail { margin-top: 10px; padding-left: 14px; border-left: 2px solid var(--accent); }
+  .guardrail p { margin-top: 0; }
+
+  /* Moves */
+  .moves {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .move {
+    min-width: 0;
+    padding: 20px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-top: 3px solid var(--accent);
+  }
+  .move .eyebrow { color: var(--accent-ink); }
+  .move h3 { margin-top: 8px; }
+  .move p { margin-top: 7px; font-size: 0.89rem; color: var(--ink-soft); }
+  .not-build {
+    margin-top: 22px;
+    padding: 18px 20px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+  }
+  .not-build .eyebrow { color: var(--ink-faint); }
+  .not-build ul {
+    margin: 10px 0 0;
+    padding-left: 18px;
+    color: var(--ink-soft);
+    font-size: 0.88rem;
+  }
+  .not-build li { margin-top: 4px; }
+
+  /* Closing and footer */
+  .closing {
+    margin-top: 84px;
+    padding: 34px 0 30px;
+    border-top: 2px solid var(--ink);
+    border-bottom: 1px solid var(--line);
+  }
+  .closing p {
+    max-width: 30ch;
+    font-family: var(--display);
+    font-size: clamp(1.6rem, 3vw, 2.35rem);
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+  }
+  .closing em { color: var(--accent); }
+  .footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px 24px;
+    margin-top: 18px;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.04em;
+    color: var(--ink-faint);
+  }
+  .sources {
+    margin-top: 18px;
+    font-family: var(--mono);
+    font-size: 0.64rem;
+    line-height: 1.7;
+    color: var(--ink-faint);
+  }
+
+  @media (max-width: 900px) {
+    .hero { grid-template-columns: 1fr; gap: 28px; }
+    .hero h1 { max-width: 20ch; }
+    .layer-grid, .moves { grid-template-columns: 1fr; }
+    .pilot-grid { grid-template-columns: 1fr 1fr; }
+    .pilot-card:last-child { grid-column: 1 / -1; }
+    .layer .boundary { margin-top: 0; }
+  }
+  @media (max-width: 700px) {
+    section { margin-top: 62px; }
+    .section-head { grid-template-columns: 1fr; gap: 10px; }
+    .section-head .eyebrow { padding-top: 0; }
+    .section-body { margin-top: 22px; }
+    .point { grid-template-columns: 1fr; gap: 8px; }
+    .pilot-grid { grid-template-columns: 1fr; }
+    .pilot-card:last-child { grid-column: auto; }
+    .demo li { grid-template-columns: 38px minmax(0, 1fr); gap: 14px; }
+    .closing p { max-width: none; }
+  }
+  @media (max-width: 480px) {
+    .hero { margin-top: 34px; }
+    .brandline { font-size: 0.62rem; }
+    .diagram { padding: 12px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { scroll-behavior: auto !important; }
+  }
+</style>
+
+<div class="page">
+  <header class="masthead">
+    <div class="brandline">
+      <span class="brand">Fid Coder</span>
+      <span>Positioning brief · Engineering leadership · 10 November 2026</span>
+    </div>
+    <div class="hero">
+      <h1>One-Search finds it.<br>VS Code edits it.<br><em>Fid Coder finishes it.</em></h1>
+      <div class="hero-side">
+        <p class="dek">Fid Coder is the only one of the three that carries context from Jira, GitHub, and the browser into the repo, makes the change, pauses before the irreversible step, and leaves a record you can audit, with file edits you can undo.</p>
+        <div class="ask-line">
+          <span class="label">The ask</span>
+          <p><strong>One team. One workflow. Four weeks.</strong> Fund a pilot that measures ticket-to-PR time, not message volume.</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section>
+    <div class="section-head">
+      <span class="eyebrow">01 · The landscape</span>
+      <div>
+        <h2>Three tools, three layers</h2>
+        <p class="lede">These are not three versions of the same product. Each owns a different part of the work. The gap is between the systems that know what happened and the repo where it gets fixed.</p>
+      </div>
+    </div>
+    <div class="section-body">
+      <div class="layer-grid">
+        <div class="layer">
+          <span class="role">The read layer</span>
+          <h3>One-Search</h3>
+          <p>One place to ask what is happening across Jira, GitHub, Datadog, and the rest. A service account gives it breadth. It is read-only by design.</p>
+          <div class="boundary">Strong at: org-wide retrieval.<br>Stops at: action.</div>
+        </div>
+        <div class="layer">
+          <span class="role">The edit layer</span>
+          <h3>VS Code + Copilot</h3>
+          <p>The editor where developers already read and change code. Fast for one file, one developer, one open workspace.</p>
+          <div class="boundary">Strong at: the file in front of you.<br>Stops at: the editor boundary.</div>
+        </div>
+        <div class="layer is-fid">
+          <span class="role">The action layer</span>
+          <h3>Fid Coder</h3>
+          <p>A local agent with its own workspace, tools, memory, schedule, and approval gate. It reads the systems, acts in the repo, and proves the result.</p>
+          <div class="boundary">Strong at: closing the loop.<br>Stops at: the approval gate.</div>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="compare">
+          <caption class="sr-only">Comparison of One-Search, VS Code with Copilot, and Fid Coder across eight capabilities.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Capability</th>
+              <th scope="col">One-Search</th>
+              <th scope="col">VS Code + Copilot</th>
+              <th scope="col" class="is-fid">Fid Coder</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Cross-system read</th>
+              <td><span class="pill yes">Yes</span><span class="cell-note">Jira, GitHub, Datadog through a service account.</span></td>
+              <td><span class="pill partial">Not native</span><span class="cell-note">Extensions or MCP can add some sources.</span></td>
+              <td class="is-fid"><span class="pill yes">Yes</span><span class="cell-note">Jira PAT, GitHub token, or the user's browser session.</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Act in the repo</th>
+              <td><span class="pill no">No</span><span class="cell-note">Read-only.</span></td>
+              <td><span class="pill yes">Yes</span><span class="cell-note">Edits, terminal, tests.</span></td>
+              <td class="is-fid"><span class="pill yes">Yes</span><span class="cell-note">Files, shell, git, tests, local browser.</span></td>
+            </tr>
+            <tr>
+              <th scope="row">One turn spans systems and repo</th>
+              <td><span class="pill no">No</span></td>
+              <td><span class="pill partial">Not natively</span></td>
+              <td class="is-fid"><span class="pill yes">Yes</span><span class="cell-note">The ticket, the PR, the code, and the test run in one turn.</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Recurring agent work</th>
+              <td><span class="pill no">No</span></td>
+              <td><span class="pill partial">Tasks, not agents</span></td>
+              <td class="is-fid"><span class="pill yes">Yes</span><span class="cell-note">Cron routines with notifications, while the app is open.</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Approval and audit of actions</th>
+              <td><span class="pill na">Not applicable</span></td>
+              <td><span class="pill partial">Per-session prompts</span><span class="cell-note">No shared audit history.</span></td>
+              <td class="is-fid"><span class="pill yes">Yes</span><span class="cell-note">Allow, deny, and always rules; every decision recorded.</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Reversible file changes</th>
+              <td><span class="pill na">Not applicable</span></td>
+              <td><span class="pill partial">Git or editor undo</span></td>
+              <td class="is-fid"><span class="pill yes">Yes</span><span class="cell-note">Checkpoint, diff, and one-click revert per file or turn.</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Credentials</th>
+              <td><span class="pill partial">Shared service account</span></td>
+              <td><span class="pill yes">The user's editor</span></td>
+              <td class="is-fid"><span class="pill yes">Per user</span><span class="cell-note">Tokens encrypted locally; browser profile per agent.</span></td>
+            </tr>
+            <tr>
+              <th scope="row">Team reach</th>
+              <td><span class="pill yes">Org-wide</span></td>
+              <td><span class="pill yes">Per developer</span></td>
+              <td class="is-fid"><span class="pill partial">Per PC</span><span class="cell-note">Skills can live in the repo; agents and transcripts are local.</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <figure class="diagram">
+        <div class="diagram-scroll">
+          <svg viewBox="0 0 960 420" role="img" aria-label="Systems of record feed a Fid Coder loop of read, understand, act, and prove, with an approval gate before a destructive command. The loop edits and tests the workspace, then writes a change set and audit record.">
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path class="head-muted" d="M 0 0 L 10 5 L 0 10 z"/>
+              </marker>
+              <marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path class="head-accent" d="M 0 0 L 10 5 L 0 10 z"/>
+              </marker>
+            </defs>
+
+            <!-- Left: systems of record -->
+            <rect x="4" y="24" width="224" height="340" rx="6" class="svg-panel"/>
+            <text x="20" y="50" class="svg-label">Systems of record</text>
+            <rect x="20" y="70" width="192" height="54" rx="4" class="svg-node"/>
+            <text x="32" y="93" class="svg-title">Jira</text>
+            <text x="32" y="110" class="svg-sub">tickets · issues</text>
+            <rect x="20" y="138" width="192" height="54" rx="4" class="svg-node"/>
+            <text x="32" y="161" class="svg-title">GitHub</text>
+            <text x="32" y="178" class="svg-sub">pull requests · issues</text>
+            <rect x="20" y="206" width="192" height="54" rx="4" class="svg-node"/>
+            <text x="32" y="229" class="svg-title">Datadog · web</text>
+            <text x="32" y="246" class="svg-sub">live pages · sessions</text>
+            <line x1="20" y1="282" x2="212" y2="282" class="svg-line"/>
+            <text x="20" y="302" class="svg-note">Read with a PAT or the</text>
+            <text x="20" y="316" class="svg-note">user's browser session.</text>
+            <text x="20" y="342" class="svg-note">No new shared credential.</text>
+
+            <!-- Arrow into the loop -->
+            <line x1="228" y1="200" x2="286" y2="200" class="svg-arrow" marker-end="url(#arrow)"/>
+            <text x="257" y="190" text-anchor="middle" class="svg-arrow-label">context</text>
+
+            <!-- Center: Fid Coder loop -->
+            <rect x="292" y="24" width="376" height="340" rx="8" class="svg-agent"/>
+            <text x="312" y="50" class="svg-label-accent">Fid Coder · local agent</text>
+
+            <rect x="312" y="74" width="150" height="64" rx="4" class="svg-node"/>
+            <text x="326" y="97" class="svg-node-title">READ</text>
+            <text x="326" y="115" class="svg-sub">Jira · PRs · web</text>
+
+            <rect x="498" y="74" width="150" height="64" rx="4" class="svg-node"/>
+            <text x="512" y="97" class="svg-node-title">UNDERSTAND</text>
+            <text x="512" y="115" class="svg-sub">map · citations</text>
+
+            <rect x="498" y="190" width="150" height="64" rx="4" class="svg-node"/>
+            <text x="512" y="213" class="svg-node-title">ACT</text>
+            <text x="512" y="231" class="svg-sub">edit · test · run</text>
+
+            <rect x="312" y="190" width="150" height="64" rx="4" class="svg-node"/>
+            <text x="326" y="213" class="svg-node-title">PROVE</text>
+            <text x="326" y="231" class="svg-sub">diff · audit · revert</text>
+
+            <line x1="462" y1="106" x2="494" y2="106" class="svg-arrow-accent" marker-end="url(#arrow-accent)"/>
+            <line x1="573" y1="138" x2="573" y2="186" class="svg-arrow-accent" marker-end="url(#arrow-accent)"/>
+            <line x1="498" y1="222" x2="466" y2="222" class="svg-arrow-accent" marker-end="url(#arrow-accent)"/>
+            <line x1="387" y1="190" x2="387" y2="142" class="svg-arrow-accent" marker-end="url(#arrow-accent)"/>
+
+            <rect x="312" y="280" width="336" height="56" rx="4" class="svg-amber"/>
+            <text x="326" y="301" class="svg-amber-title">Approval gate</text>
+            <text x="326" y="319" class="svg-sub">Allow once · Always allow · Reject · Always deny</text>
+            <text x="326" y="333" class="svg-sub">Deny wins. Every decision is recorded.</text>
+
+            <!-- Arrows to and from the workspace -->
+            <line x1="668" y1="222" x2="720" y2="222" class="svg-arrow" marker-end="url(#arrow)"/>
+            <text x="696" y="238" text-anchor="middle" class="svg-arrow-label">edit + test</text>
+            <line x1="720" y1="252" x2="672" y2="252" class="svg-arrow-dash" marker-end="url(#arrow)"/>
+            <text x="696" y="268" text-anchor="middle" class="svg-arrow-label">result</text>
+
+            <!-- Right: workspace and result -->
+            <rect x="724" y="24" width="232" height="340" rx="6" class="svg-panel"/>
+            <text x="742" y="50" class="svg-label">Workspace &amp; result</text>
+            <rect x="742" y="70" width="196" height="52" rx="4" class="svg-node"/>
+            <text x="754" y="92" class="svg-title">Workspace</text>
+            <text x="754" y="108" class="svg-sub">repo · tests · branch</text>
+            <rect x="742" y="136" width="196" height="52" rx="4" class="svg-node"/>
+            <text x="754" y="158" class="svg-title">Change set</text>
+            <text x="754" y="174" class="svg-sub">diff · checkpoint · revert</text>
+            <rect x="742" y="202" width="196" height="52" rx="4" class="svg-node"/>
+            <text x="754" y="224" class="svg-title">Audit</text>
+            <text x="754" y="240" class="svg-sub">who · what · when</text>
+            <rect x="742" y="268" width="196" height="52" rx="4" class="svg-node"/>
+            <text x="754" y="290" class="svg-title">Commit / PR</text>
+            <text x="754" y="306" class="svg-sub">push is gated; PR via shell</text>
+            <line x1="742" y1="334" x2="938" y2="334" class="svg-line"/>
+            <text x="742" y="352" class="svg-note">Commit or PR returns to GitHub.</text>
+          </svg>
+        </div>
+        <figcaption>One-Search reads the left band. VS Code edits the right band. Fid Coder is the loop that joins them, with a gate before a destructive command and a record of what changed.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="eyebrow">02 · What stands out</span>
+      <div>
+        <h2>The loop, the brake, the receipt</h2>
+        <p class="lede">The differentiation is not a longer feature list. It is the shape of the work: a cross-system question becomes a verified change, and the change is visible and reversible.</p>
+      </div>
+    </div>
+    <div class="section-body">
+      <div class="point">
+        <div class="point-label"><span class="eyebrow">Loop</span></div>
+        <div class="point-copy">
+          <h3>It closes the loop.</h3>
+          <p>One-Search can tell you a ticket is failing. VS Code can change the file. Fid Coder can do both in one turn: read the ticket, find the code, patch it, run the test, and show the diff. The turn does not end at a suggestion.</p>
+          <div class="chips">
+            <span class="chip">jira_issue</span>
+            <span class="chip">search_text</span>
+            <span class="chip">apply_patch</span>
+            <span class="chip">shell_run</span>
+            <span class="chip">git_diff</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="point">
+        <div class="point-label"><span class="eyebrow">Context</span></div>
+        <div class="point-copy">
+          <h3>The context crosses the boundary.</h3>
+          <p>One agent turn can combine Jira, a GitHub pull request, the local repo, and a logged-in browser page. Ask mode keeps the question read-only by removing the write tools. Agent mode adds the edit and run tools. The project map and <span class="mono">path:line</span> citations make the reasoning inspectable.</p>
+          <div class="chips">
+            <span class="chip">Ask mode</span>
+            <span class="chip">project map</span>
+            <span class="chip">path:line citations</span>
+            <span class="chip">code reader</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="point">
+        <div class="point-label"><span class="eyebrow">Brake</span></div>
+        <div class="point-copy">
+          <h3>Autonomy has a brake and a receipt.</h3>
+          <p>Deletes, pushes, and downloads stop at an approval card that names the command, folder, and reason. Allow once, always allow, reject, or always deny. Deny wins, and every decision lands in the audit history. File edits are checkpointed with a diff and a one-click revert.</p>
+          <div class="chips">
+            <span class="chip">approval card</span>
+            <span class="chip">saved rules</span>
+            <span class="chip">audit history</span>
+            <span class="chip">checkpoint + revert</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="point">
+        <div class="point-label"><span class="eyebrow">Identity</span></div>
+        <div class="point-copy">
+          <h3>It runs on the user's identity, not a shared service account.</h3>
+          <p>Jira and GitHub tokens are personal and encrypted with Windows <span class="mono">safeStorage</span>. The browser uses a per-agent profile with the user's existing login. There is no new admin grant and no broad shared credential. The activity is attributable to the person at the PC.</p>
+          <div class="chips">
+            <span class="chip">safeStorage</span>
+            <span class="chip">per-agent browser profile</span>
+            <span class="chip">personal PAT</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="point">
+        <div class="point-label"><span class="eyebrow">Cadence</span></div>
+        <div class="point-copy">
+          <h3>It becomes a scheduled teammate.</h3>
+          <p>Routines run a saved instruction on a cron schedule and raise a Windows toast. Memory carries context across sessions. Skills encode a team's review or triage playbook and can live in the repo. The Agent Desk shows the browser preview, approvals, routines, changes, and diffs while the work happens.</p>
+          <div class="chips">
+            <span class="chip">cron routines</span>
+            <span class="chip">rolling memory</span>
+            <span class="chip">SKILL.md</span>
+            <span class="chip">Agent Desk</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="eyebrow">03 · The proof</span>
+      <div>
+        <h2>A five-minute demo</h2>
+        <p class="lede">Show the loop once, end to end. Do not open with a feature tour. Open with a ticket that a manager already recognizes, and let the agent carry it to a test run and a diff.</p>
+      </div>
+    </div>
+    <div class="section-body">
+      <ol class="demo">
+        <li>
+          <span class="demo-num">01</span>
+          <div class="demo-copy">
+            <h3>Ask the question in Ask mode.</h3>
+            <p>“What does this bug touch?” The agent reads the Jira issue, searches the repo, and answers with <span class="mono">path:line</span> citations. Choose a citation to open the code reader with the exact range highlighted.</p>
+          </div>
+        </li>
+        <li>
+          <span class="demo-num">02</span>
+          <div class="demo-copy">
+            <h3>Switch to Agent mode and fix it.</h3>
+            <p>“Fix it and run the failing test.” Watch the tool card step through the patch and the test run. The Agent Desk shows the change set and the diff without opening a terminal.</p>
+          </div>
+        </li>
+        <li>
+          <span class="demo-num">03</span>
+          <div class="demo-copy">
+            <h3>Show the brake.</h3>
+            <p>Ask for a push or a delete. The approval card names the command, folder, and reason. Choose Reject to show the deny path and the audit entry. Explain that allow once or a saved rule is the normal path.</p>
+          </div>
+        </li>
+        <li>
+          <span class="demo-num">04</span>
+          <div class="demo-copy">
+            <h3>Show the receipt.</h3>
+            <p>Open the diff and revert the file. The workspace is restored. Point out that this works for <span class="mono">file_write</span> and <span class="mono">apply_patch</span>; shell-made file changes are not checkpointed.</p>
+          </div>
+        </li>
+        <li>
+          <span class="demo-num">05</span>
+          <div class="demo-copy">
+            <h3>Show the cadence.</h3>
+            <p>Open a weekday 9:00 routine and its last status. Say the limit plainly: routines run while the app is open; tray and keep-running are the next step. Close on the loop, not the schedule.</p>
+          </div>
+        </li>
+      </ol>
+      <div class="callout">
+        <span class="callout-label">Set up before the demo</span>
+        <p>A sample repo with one failing test, a Jira issue that points at it, Copilot signed in, and a developer agent with that workspace. Save the Jira PAT first. Do not open Datadog SSO in the first demo; it is a separate, unproven dependency.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="eyebrow">04 · The pilot</span>
+      <div>
+        <h2>What leadership gets</h2>
+        <p class="lede">A four-week pilot with a baseline week and a clear stop rule. The point is to measure the loop, not adoption of another chat window.</p>
+      </div>
+    </div>
+    <div class="section-body">
+      <div class="pilot-grid">
+        <div class="pilot-card">
+          <span class="eyebrow">Success bar</span>
+          <div class="stat-row">
+            <span class="stat-num">20%</span>
+            <span class="stat-label">faster from ticket to first reviewable PR</span>
+          </div>
+          <div class="stat-or">or</div>
+          <div class="stat-row">
+            <span class="stat-num">30 min</span>
+            <span class="stat-label">saved per developer per day</span>
+          </div>
+          <p class="fine">One team, one workflow, four weeks. If it misses, stop and report. Do not expand.</p>
+        </div>
+        <div class="pilot-card">
+          <span class="eyebrow">Scorecard</span>
+          <ul class="metric-list">
+            <li><span>Ticket to first PR</span><span class="unit">median</span></li>
+            <li><span>Context switches per task</span><span class="unit">count</span></li>
+            <li><span>Routine digests delivered</span><span class="unit">count</span></li>
+            <li><span>Review findings with evidence</span><span class="unit">path:line</span></li>
+            <li><span>Approvals, denials, reverts</span><span class="unit">audit</span></li>
+            <li><span>Copilot credits per merged change</span><span class="unit">cost</span></li>
+          </ul>
+        </div>
+        <div class="pilot-card">
+          <span class="eyebrow">Guardrail</span>
+          <div class="guardrail">
+            <p>Zero unapproved destructive commands. Every approval decision auditable. Every file edit made through the file tools is reversible.</p>
+          </div>
+          <p>Pair the pilot with a security review of secrets, browser profiles, and the audit export. That review is part of the deliverable, not a later gate.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="eyebrow">05 · The honest part</span>
+      <div>
+        <h2>Risks and answers</h2>
+        <p class="lede">The fastest way to lose the room is to overclaim. These are the objections leadership will hear, with the truthful answer and the next move.</p>
+      </div>
+    </div>
+    <div class="section-body">
+      <div class="table-wrap">
+        <table class="risk-table">
+          <caption class="sr-only">Common objections to Fid Coder, the truthful answer, and the recommended next move.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Objection</th>
+              <th scope="col">The truthful answer</th>
+              <th scope="col">The next move</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>“One-Search already covers the read.”</td>
+              <td>It does. It cannot act. Rebuilding its connectors would duplicate the team's work.</td>
+              <td>Make One-Search a read tool in Fid Coder. Use its breadth as the top of the funnel.</td>
+            </tr>
+            <tr>
+              <td>“VS Code already does coding.”</td>
+              <td>It should stay the editor. Fid Coder is the cross-system desk with a schedule and an audit.</td>
+              <td>Position it as a complement. Do not build an IDE.</td>
+            </tr>
+            <tr>
+              <td>“This is a per-PC tool, not a team platform.”</td>
+              <td>True today. Agents, transcripts, and audit are local. Skills can live in the repo.</td>
+              <td>Share playbooks as repo skills. Ship threads and an audit export before an org rollout.</td>
+            </tr>
+            <tr>
+              <td>“Routines stop when the app closes.”</td>
+              <td>True. The scheduled-worker story is not unattended yet.</td>
+              <td>Ship tray, keep-running, run history, and an inbox before claiming unattended work.</td>
+            </tr>
+            <tr>
+              <td>“Shell access is risky.”</td>
+              <td>Deletes, pushes, and downloads pause for approval. Other commands run without a prompt, and shell-made file changes are not checkpointed.</td>
+              <td>Extend the gate to remote writes such as PR creation and issue updates. Add policy templates. Keep deny-by-default for new tool classes.</td>
+            </tr>
+            <tr>
+              <td>“Is Datadog covered?”</td>
+              <td>It is a draft. SSO inside the automated browser is unproven.</td>
+              <td>Test SSO first. If blocked, use One-Search for Datadog and keep Fid Coder on Jira, GitHub, and the repo.</td>
+            </tr>
+            <tr>
+              <td>“How does it get installed and paid for?”</td>
+              <td>A portable Windows build exists. Corporate allowlisting is still a dependency. Every turn spends Copilot credits.</td>
+              <td>Get one approved internal distribution path. Track credits per merged change in the pilot.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="eyebrow">06 · The plan</span>
+      <div>
+        <h2>Three moves, one non-goal list</h2>
+        <p class="lede">The strategy is integration, not a feature race. Fid Coder should own the action loop and consume the read layer that already exists.</p>
+      </div>
+    </div>
+    <div class="section-body">
+      <div class="moves">
+        <div class="move">
+          <span class="eyebrow">Move 1 · Highest leverage</span>
+          <h3>Integrate One-Search.</h3>
+          <p>Add a read-only One-Search tool or MCP client. Fid Coder keeps the action loop; One-Search supplies the cross-system read. This turns a parallel effort into the top of one funnel.</p>
+        </div>
+        <div class="move">
+          <span class="eyebrow">Move 2 · Make it legible</span>
+          <h3>Ship threads, then routines 2.0.</h3>
+          <p>Threads separate routine, ticket, and review work. Tray, run history, and an inbox make the scheduled-worker story real. Add an approval audit export for security.</p>
+        </div>
+        <div class="move">
+          <span class="eyebrow">Move 3 · Package the loop</span>
+          <h3>Productize ticket to verified change.</h3>
+          <p>A built-in skill and starter prompt for the hero workflow, plus a weekly outcome digest routine. Use what already exists; add no new architecture.</p>
+        </div>
+      </div>
+      <div class="not-build">
+        <span class="eyebrow">Do not build</span>
+        <ul>
+          <li>A connector catalog to match One-Search.</li>
+          <li>An IDE or inline editing.</li>
+          <li>A server or multi-tenant control plane before the local pilot proves value.</li>
+          <li>Unattended scheduling claims before the tray ships.</li>
+          <li>More integrations before threads and routines are legible.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <div class="closing">
+    <p>One-Search tells you what happened. VS Code lets you change the code. Fid Coder is the only one of the three that can take what happened, change the code, run the test, and hand you the receipt.</p>
+  </div>
+
+  <div class="footer">
+    <span>Fid Coder · positioning brief · 10 November 2026</span>
+    <span>No code changed. Implementation waits for approval.</span>
+  </div>
+  <p class="sources">Feature evidence: src/tools, src/main/workspace, src/main/routines, src/main/secrets.ts, src/renderer/components/approvals, src/renderer/components/desk. Product constraints: AGENTS.md.</p>
+</div>

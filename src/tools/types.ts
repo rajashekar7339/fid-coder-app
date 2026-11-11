@@ -37,6 +37,7 @@ export type ToolContext = {
   workspaceDir: string | null;
   skillDir?: string;
   skills?: SkillActivation[];
+  onSkillUsed?: (id: string) => void;
   writeRoot?: string;
   model?: string;
   turnId?: string;

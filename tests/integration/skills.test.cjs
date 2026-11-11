@@ -21,6 +21,7 @@ const {
 } = require("../../dist/main/skills/index.js");
 const { AppDatabase } = require("../../dist/main/db/index.js");
 const { Runner } = require("../../dist/main/chat/runner.js");
+const { listSkillsTool, useSkillTool } = require("../../dist/tools/skills/skills.js");
 
 test("reads installed skills and refreshes when a file changes", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fid-skill-files-"));
@@ -130,6 +131,44 @@ test("workspace .skills wins and a named skill is loaded for one message", () =>
   } finally {
     fs.rmSync(workspace, { recursive: true, force: true });
   }
+});
+
+test("list_skills exposes the catalog and use_skill marks the skill used", async () => {
+  const skills = [
+    {
+      id: "html-report",
+      name: "Make an HTML report",
+      description: "Create a styled HTML brief.",
+      version: "1.0.0",
+      body: "Read the template.",
+      dir: path.join(process.cwd(), "skills", "html-report"),
+      files: [{ path: "template.html", bytes: 1200 }],
+    },
+  ];
+  const context = { skills };
+  const listed = await listSkillsTool.handler({}, context);
+  assert.match(
+    listed,
+    /html-report \(Make an HTML report\) · v1\.0\.0: Create a styled HTML brief\./,
+  );
+
+  let used = "";
+  const loaded = await useSkillTool.handler(
+    { id: "html-report" },
+    {
+      ...context,
+      onSkillUsed: (id) => {
+        used = id;
+      },
+    },
+  );
+  assert.match(loaded, /Skill: Make an HTML report \(html-report\) · v1\.0\.0/);
+  assert.match(loaded, /Read the template\./);
+  assert.equal(used, "html-report");
+  await assert.rejects(
+    () => useSkillTool.handler({ id: "missing" }, context),
+    /Call list_skills to see installed skills/,
+  );
 });
 
 function writeSkill(root, id, name, body) {

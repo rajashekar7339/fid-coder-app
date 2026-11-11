@@ -27,7 +27,7 @@ Choose the map button in the chat header to open the project map. On first use i
 
 - an overview and entry points;
 - a component table with key files;
-- key runtime flows as Mermaid flowcharts with linked code;
+- key runtime flows as Mermaid flowcharts with clean labels;
 - a suggested reading order;
 - build and test commands;
 - risks and unknowns.
@@ -40,12 +40,12 @@ The map is cached for the workspace and marked **Up to date** or **The repositor
 
 `Review architecture` invokes the built-in skill. It returns a structured review: components, flows, boundaries, coupling, a risk table with evidence, test and observability gaps, and an explicit confidence and unknowns section. It is not a diff review; use `/review` for a change.
 
-Flowcharts are the default for module structure, control flow, and data flows. Sequence diagrams are used when the order between actors over time is the point. Data models can use an ER diagram. In a conversation, a node whose label contains `path:line` is clickable, and a **Linked code** list under the diagram opens the same files. Expand any diagram to a full-screen view, zoom it, copy it as an image, or switch to its source. Expand, zoom, copy, and source also work in the help guide.
+Flowcharts are the default for module structure, control flow, and data flows. Sequence diagrams are used when the order between actors over time is the point. Data models can use an ER diagram. Use component names, not file names or `path:line` references, in diagram labels; put the evidence in the prose and numbered steps. The reader's **Code references** list still shows every citation in the answer. Expand any diagram to a full-screen view, zoom it, copy it as an image, or switch to its source. Expand, zoom, copy, and source also work in the help guide.
 
 ```mermaid
 flowchart TD
-  U["You"] --> A["Ask agent<br/>src/main/chat/runner.ts:67"]
-  A --> W["Workspace reads<br/>path:line evidence"]
+  U["You"] --> A["Ask agent"]
+  A --> W["Workspace reads"]
   A --> R["Report, risks, and diagrams"]
   W --> A
 ```

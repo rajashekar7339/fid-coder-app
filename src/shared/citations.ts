@@ -83,3 +83,20 @@ export function collectCitations(text: string): Citation[] {
   }
   return found;
 }
+
+/** Removes path:line evidence from diagram labels while leaving the prose intact. */
+export function stripCitations(text: string): string {
+  let cleaned = text.replace(citationPattern(), "");
+  cleaned = cleaned.replace(/\(\s*\)/g, "");
+  cleaned = cleaned.replace(/<br\s*\/?>\s*(?=["\]])/gi, "");
+  cleaned = cleaned.replace(/(["'\[])\s*<br\s*\/?>/gi, "$1");
+  cleaned = cleaned.replace(/(<br\s*\/?>\s*){2,}/gi, "<br/>");
+  cleaned = cleaned.replace(/\s*[,;:]\s*(?=["\]])/g, "");
+  cleaned = cleaned.replace(/\s+[-–—]\s*(?=["\]])/g, "");
+  cleaned = cleaned.replace(/[ \t]+(?=["\]])/g, "");
+  cleaned = cleaned.replace(/[ \t]{2,}/g, " ");
+  cleaned = cleaned.replace(/\[\s*""\s*\]/g, '[" "]');
+  cleaned = cleaned.replace(/\[\s*''\s*\]/g, "[' ']");
+  cleaned = cleaned.replace(/\|\s*""\s*\|/g, '|" "|');
+  return cleaned;
+}

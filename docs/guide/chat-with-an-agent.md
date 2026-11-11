@@ -73,7 +73,7 @@ Ask the agent what you worked on earlier, or name the issue. It can search the s
 
 ## Ask for a diagram
 
-Ask for a flow, process, or architecture picture. The agent answers with a Mermaid block, and the app draws it as a diagram with zoom, horizontal scroll, and a **Source** toggle. Flowcharts are the default for architecture, control flow, and data flows; sequence diagrams are used when the order between actors over time matters. If a node label contains a `path:line`, choose the node to open the code reader. A **Linked code** list under the diagram opens the same files. A reply that already contains ASCII art still shows as text under a **Diagram** label.
+Ask for a flow, process, or architecture picture. The agent answers with a Mermaid block, and the app draws it as a diagram with zoom, horizontal scroll, and a **Source** toggle. Flowcharts are the default for architecture, control flow, and data flows; sequence diagrams are used when the order between actors over time matters. Diagram labels stay clean: file references belong in the surrounding text and numbered steps, and the reader's **Code references** list shows every citation in the answer. A reply that already contains ASCII art still shows as text under a **Diagram** label.
 
 Use **Expand** above a rendered diagram for a full-screen view with zoom. Use **Copy image** to copy the whole diagram as a PNG, including its colors, at full size regardless of the current zoom or scroll. Paste it directly into Confluence or another document. **Copy** copies the Mermaid source instead.
 

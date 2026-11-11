@@ -97,6 +97,14 @@ export function usedSkillsPrompt(
   ].join("\n");
 }
 
+export function availableSkillsPrompt(): string {
+  return [
+    "Installed skills are available through list_skills.",
+    "When the current task looks like a reusable procedure, such as a brief, report, one-pager, review, plan, or workflow, call list_skills to see the ids and descriptions, then use_skill with the best match.",
+    "Do not list or load a skill for a simple answer, and do not load more than one unless the task truly needs both.",
+  ].join(" ");
+}
+
 export function skillTurnPrompt(
   skill: { name: string; body: string },
   files: readonly SkillFile[] = [],

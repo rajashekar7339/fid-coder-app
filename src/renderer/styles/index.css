@@ -2158,42 +2158,6 @@ kbd {
   margin: 0 auto;
 }
 
-.mermaid-diagram g.node.is-code-linked {
-  cursor: pointer;
-}
-
-.mermaid-diagram g.node.is-code-linked:focus {
-  outline: none;
-}
-
-.mermaid-diagram g.nodes > g.node.is-code-linked:hover :is(rect, polygon, circle, ellipse),
-.mermaid-diagram g.nodes > g.node.is-code-linked:focus-visible :is(rect, polygon, circle, ellipse) {
-  stroke: var(--lime) !important;
-  stroke-width: 2.2px !important;
-}
-
-.mermaid-links {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 13px 10px;
-  border-top: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.012);
-}
-
-.mermaid-links-label {
-  color: var(--faint);
-  font-family: var(--font-mono);
-  font-size: 8.8px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.mermaid-links .md-citation {
-  font-size: 9.6px;
-}
-
 .nodeLabel,
 .nodeLabel p {
   font-size: 11.5px !important;

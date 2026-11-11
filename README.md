@@ -33,7 +33,7 @@ npm run dev
 | `npm run test:unit` | Fast tests against source files |
 | `npm run test:integration` | Tests against compiled `dist` output; builds first |
 | `npm run test:features` | Live Electron harness for changes/revert, rules, and the context inspector. Needs Copilot sign-in and runs against a temporary profile. |
-| `npm run test:skills` | Deterministic Electron harness for Ask mode, starters, the project map, the code reader, linked diagram nodes, full-screen diagrams, the Skills library, command menu, and help screenshots. |
+| `npm run test:skills` | Deterministic Electron harness for Ask mode, starters, the project map, the code reader and its answer-wide reference list, clean diagram labels, full-screen diagrams, the Skills library, command menu, and help screenshots. |
 | `npm run test:skills-reuse` | Live harness for using a skill once and reloading it on a later turn. Needs Copilot and two turns. |
 | `npm run test:map` | Live harness for building the read-only project map and reopening its cache. Needs Copilot and one turn. |
 | `npm run test:enhance` | Live harness for Enhance Prompt: one real rewrite, Undo, skips, and no-send checks. Needs Copilot. |

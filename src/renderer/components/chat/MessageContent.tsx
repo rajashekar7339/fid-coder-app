@@ -14,7 +14,7 @@ import {
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Mermaid, MermaidConfig } from "mermaid";
-import { collectCitations, type Citation } from "../../../shared/citations";
+import { collectCitations, stripCitations, type Citation } from "../../../shared/citations";
 import { highlightCode } from "../../lib/code-highlight";
 import { renderInlineMarkdown } from "../../lib/inline-markdown";
 import {
@@ -240,61 +240,6 @@ type OpenFile = (
   related: Citation[],
 ) => void;
 
-function citationLabel(citation: Citation): string {
-  return `${citation.path}:${citation.line}${citation.endLine === null ? "" : `-${citation.endLine}`}`;
-}
-
-function nodeCitation(node: Element): Citation | null {
-  const whole = collectCitations(node.textContent ?? "");
-  if (whole.length > 0) return whole[0] ?? null;
-  for (const line of node.querySelectorAll("tspan")) {
-    const found = collectCitations(line.textContent ?? "");
-    if (found.length > 0) return found[0] ?? null;
-  }
-  return null;
-}
-
-function markDiagramLinks(root: HTMLElement | null, onOpenFile?: OpenFile) {
-  if (!root) return;
-  for (const node of root.querySelectorAll<SVGGElement>("g.node")) {
-    const citation = onOpenFile ? nodeCitation(node) : null;
-    if (!citation) {
-      node.classList.remove("is-code-linked");
-      node.removeAttribute("tabindex");
-      node.removeAttribute("role");
-      node.removeAttribute("aria-label");
-      node.removeAttribute("data-fid-path");
-      node.removeAttribute("data-fid-line");
-      node.removeAttribute("data-fid-end");
-      continue;
-    }
-    node.classList.add("is-code-linked");
-    node.setAttribute("tabindex", "0");
-    node.setAttribute("role", "button");
-    node.setAttribute("aria-label", `Open ${citationLabel(citation)}`);
-    node.setAttribute("data-fid-path", citation.path);
-    node.setAttribute("data-fid-line", String(citation.line));
-    if (citation.endLine === null) node.removeAttribute("data-fid-end");
-    else node.setAttribute("data-fid-end", String(citation.endLine));
-  }
-}
-
-function linkedCitation(target: EventTarget | null): Citation | null {
-  if (!(target instanceof Element)) return null;
-  const node = target.closest("g.node.is-code-linked");
-  if (!node) return null;
-  const path = node.getAttribute("data-fid-path");
-  const line = Number(node.getAttribute("data-fid-line"));
-  const end = node.getAttribute("data-fid-end");
-  if (!path || !Number.isFinite(line)) return null;
-  const endLine = end === null ? null : Number(end);
-  return {
-    path,
-    line,
-    endLine: endLine !== null && Number.isFinite(endLine) ? endLine : null,
-  };
-}
-
 function renderInline(text: string, keyPrefix: string, onOpenFile?: OpenFile) {
   return renderInlineMarkdown(text, keyPrefix, INLINE_CLASSES, onOpenFile);
 }
@@ -400,15 +345,7 @@ function CodeBlock({ text, language }: { text: string; language: string }) {
   );
 }
 
-export function MermaidDiagram({
-  code,
-  streaming = false,
-  onOpenFile,
-}: {
-  code: string;
-  streaming?: boolean;
-  onOpenFile?: OpenFile;
-}) {
+export function MermaidDiagram({ code, streaming = false }: { code: string; streaming?: boolean }) {
   const [svg, setSvg] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showSource, setShowSource] = useState(false);
@@ -417,9 +354,8 @@ export function MermaidDiagram({
   const [expanded, setExpanded] = useState(false);
   const [fullZoom, setFullZoom] = useState(1);
   const canvas = useRef<HTMLDivElement>(null);
-  const overlayCanvas = useRef<HTMLDivElement>(null);
   const closeExpanded = useRef<HTMLButtonElement>(null);
-  const links = useMemo(() => collectCitations(code), [code]);
+  const cleanCode = useMemo(() => stripCitations(code), [code]);
 
   useEffect(() => {
     if (streaming) return;
@@ -431,7 +367,7 @@ export function MermaidDiagram({
     setZoom(1);
     setScrollable(false);
     setExpanded(false);
-    void renderMermaidSvg(renderId, code, MERMAID_CONFIG)
+    void renderMermaidSvg(renderId, cleanCode, MERMAID_CONFIG)
       .then((rendered) => {
         if (active) setSvg(rendered);
       })
@@ -441,7 +377,7 @@ export function MermaidDiagram({
     return () => {
       active = false;
     };
-  }, [code, streaming]);
+  }, [cleanCode, streaming]);
 
   useEffect(() => {
     if (!expanded) return;
@@ -498,20 +434,7 @@ export function MermaidDiagram({
     });
   }
 
-  function openLinkedNode(target: EventTarget | null) {
-    const citation = linkedCitation(target);
-    if (!citation || !onOpenFile) return;
-    // The full-screen diagram sits above normal modals; close it before the reader opens.
-    setExpanded(false);
-    onOpenFile(citation.path, citation.line, citation.endLine, links);
-  }
-
-  useEffect(() => {
-    markDiagramLinks(canvas.current, onOpenFile);
-    markDiagramLinks(overlayCanvas.current, onOpenFile);
-  }, [expanded, onOpenFile, svg]);
-
-  if (streaming) return <CodeBlock text={code} language="mermaid" />;
+  if (streaming) return <CodeBlock text={cleanCode} language="mermaid" />;
 
   return (
     <>
@@ -597,8 +520,8 @@ export function MermaidDiagram({
                 Expand
               </button>
             ) : null}
-            {svg && !showSource && !error ? <CopyImageButton code={code} /> : null}
-            <CopyButton text={code} />
+            {svg && !showSource && !error ? <CopyImageButton code={cleanCode} /> : null}
+            <CopyButton text={cleanCode} />
           </div>
         </div>
         {error ? (
@@ -607,25 +530,15 @@ export function MermaidDiagram({
               Could not render this diagram. Showing its source instead.
             </div>
             <pre>
-              <code>{code}</code>
+              <code>{cleanCode}</code>
             </pre>
           </>
         ) : showSource ? (
           <pre>
-            <code>{code}</code>
+            <code>{cleanCode}</code>
           </pre>
         ) : svg ? (
-          <div
-            ref={canvas}
-            className="mermaid-canvas"
-            onClick={(event) => openLinkedNode(event.target)}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter" && event.key !== " ") return;
-              if (!linkedCitation(event.target) || !onOpenFile) return;
-              event.preventDefault();
-              openLinkedNode(event.target);
-            }}
-          >
+          <div ref={canvas} className="mermaid-canvas">
             <div
               className="mermaid-diagram"
               style={{ width: `${zoom * 100}%` }}
@@ -638,24 +551,6 @@ export function MermaidDiagram({
             Rendering diagram…
           </div>
         )}
-        {svg && !showSource && !error && onOpenFile && links.length > 0 ? (
-          <div className="mermaid-links" aria-label="Code links in this diagram">
-            <span className="mermaid-links-label">Linked code</span>
-            {links.map((citation) => (
-              <button
-                key={citationLabel(citation)}
-                type="button"
-                className="md-citation md-citation-code"
-                title={`Open ${citationLabel(citation)}`}
-                onClick={() =>
-                  onOpenFile(citation.path, citation.line, citation.endLine, links)
-                }
-              >
-                {citationLabel(citation)}
-              </button>
-            ))}
-          </div>
-        ) : null}
       </div>
 
       {expanded
@@ -695,7 +590,7 @@ export function MermaidDiagram({
                       <Plus size={11} />
                     </button>
                   </div>
-                  <CopyImageButton code={code} />
+                  <CopyImageButton code={cleanCode} />
                   <button
                     ref={closeExpanded}
                     type="button"
@@ -708,17 +603,7 @@ export function MermaidDiagram({
                   </button>
                 </div>
               </div>
-              <div
-                ref={overlayCanvas}
-                className="mermaid-overlay-canvas"
-                onClick={(event) => openLinkedNode(event.target)}
-                onKeyDown={(event) => {
-                  if (event.key !== "Enter" && event.key !== " ") return;
-                  if (!linkedCitation(event.target) || !onOpenFile) return;
-                  event.preventDefault();
-                  openLinkedNode(event.target);
-                }}
-              >
+              <div className="mermaid-overlay-canvas">
                 <div
                   className="mermaid-diagram"
                   style={{ width: `${fullZoom * 100}%` }}
@@ -802,7 +687,6 @@ export const MessageContent = memo(function MessageContent({
               key={key}
               code={block.text}
               streaming={streaming}
-              onOpenFile={openFile}
             />
           ) : (
             <CodeBlock key={key} text={block.text} language={block.language} />

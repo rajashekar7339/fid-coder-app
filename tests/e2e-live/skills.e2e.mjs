@@ -296,31 +296,21 @@ async function main() {
     );
     await page.waitForSelector(".project-map-modal .mermaid-diagram svg", { timeout: 20_000 });
     check("the project map renders its Mermaid flow", true);
-    await page.waitForSelector(".project-map-modal .mermaid-links", { timeout: 10_000 });
-    const linkedNodes = await page.locator(".project-map-modal g.node.is-code-linked").count();
-    const linkedButtons = await page.locator(".project-map-modal .mermaid-links .md-citation").count();
+    const diagramText = await page.locator(".project-map-modal .mermaid-diagram").innerText();
     check(
-      "diagram nodes and citations are linked to code",
-      linkedNodes >= 2 && linkedButtons === 2,
-      `${linkedNodes}/${linkedButtons}`,
+      "diagram labels hide code references",
+      !/src\/demo\.ts|src\/other\.ts/.test(diagramText),
+      diagramText.replace(/\s+/g, " ").slice(0, 140),
+    );
+    check(
+      "the diagram has no linked-code strip",
+      (await page.locator(".project-map-modal .mermaid-links").count()) === 0,
     );
     await page.getByRole("button", { name: "Expand diagram" }).click();
     await page.waitForSelector(".mermaid-overlay", { timeout: 10_000 });
-    await page.waitForSelector(".mermaid-overlay g.node.is-code-linked", { timeout: 10_000 });
-    check("a diagram opens full screen and keeps its code links", true);
-    await page
-      .locator(".mermaid-overlay g.node.is-code-linked", { hasText: "src/other.ts:1" })
-      .click();
+    check("a diagram opens full screen", true);
+    await page.getByRole("button", { name: "Close full-screen diagram" }).click();
     await page.waitForSelector(".mermaid-overlay", { state: "detached", timeout: 10_000 });
-    await page.waitForSelector(".file-peek-code", { timeout: 10_000 });
-    const otherPeek = await page.locator(".file-peek-modal").innerText();
-    check(
-      "a linked diagram node opens the code reader",
-      /src\/other\.ts/.test(otherPeek) && /other = 4/.test(otherPeek),
-      otherPeek.replace(/\s+/g, " ").slice(0, 160),
-    );
-    await page.getByRole("button", { name: "Close file preview" }).click();
-    await page.waitForSelector(".file-peek-modal", { state: "detached", timeout: 10_000 });
 
     await page
       .locator(".project-map-modal .md-list .md-citation", { hasText: "src/demo.ts:2-3" })
@@ -341,8 +331,6 @@ async function main() {
     );
     check("the whole cited range is highlighted", targetLines === 2, String(targetLines));
     check("the reader highlights the language", highlighted > 0, String(highlighted));
-    const tabCount = await page.locator(".file-peek-tab").count();
-    check("previously opened files stay in tabs", tabCount === 2, String(tabCount));
     const referenceCount = await page.locator(".file-peek-ref").count();
     const referenceText = await page.locator(".file-peek-refs").innerText();
     check("the reader lists every citation in the answer", referenceCount === 4, String(referenceCount));
@@ -350,6 +338,22 @@ async function main() {
       "the reference list includes citations from other blocks",
       /third\.ts/.test(referenceText),
       referenceText.replace(/\s+/g, " ").slice(0, 140),
+    );
+
+    await page.getByRole("button", { name: "Open src/other.ts:1" }).click();
+    await page.waitForFunction(
+      () => /src\/other\.ts/.test(document.querySelector(".file-peek-title")?.textContent ?? ""),
+      null,
+      { timeout: 10_000 },
+    );
+    const tabCount = await page.locator(".file-peek-tab").count();
+    check("previously opened files stay in tabs", tabCount === 2, String(tabCount));
+
+    await page.getByRole("button", { name: "Open src/demo.ts:2-3" }).click();
+    await page.waitForFunction(
+      () => document.querySelectorAll(".file-peek-line.is-target").length === 2,
+      null,
+      { timeout: 10_000 },
     );
     await page.waitForTimeout(250);
     await shot(page, "06-code-reader");
@@ -396,7 +400,7 @@ async function main() {
     const library = await page.locator(".skills-modal").innerText();
     check(
       "library shows all skills",
-      ["User lean", "Project review", "From dot skills", "Write lean", "Review a change"].every((name) =>
+      ["User lean", "Project review", "From dot skills", "Write lean", "Review a change", "Make an HTML report"].every((name) =>
         library.includes(name),
       ),
       library.replace(/\s+/g, " ").slice(0, 240),
