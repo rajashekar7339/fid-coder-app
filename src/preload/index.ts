@@ -33,6 +33,7 @@ const channels = {
   browserPreview: "browser:preview",
   browserFocus: "browser:focus",
   changesLatest: "changes:latest",
+  changesList: "changes:list",
   changesDiff: "changes:diff",
   changesRevert: "changes:revert",
   changesRevertTurn: "changes:revert-turn",
@@ -114,6 +115,8 @@ const api: FidApi = {
   },
   changes: {
     latest: (agentId: string) => ipcRenderer.invoke(channels.changesLatest, agentId),
+    list: (agentId: string, limit?: number) =>
+      ipcRenderer.invoke(channels.changesList, agentId, limit ?? 30),
     diff: (changeId: string) => ipcRenderer.invoke(channels.changesDiff, changeId),
     revert: (changeId: string) => ipcRenderer.invoke(channels.changesRevert, changeId),
     revertTurn: (turnId: string) => ipcRenderer.invoke(channels.changesRevertTurn, turnId),

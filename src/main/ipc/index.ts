@@ -104,6 +104,9 @@ export function registerIpc(services: AppServices): void {
   ipcMain.handle(channels.browserFocus, (_event, agentId: string) => browser.focus(String(agentId ?? "")));
 
   ipcMain.handle(channels.changesLatest, (_event, agentId: string) => checkpoints.latest(String(agentId ?? "")));
+  ipcMain.handle(channels.changesList, (_event, agentId: string, limit?: number) =>
+    checkpoints.list(String(agentId ?? ""), typeof limit === "number" ? limit : 30),
+  );
   ipcMain.handle(channels.changesDiff, (_event, changeId: string) => checkpoints.diff(String(changeId ?? "")));
   ipcMain.handle(channels.changesRevert, (_event, changeId: string) => checkpoints.revert(String(changeId ?? "")));
   ipcMain.handle(channels.changesRevertTurn, (_event, turnId: string) => checkpoints.revertTurn(String(turnId ?? "")));

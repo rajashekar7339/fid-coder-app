@@ -45,12 +45,12 @@ src/
     main.tsx
     styles/index.css
     components/
-      chat/         ChatView, MessageContent, ProjectMapDialog, FilePeekDialog
+      chat/         ChatView, MessageContent, ProjectMapDialog, EditedFilesCard
       approvals/    ApprovalCard, ApprovalHistoryDialog
       agents/       AgentDialog, AgentAvatar
       sidebar/      Sidebar
       settings/     SettingsDialog
-      desk/         AgentDesk, ContextDialog, DiffView
+      desk/         AgentDesk, ContextDialog, ChangesPanel, DiffView
       routines/     RoutinesDialog
       skills/       SkillsDialog
       help/         HelpDialog, GuideContent
@@ -94,7 +94,8 @@ docs/
 | Enhancing a draft | `src/shared/enhance-prompt.ts`, `src/main/chat/enhance.ts`, and `Runner.enhanceDraft` |
 | Ask mode and read-only tools | `readOnly` on the agent, `askTools` in `src/tools/registry.ts`, and `askMode` in `src/main/chat/runner.ts` |
 | The project map | `src/main/workspace/architecture-map.ts`, `workspace_maps` in SQLite, and `ProjectMapDialog.tsx` |
-| Path:line citations and the code reader | `src/shared/citations.ts`, `src/renderer/lib/inline-markdown.tsx`, and `FilePeekDialog.tsx` |
+| Workspace changes | `src/main/workspace/checkpoints.ts`, `changes:list`, `ChangesPanel.tsx`, `EditedFilesCard.tsx`, and `src/shared/change-tree.ts` |
+| Path:line citations and the in-place code view | `src/shared/citations.ts`, `src/renderer/lib/inline-markdown.tsx`, and `ChangesPanel.tsx` |
 | Starter prompts | `src/shared/starters.ts` and the empty state in `ChatView.tsx` |
 | The Skills library | `src/renderer/components/skills/SkillsDialog.tsx` |
 | A composer command | `src/shared/commands.ts` and the menu in `src/renderer/components/chat/ChatView.tsx` |
@@ -112,7 +113,9 @@ Enhance is manual and one-shot. The renderer calls `chat.enhance` only from the 
 
 Ask mode is a tool boundary, not a prompt preference. `readOnly` filters the agent's normal profile through `askTools(profile)`: workspace agents keep reads, search, git/PR reads, history, and the read-only explorer; Browser & Jira agents keep Jira reads, browser navigate/snapshot, and history. Neither gets write, shell, click, or type tools. The project map is built only after the user chooses **Build map** or **Refresh map**; opening a saved map or the dialog never calls a model. The map is cached by workspace in `workspace_maps` and marked stale when the git key changes. Do not generate it on agent creation or on a normal turn.
 
-Citations keep their line range. Clicking one opens a read-only reader with syntax highlighting, tabs, back/forward history, and `Alt+Left`/`Alt+Right`. The reader lists every code reference in the answer, so any cited file or range can be opened as a tab without closing it. Use component names, not file names or `path:line` references, in Mermaid node labels; put the evidence in the prose and numbered steps. The renderer strips `path:line` citations from diagram labels before drawing, so existing messages and cached maps stay clean. Prefer flowcharts for architecture, control flow, and data flow; use `sequenceDiagram` only when ordering between actors over time is the point. Keep a diagram to about 12 nodes.
+Citations keep their line range. Clicking one opens the Changes panel at that file. If the file belongs to a recorded turn, the panel shows its diff with the cited lines marked. If it has no recorded change, the panel shows the current file read-only with syntax highlighting and the cited range marked. The panel's **References** tab lists every citation in the answer, so one cited file or range can follow another without a separate reader. Use component names, not file names or `path:line` references, in Mermaid node labels; put the evidence in the prose and numbered steps. The renderer strips `path:line` citations from diagram labels before drawing, so existing messages and cached maps stay clean. Prefer flowcharts for architecture, control flow, and data flow; use `sequenceDiagram` only when ordering between actors over time is the point. Keep a diagram to about 12 nodes.
+
+Workspace changes come from file tools only. The chat card and `ChangesPanel` share the `changes:list` summaries; fetch one selected file with `changes.diff`, never every file. The card belongs to the last assistant message of a turn. A citation path selects the newest recorded change for that file and passes its range to `DiffView`; a file without a change uses the panel's read-only code view. Shell changes are not recorded, and Undo uses the selected turn.
 
 Import a tool by its file name, for example `./browser/browser`. TypeScript resolves `./db` to `db/index.ts`. It does not resolve `./browser` to `browser/browser.ts`.
 
@@ -120,7 +123,7 @@ Import a tool by its file name, for example `./browser/browser`. TypeScript reso
 
 `tests/unit/*.test.ts` imports from `src` keep the `.ts` suffix. Node runs those files as ESM. Leave `package.json` without `"type": "module"`. Tests in `tests/integration/` load `dist/` and run after `npm run build:node`.
 
-`npm test` runs the unit and integration suites. The Electron harnesses have separate scripts: `npm run test:features`, `npm run test:skills`, `npm run test:skills-reuse`, `npm run test:map`, and `npm run test:enhance`. The live ones need Copilot and spend quota. See `CONTRIBUTING.md` for the test levels.
+`npm test` runs the unit and integration suites. The Electron harnesses have separate scripts: `npm run test:changes`, `npm run test:features`, `npm run test:skills`, `npm run test:skills-reuse`, `npm run test:map`, and `npm run test:enhance`. The live ones need Copilot and spend quota; `test:changes` is deterministic. See `CONTRIBUTING.md` for the test levels.
 
 A feature is a tool file, a main handler, and a screen, in those three places. Keep Electron and React out of one shared feature folder.
 

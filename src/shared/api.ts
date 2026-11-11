@@ -59,6 +59,7 @@ export interface FidApi {
   };
   changes: {
     latest: (agentId: string) => Promise<ChangeSet | null>;
+    list: (agentId: string, limit?: number) => Promise<ChangeSet[]>;
     diff: (changeId: string) => Promise<FileDiff>;
     revert: (changeId: string) => Promise<void>;
     revertTurn: (turnId: string) => Promise<void>;

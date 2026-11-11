@@ -75,7 +75,7 @@ If the owner says “then I will review those,” stop after the review. If they
 - Selecting a skill should keep the current message as the task: `hello` + skill `write-lean` becomes `/skills write-lean hello`. If the draft already has a `/skills` prefix, replace the skill and keep its task.
 - A starter prompt fills the composer and focuses it; it does not send.
 - A cached project map renders without a model call. A missing or stale map offers an explicit build or refresh action.
-- Cite evidence as `path:line`; the citation opens a read-only reader with the exact range highlighted, syntax highlighting, tabs, back/forward history, and a list of every code reference in the answer.
+- Cite evidence as `path:line`; the citation opens the Changes panel at that file and range. A recorded change shows its diff with the cited lines marked; otherwise the current file is shown read-only with syntax colors. The panel's **References** tab lists every code reference in the answer.
 - Large diagrams get a full-screen view with zoom; keep the inline view usable. Use component names, not file names or `path:line` references, in diagram labels; put the evidence in the surrounding prose and numbered steps.
 - Use accessible names, `role="status"` for changing status text, and keep interactive buttons outside the live region.
 - Date and time labels: use the existing `createdAt`/`lastActivityAt` data. Prefer `Today` / `Yesterday` / a real date, and put the full timestamp in a tooltip.
@@ -99,11 +99,12 @@ Run the smallest set that proves the change, then the relevant end-to-end path.
 | Types | `npm run typecheck` | Every change. |
 | Unit | `npm test` (unit part) | Pure rules, parsing, formatting, prompt text. |
 | Integration | `npm test` (integration part) | DB, main-process wiring, tools, IPC-adjacent logic. Mock Copilot. |
-| Deterministic UI | `npm run test:skills` | Electron UI, Ask mode, starters, cached project map, the code reader, linkable diagram nodes, full-screen diagrams, library, help screenshots. No Copilot turn. |
+| Deterministic UI | `npm run test:changes` | Seeded changes card, panel, file tree, citation bridge, file revert, and turn revert. No Copilot turn. |
+| Deterministic UI | `npm run test:skills` | Electron UI, Ask mode, starters, cached project map, the in-place citation view and references, clean diagram labels, full-screen diagrams, library, help screenshots. No Copilot turn. |
 | Live UI | `npm run test:skills-reuse` | A real skill turn and reuse on a later turn. Needs Copilot. |
 | Live UI | `npm run test:map` | One real project-map build, read-only workspace check, and cached reopen. Needs Copilot. |
 | Live UI | `npm run test:enhance` | One real rewrite, Undo, skips, and no-send checks. Needs Copilot. |
-| Live UI | `npm run test:features` | Changes/revert, workspace rules, context inspector. Needs Copilot. |
+| Live UI | `npm run test:features` | Live changes card and panel, file/turn revert, workspace rules, and context inspector. Needs Copilot. |
 
 Rules:
 
@@ -159,4 +160,4 @@ Keep the guide practical: what the user does, what happens, and how to undo or r
 - **Enhance Prompt:** backend handoff → review → simplification (send guard, last-four query) → UI (one button, read-only composer, inline status, Undo) → help docs/screenshot → unit, integration, and live e2e.
 - **Command draft bug:** reproduced the flow before changing code; found that selecting a dialog command cleared the draft; fixed the smallest cause and added two regression checks.
 - **Skill selection:** kept the typed message as the task instead of replacing it with `/skills <id> `; replacing an existing skill keeps its task. Added regression checks for both cases.
-- **Ask mode and architecture review:** added a read-only tool set, a composer switch, starter prompts, a cached project map, a path:line code reader with tabs, history, and an answer-wide reference list, clean flowchart labels, full-screen diagrams, and the architecture-review skill. Deterministic e2e covers the cached map, en-dash citation ranges, the reader tabs and history, the answer-wide reference list, and the diagram overlay; integration tests cover the tool boundary and map builder; the live `test:map` builds a real map and checks that the workspace is unchanged.
+- **Ask mode and architecture review:** added a read-only tool set, a composer switch, starter prompts, a cached project map, a path:line citation view in the Changes panel with an answer-wide reference list, clean flowchart labels, full-screen diagrams, and the architecture-review skill. Deterministic e2e covers the cached map, en-dash citation ranges, citation-to-diff navigation, the answer-wide reference list, and the diagram overlay; integration tests cover the tool boundary and map builder; the live `test:map` builds a real map and checks that the workspace is unchanged.

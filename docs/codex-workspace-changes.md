@@ -1,6 +1,6 @@
 # Codex-style workspace changes
 
-Status: plan. Not started.
+Status: implemented 10 November 2026. The approved slice includes the review-citation bridge and syntax-colored diffs; the in-progress thread card is deferred. A follow-up removed the separate reader; citations now open in the Changes panel itself.
 
 Reference: Codex change review (screenshot 10 November 2026). The chat shows an edited-files card. The right side is a Changes panel with a turn picker, the selected diff, and a changed-file tree.
 
@@ -66,6 +66,58 @@ A pure helper in `src/shared/change-tree.ts` groups relative paths into folders 
 - The chat must not call `changes.diff` for every file. One selected file at a time.
 - The 40-file cap means **Show more** never reveals a 45th file. The card and tree share that cap. The footer keeps the current sentence: file tools are tracked, shell changes are not.
 - Opening Changes hides the desk. Context, rules, and the browser preview remain one click away on the desk button.
+
+## Review notes (10 November 2026)
+
+Feasible. The data is already there: `turns`, `file_changes`, the checkpoint blobs, `diffLines`, `latest`, `diff`, `revert`, and `revertTurn`. No schema change is needed. The main gap is the review-citation path: the plan covers an agent's edits but not a citation from a review answer pointing at the right file and highlighted range in the change.
+
+### Add before implementation
+
+1. **Review citation bridge.** When a `path:line` citation is clicked:
+   - Look up the path in the loaded change sets, newest turn first.
+   - `FilePeekDialog` shows the exact file and range, plus a **Changed in last turn** badge and **View diff** when the file is part of a change.
+   - **View diff** opens `ChangesPanel` at that turn and file and passes the cited range to `DiffView`; the matching lines get a cited marker and scroll into view.
+   - If the file is not in a change set, the reader behaves as it does today with no diff action.
+   - This needs `FilePeekDialog.tsx`, `ChangesPanel.tsx`, `DiffView.tsx`, `ChatView.tsx`, and `App.tsx`; the mock shows the intended state.
+
+2. **One owner for the change list.** The plan has `ChatView` loading the list and `ChangesPanel` fetching its own. Lift `changeSets` to `App` (or one small hook) and pass it to the header button, card, and panel. Reverting a file or turn must refresh that shared list so the card cannot show stale files.
+
+3. **In-progress card.** `LiveTurn` and `ChatEvent` have no `turnId`, so the thread cannot reliably attach a card to a running turn. Either add `turnId` to the live event or defer **Recording changes…** to the Changes button/panel. Recommended: show the card after `done`, and use the header/panel for the recording state.
+
+4. **Diff syntax colors.** `DiffView` is currently plain red/green text. Codex is syntax-colored. Reuse `highlightCode`/`languageForPath` per line; this stays inside the existing diff engine. The mock shows the intended result.
+
+5. **Undo targets the selected turn.** The panel's Undo must call `revertTurn(selectedTurnId)`, not the latest turn. After a file revert, remove that file from the panel and select the next file or turn. After a turn revert, remove the turn from the list.
+
+6. **Card placement and refresh.** `Message.turnId` exists. Render the card once, on the last assistant message that shares the turn, not on tool messages or every assistant message. Refresh the change list on thread load, `done`/`error`, and after any revert.
+
+7. **States and accessibility.** Cover no workspace, Ask mode (no card and no Changes button), no recorded changes, loading/error, filtered-empty tree, and a turn whose files are not revertible. Add keyboard focus to the tree, restore focus when the panel closes, and preserve the selected file when switching turns if that path still exists.
+
+### Recommended order
+
+1. `changes:list`, `change-tree`, shared `changeSets` in App, card, panel, file tree, diff; reuse `DiffView`.
+2. Citation bridge: changed badge, View diff, cited lines in `DiffView`.
+3. Syntax-colored diff, docs/screenshot, deterministic UI checks for the card/panel/citation path, then update the live `changes-context` e2e.
+
+### Decisions made
+
+- Citation bridge: included.
+- Syntax-colored diff: included.
+- In-progress thread card: deferred.
+- Third-column layout at 1180px and overlay below it: included.
+
+UI mock: `temp/codex-changes-mock.html` (interactive), screenshots `temp/mock2-agent.png`, `temp/mock2-review.png`, `temp/mock2-diff.png`, `temp/mock2-mobile.png`.
+
+## Follow-up: citations in place (10 November 2026)
+
+The separate `FilePeekDialog` reader was removed after the first implementation. A citation now opens `ChangesPanel` directly:
+
+- A recorded change selects the file and turn, shows the diff in place, and marks the cited range in `DiffView`.
+- A file without a recorded change shows a read-only code view in the same pane, with syntax highlighting and the cited range marked.
+- The panel's **References** tab carries the answer-wide citation list. A reference with a recorded change opens its diff; one without opens the read-only view. A **changed** label marks the former.
+- The **Changed** tab stays available for the turn's file tree, with the existing filter, revert file, and turn Undo.
+- There is no changed badge, **View diff** step, **Back to code** step, tab history, or modal. The project map closes when a citation opens the panel.
+
+The deterministic changes e2e covers both changed and unchanged citations, the reference list, revert, and Undo. The skills e2e covers a project-map citation opening the panel and reference-to-file navigation.
 
 ## Recommendation
 

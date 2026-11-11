@@ -1,3 +1,5 @@
+import type { Citation } from "./citations";
+
 export type AgentToolProfile = "all" | "browser" | "developer";
 
 export type Agent = {
@@ -83,6 +85,20 @@ export type ChangeSet = {
   source: string;
   status: string | null;
   files: FileChangeSummary[];
+};
+
+export type FileChangeMatch = {
+  turnId: string;
+  file: FileChangeSummary;
+};
+
+export type ChangesOpenRequest = {
+  turnId?: string;
+  fileId?: string;
+  path?: string;
+  line?: number | null;
+  endLine?: number | null;
+  related?: Citation[];
 };
 
 export type FileDiff = {

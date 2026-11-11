@@ -18,6 +18,7 @@ export const channels = {
   browserPreview: "browser:preview",
   browserFocus: "browser:focus",
   changesLatest: "changes:latest",
+  changesList: "changes:list",
   changesDiff: "changes:diff",
   changesRevert: "changes:revert",
   changesRevertTurn: "changes:revert-turn",

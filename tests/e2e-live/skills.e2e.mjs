@@ -315,25 +315,27 @@ async function main() {
     await page
       .locator(".project-map-modal .md-list .md-citation", { hasText: "src/demo.ts:2-3" })
       .click();
-    await page.waitForSelector(".file-peek-code", { timeout: 10_000 });
+    await page.waitForSelector(".changes-panel", { timeout: 10_000 });
+    await page.waitForSelector(".citation-code", { timeout: 10_000 });
     await page.waitForFunction(
-      () => document.querySelectorAll(".file-peek-line.is-target").length === 2,
+      () => document.querySelectorAll(".citation-line.is-target").length === 2,
       null,
       { timeout: 10_000 },
     );
-    const peek = await page.locator(".file-peek-modal").innerText();
-    const targetLines = await page.locator(".file-peek-line.is-target").count();
-    const highlighted = await page.locator(".file-peek-code .hljs-keyword").count();
+    const peek = await page.locator(".changes-panel").innerText();
+    const targetLines = await page.locator(".citation-line.is-target").count();
+    const highlighted = await page.locator(".citation-code .hljs-keyword").count();
     check(
-      "a citation opens the read-only code reader",
+      "a citation opens the code in the Changes panel",
       /src\/demo\.ts/.test(peek) && /second/.test(peek),
       peek.replace(/\s+/g, " ").slice(0, 160),
     );
     check("the whole cited range is highlighted", targetLines === 2, String(targetLines));
-    check("the reader highlights the language", highlighted > 0, String(highlighted));
-    const referenceCount = await page.locator(".file-peek-ref").count();
-    const referenceText = await page.locator(".file-peek-refs").innerText();
-    check("the reader lists every citation in the answer", referenceCount === 4, String(referenceCount));
+    check("the panel highlights the language", highlighted > 0, String(highlighted));
+    check("the citation does not open a separate reader", (await page.locator(".modal").count()) === 0);
+    const referenceCount = await page.locator(".citation-ref").count();
+    const referenceText = await page.locator(".changes-refs").innerText();
+    check("the panel lists every citation in the answer", referenceCount === 4, String(referenceCount));
     check(
       "the reference list includes citations from other blocks",
       /third\.ts/.test(referenceText),
@@ -342,54 +344,28 @@ async function main() {
 
     await page.getByRole("button", { name: "Open src/other.ts:1" }).click();
     await page.waitForFunction(
-      () => /src\/other\.ts/.test(document.querySelector(".file-peek-title")?.textContent ?? ""),
+      () => /src\/other\.ts/.test(document.querySelector(".changes-diff-name")?.textContent ?? ""),
       null,
       { timeout: 10_000 },
     );
-    const tabCount = await page.locator(".file-peek-tab").count();
-    check("previously opened files stay in tabs", tabCount === 2, String(tabCount));
+    await page.waitForFunction(
+      () => document.querySelectorAll(".citation-line.is-target").length === 1,
+      null,
+      { timeout: 10_000 },
+    );
+    check("a reference opens the other file in place", true);
 
     await page.getByRole("button", { name: "Open src/demo.ts:2-3" }).click();
     await page.waitForFunction(
-      () => document.querySelectorAll(".file-peek-line.is-target").length === 2,
+      () => document.querySelectorAll(".citation-line.is-target").length === 2,
       null,
       { timeout: 10_000 },
     );
     await page.waitForTimeout(250);
-    await shot(page, "06-code-reader");
+    await shot(page, "06-citation-panel");
 
-    await page.getByRole("button", { name: "Open src/demo.ts:1" }).click();
-    await page.waitForFunction(
-      () => document.querySelectorAll(".file-peek-line.is-target").length === 1,
-      null,
-      { timeout: 10_000 },
-    );
-    const back = page.getByRole("button", { name: "Back in file history" });
-    check("file history enables Back", await back.isEnabled());
-    await back.click();
-    await page.waitForFunction(
-      () => document.querySelectorAll(".file-peek-line.is-target").length === 2,
-      null,
-      { timeout: 10_000 },
-    );
-    check("Back returns to the previous citation range", true);
-    const forward = page.getByRole("button", { name: "Forward in file history" });
-    check("Forward is available after Back", await forward.isEnabled());
-    await forward.click();
-    await page.waitForFunction(
-      () => document.querySelectorAll(".file-peek-line.is-target").length === 1,
-      null,
-      { timeout: 10_000 },
-    );
-    check("Forward returns to the newer citation range", true);
-    await page.getByRole("tab", { name: "other.ts" }).click();
-    check(
-      "switching tabs opens the other file",
-      /src\/other\.ts/.test(await page.locator(".file-peek-title").innerText()),
-    );
-    await page.getByRole("button", { name: "Close file preview" }).click();
-    await page.waitForSelector(".file-peek-modal", { state: "detached", timeout: 10_000 });
-    await page.getByRole("button", { name: "Close project map" }).click();
+    await page.getByRole("button", { name: "Close changes" }).click();
+    await page.waitForSelector(".changes-panel", { state: "detached", timeout: 10_000 });
     await page.waitForSelector(".project-map-modal", { state: "detached", timeout: 10_000 });
     await page.locator(".composer-input").fill("");
 

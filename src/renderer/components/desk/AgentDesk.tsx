@@ -10,17 +10,15 @@ import {
   PanelRightClose,
   Pencil,
   Plus,
-  RotateCcw,
-  X,
 } from "lucide-react";
 import { approvalRecordLabel } from "../../../shared/approval";
+import { changeTotals } from "../../../shared/changes";
 import type {
   Agent,
   ApprovalRecord,
   BrowserPreview,
   ChangeSet,
-  FileChangeSummary,
-  FileDiff,
+  ChangesOpenRequest,
   Routine,
   WorkspaceRuleFile,
 } from "../../../shared/types";
@@ -28,26 +26,29 @@ import { errorText, fid } from "../../lib/fid";
 import { formatNextRun, formatRelativeTime } from "../../lib/format";
 import { scheduleLabel } from "../../lib/routine-schedule";
 import { ApprovalHistoryDialog } from "../approvals/ApprovalHistoryDialog";
-import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { ContextDialog } from "./ContextDialog";
-import { DiffView } from "./DiffView";
-import { Modal } from "../ui/Modal";
 import { Switch } from "../ui/Switch";
 
 type Props = {
   agent: Agent;
   routines: Routine[];
+  latestChange: ChangeSet | null;
+  changesLoading: boolean;
+  changesError: string | null;
+  onOpenChanges: (request?: ChangesOpenRequest) => void;
   onClose: () => void;
   onEdit: () => void;
   onOpenRoutines: () => void;
   onToggleRoutine: (routine: Routine) => Promise<void>;
 };
 
-type Confirm = "turn" | "file";
-
 export function AgentDesk({
   agent,
   routines,
+  latestChange,
+  changesLoading,
+  changesError,
+  onOpenChanges,
   onClose,
   onEdit,
   onOpenRoutines,
@@ -56,10 +57,6 @@ export function AgentDesk({
   const [preview, setPreview] = useState<BrowserPreview | null>(null);
   const [busyRoutine, setBusyRoutine] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [changes, setChanges] = useState<ChangeSet | null>(null);
-  const [changesError, setChangesError] = useState<string | null>(null);
-  const [diff, setDiff] = useState<FileDiff | null>(null);
-  const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [rules, setRules] = useState<WorkspaceRuleFile[]>([]);
   const [rulesError, setRulesError] = useState<string | null>(null);
   const [creatingRules, setCreatingRules] = useState(false);
@@ -79,6 +76,7 @@ export function AgentDesk({
         : agent.workspaceDir
           ? "Agent mode. Shell + files enabled."
           : "Shell + files unavailable";
+  const latestTotals = changeTotals(latestChange);
 
   useEffect(() => {
     let stopped = false;
@@ -106,59 +104,12 @@ export function AgentDesk({
   }, [agent.id, agent.toolProfile, agent.readOnly]);
 
   useEffect(() => {
-    setDiff(null);
-    setConfirm(null);
     setContextOpen(false);
     setError(null);
     setApprovals([]);
     setApprovalsError(null);
     setHistoryOpen(false);
   }, [agent.id]);
-
-  useEffect(() => {
-    let stopped = false;
-    let timer = 0;
-    setChanges(null);
-    setChangesError(null);
-    if (!agent.workspaceDir) return;
-    async function poll() {
-      if (document.visibilityState === "visible") {
-        try {
-          const next = await fid().changes.latest(agent.id);
-          if (!stopped) {
-            setChanges(next);
-            setChangesError(null);
-          }
-        } catch (caught) {
-          if (!stopped) setChangesError(errorText(caught));
-        }
-      }
-      if (!stopped) timer = window.setTimeout(() => void poll(), 3000);
-    }
-    void poll();
-    return () => {
-      stopped = true;
-      window.clearTimeout(timer);
-    };
-  }, [agent.id, agent.workspaceDir]);
-
-  useEffect(() => {
-    if (!agent.workspaceDir) return;
-    let cancelled = false;
-    fid()
-      .changes.latest(agent.id)
-      .then((next) => {
-        if (cancelled) return;
-        setChanges(next);
-        setChangesError(null);
-      })
-      .catch((caught: unknown) => {
-        if (!cancelled) setChangesError(errorText(caught));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [agent.id, agent.workspaceDir, agent.lastActivityAt]);
 
   useEffect(() => {
     let cancelled = false;
@@ -176,7 +127,7 @@ export function AgentDesk({
     return () => {
       cancelled = true;
     };
-  }, [agent.id, agent.workspaceDir, changes?.turnId]);
+  }, [agent.id, agent.workspaceDir, latestChange?.turnId]);
 
   useEffect(() => {
     let stopped = false;
@@ -223,39 +174,6 @@ export function AgentDesk({
     } finally {
       setBusyRoutine(null);
     }
-  }
-
-  async function openDiff(file: FileChangeSummary) {
-    try {
-      setDiff(await fid().changes.diff(file.id));
-    } catch (caught) {
-      setChangesError(errorText(caught));
-    }
-  }
-
-  async function refreshChanges() {
-    try {
-      setChanges(await fid().changes.latest(agent.id));
-      setChangesError(null);
-    } catch (caught) {
-      setChangesError(errorText(caught));
-    }
-  }
-
-  async function revertFile() {
-    if (!diff) return;
-    await fid().changes.revert(diff.id);
-    setDiff(null);
-    setConfirm(null);
-    await refreshChanges();
-  }
-
-  async function revertTurn() {
-    if (!changes) return;
-    await fid().changes.revertTurn(changes.turnId);
-    setConfirm(null);
-    setDiff(null);
-    await refreshChanges();
   }
 
   async function createRules() {
@@ -340,22 +258,13 @@ export function AgentDesk({
           <section className="desk-section">
             <div className="desk-section-head">
               <span>Changes</span>
-              {changes ? (
+              {latestChange ? (
                 <button
                   type="button"
                   className="text-button"
-                  disabled={changes.status === null || !changes.files.every((file) => file.revertible)}
-                  title={
-                    changes.status === null
-                      ? "Wait for the turn to finish"
-                      : changes.files.every((file) => file.revertible)
-                        ? undefined
-                        : "Some files cannot be restored"
-                  }
-                  onClick={() => setConfirm("turn")}
+                  onClick={() => onOpenChanges({ turnId: latestChange.turnId })}
                 >
-                  <RotateCcw size={11} aria-hidden="true" />
-                  Revert turn
+                  Open changes
                 </button>
               ) : null}
             </div>
@@ -364,39 +273,41 @@ export function AgentDesk({
                 {changesError}
               </p>
             ) : null}
-            {changes ? (
-              <>
-                <p className="desk-note">
-                  {changes.source === "routine" ? "Latest routine change" : "Latest change"} ·{" "}
-                  {formatRelativeTime(changes.startedAt)}
-                </p>
-                <div className="change-list">
-                  {changes.files.map((file) => (
-                    <button
-                      key={file.id}
-                      type="button"
-                      className="change-row"
-                      title={`View diff for ${file.path}`}
-                      onClick={() => void openDiff(file)}
-                    >
-                      <span className={`change-kind is-${file.kind}`}>
-                        {file.kind === "create" ? "new" : "edit"}
-                      </span>
-                      <span className="change-path">{file.path}</span>
-                      <span className="change-stat">
-                        <span className="diff-add">+{file.additions}</span>
-                        <span className="diff-remove">−{file.deletions}</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                <p className="desk-note">Tracks file_write and apply_patch. Shell changes are not recorded.</p>
-              </>
+            {latestChange ? (
+              <button
+                type="button"
+                className="desk-change-summary"
+                title="Open the latest file changes"
+                onClick={() => onOpenChanges({ turnId: latestChange.turnId })}
+              >
+                <span className="desk-change-summary-top">
+                  <span>
+                    {latestChange.status === null
+                      ? "Recording changes…"
+                      : latestChange.source === "routine"
+                        ? "Latest routine change"
+                        : "Latest change"}
+                  </span>
+                  <span>{formatRelativeTime(latestChange.startedAt)}</span>
+                </span>
+                <span className="desk-change-summary-line">
+                  {latestChange.files.length} file{latestChange.files.length === 1 ? "" : "s"}
+                  <span className="desk-change-summary-stats">
+                    <span className="diff-add">+{latestTotals.additions}</span>{" "}
+                    <span className="diff-remove">−{latestTotals.deletions}</span>
+                  </span>
+                </span>
+              </button>
             ) : (
               <p className="desk-empty-line">
-                {agent.workspaceDir ? "No file changes recorded." : "No workspace folder."}
+                {changesLoading
+                  ? "Loading changes…"
+                  : agent.workspaceDir
+                    ? "No file changes recorded."
+                    : "No workspace folder."}
               </p>
             )}
+            <p className="desk-note">Tracks file_write and apply_patch. Shell changes are not recorded.</p>
           </section>
 
           <section className="desk-section">
@@ -561,73 +472,8 @@ export function AgentDesk({
         </div>
       </aside>
 
-      {diff ? (
-        <Modal label={`Changes to ${diff.path}`} className="diff-modal" onClose={() => setDiff(null)}>
-          <header className="modal-header">
-            <div className="modal-head-copy">
-              <div className="modal-kicker">Turn change</div>
-              <div className="modal-title">{diff.path}</div>
-            </div>
-            <button type="button" className="icon-button" aria-label="Close diff" onClick={() => setDiff(null)}>
-              <X size={15} />
-            </button>
-          </header>
-          <div className="diff-body">
-            <DiffView diff={diff} />
-            <div className="diff-actions">
-              <button type="button" className="btn btn-quiet" onClick={() => setDiff(null)}>
-                Close
-              </button>
-              <span className="footer-spacer" />
-              <button
-                type="button"
-                className="btn btn-danger-outline"
-                disabled={!diff.revertible}
-                title={diff.revertible ? undefined : "This change is still being recorded or cannot be restored."}
-                onClick={() => setConfirm("file")}
-              >
-                <RotateCcw size={12} aria-hidden="true" />
-                Revert file
-              </button>
-            </div>
-          </div>
-        </Modal>
-      ) : null}
-
       {contextOpen ? <ContextDialog agent={agent} onClose={() => setContextOpen(false)} /> : null}
       {historyOpen ? <ApprovalHistoryDialog agent={agent} onClose={() => setHistoryOpen(false)} /> : null}
-
-      {confirm === "turn" ? (
-        <ConfirmDialog
-          title="Revert turn"
-          description={
-            <>
-              Restore every file this turn changed. Files created in the turn are removed. Files edited outside the
-              turn are left alone.
-            </>
-          }
-          confirmLabel="Revert turn"
-          busyLabel="Reverting…"
-          onCancel={() => setConfirm(null)}
-          onConfirm={revertTurn}
-        />
-      ) : null}
-
-      {confirm === "file" ? (
-        <ConfirmDialog
-          title="Revert file"
-          description={
-            <>
-              Restore <strong>{diff?.path}</strong> to the version before this turn. If the file changed after the
-              turn, the revert is refused.
-            </>
-          }
-          confirmLabel="Revert file"
-          busyLabel="Reverting…"
-          onCancel={() => setConfirm(null)}
-          onConfirm={revertFile}
-        />
-      ) : null}
     </>
   );
 }

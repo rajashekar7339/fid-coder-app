@@ -769,6 +769,20 @@ export class AppDatabase {
     return { turn: mapTurn(row), files: this.listFileChanges(row.id) };
   }
 
+  listChangeSets(agentId: string, limit = 30): ChangeSetRecord[] {
+    const capped = Math.max(1, Math.min(50, Math.floor(limit)));
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM turns t
+         WHERE t.agent_id = ?
+           AND EXISTS (SELECT 1 FROM file_changes c WHERE c.turn_id = t.id)
+         ORDER BY t.started_at DESC
+         LIMIT ?`,
+      )
+      .all(agentId, capped) as TurnRow[];
+    return rows.map((row) => ({ turn: mapTurn(row), files: this.listFileChanges(row.id) }));
+  }
+
   deleteFileChange(id: string): void {
     this.db.prepare("DELETE FROM file_changes WHERE id = ?").run(id);
   }
