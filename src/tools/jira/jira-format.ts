@@ -40,6 +40,39 @@ export function jiraFetchError(error: unknown): string {
   return parts.length > 0 ? parts.join(": ") : "Jira could not be reached.";
 }
 
+/** Describe a response that was not the JSON the caller expected. */
+export function jiraResponseDetail(response: {
+  status: number;
+  contentType: string | null;
+  url: string;
+  body: string;
+}): string {
+  const type = response.contentType || "unknown content type";
+  const where = response.url ? ` from ${response.url}` : "";
+  return `Jira returned HTTP ${response.status} (${type})${where}: ${summarizeBody(response.body, response.contentType)}`;
+}
+
+function summarizeBody(body: string, contentType: string | null): string {
+  let text = body;
+  if (/html/i.test(contentType ?? "")) {
+    text = text
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ");
+  }
+  const clean = redactBody(text.replace(/\s+/g, " ").trim()).slice(0, 360);
+  return clean || "(empty body)";
+}
+
+function redactBody(value: string): string {
+  return value
+    .replace(/\b(bearer|basic)\s+\S+/gi, "$1 [redacted]")
+    .replace(
+      /\b(atl_token|csrf|jsessionid|set-cookie|authorization|api[_ -]?token)\b\s*[:=]\s*["']?[^"'\s,;]+/gi,
+      "$1=[redacted]",
+    );
+}
+
 function appendCause(parts: string[], cause: unknown): void {
   if (!cause || typeof cause !== "object" || parts.length >= 5) return;
   const record = cause as {

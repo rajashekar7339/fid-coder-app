@@ -7,6 +7,7 @@ import {
   jiraBaseUrl,
   jiraConfigError,
   jiraFetchError,
+  jiraResponseDetail,
   jiraSearchBody,
 } from "./jira-format";
 import type { AppTool, ToolContext } from "../types";
@@ -115,30 +116,30 @@ async function jiraSend(ctx: ToolContext, paths: string[], init: { method: strin
       continue;
     }
     const text = await response.text();
+    const contentType = response.headers.get("content-type");
+    const finalUrl = response.url;
     if (response.status === 401 || response.status === 403) {
-      fail("Jira rejected the token. Check the personal access token in Settings → Jira.");
+      fail(
+        `Jira rejected the token. ${jiraResponseDetail({ status: response.status, contentType, url: finalUrl, body: text })}`,
+      );
     }
-    if (!response.ok) fail(jiraFailure(response.status, text));
+    if (!response.ok) {
+      fail(jiraResponseDetail({ status: response.status, contentType, url: finalUrl, body: text }));
+    }
     if (!text.trim()) return {};
     try {
       return JSON.parse(text) as unknown;
     } catch {
-      fail("Jira returned a response that was not JSON.");
+      fail(jiraResponseDetail({ status: response.status, contentType, url: finalUrl, body: text }));
     }
   }
   fail(sawNotFound ? "Jira could not find that API on the saved site." : lastDetail);
 }
 
 function jiraFail(detail: string): never {
-  const safe = detail.replace(/\s+/g, " ").replace(/bearer\s+\S+|basic\s+\S+/gi, "[redacted]").trim().slice(0, 400);
+  const safe = detail.replace(/\s+/g, " ").replace(/bearer\s+\S+|basic\s+\S+/gi, "[redacted]").trim().slice(0, 1_200);
   console.error(`Jira tool failed: ${safe}`);
   throw new Error("Jira is unavailable.");
-}
-
-function jiraFailure(status: number, body: string): string {
-  const cleaned = body.replace(/\s+/g, " ").trim().slice(0, 180);
-  if (!cleaned || /bearer|basic |api[_ ]?token|authorization/i.test(cleaned)) return `Jira returned ${status}.`;
-  return `Jira returned ${status}. ${cleaned}`;
 }
 
 function issueKey(value: string): string {

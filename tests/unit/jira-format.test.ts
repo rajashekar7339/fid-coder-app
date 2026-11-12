@@ -9,6 +9,7 @@ import {
   jiraBaseUrl,
   jiraConfigError,
   jiraFetchError,
+  jiraResponseDetail,
   jiraSearchBody,
   jiraToolsReady,
 } from "../../src/tools/jira/jira-format.ts";
@@ -89,4 +90,32 @@ test("names the underlying fetch failure", () => {
   assert.match(jiraFetchError(refused), /ECONNREFUSED/);
   assert.match(jiraFetchError(refused), /127\.0\.0\.1/);
   assert.equal(jiraFetchError(null), "Jira could not be reached.");
+});
+
+test("describes a non-JSON response with a safe body snippet", () => {
+  const html = jiraResponseDetail({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    url: "https://jira.example.com/login",
+    body: "<html><head><title>Log in</title><script>secret()</script></head><body>Sign in to continue</body></html>",
+  });
+  assert.match(html, /HTTP 200/);
+  assert.match(html, /text\/html/);
+  assert.match(html, /https:\/\/jira\.example\.com\/login/);
+  assert.match(html, /Sign in to continue/);
+  assert.doesNotMatch(html, /<html>|<script>|secret\(\)/);
+
+  const redacted = jiraResponseDetail({
+    status: 500,
+    contentType: "text/plain",
+    url: "https://jira.example.com/rest/api/3/myself",
+    body: "Bearer super-secret-value atl_token=hidden",
+  });
+  assert.match(redacted, /\[redacted\]/);
+  assert.doesNotMatch(redacted, /super-secret-value|hidden/);
+
+  assert.match(
+    jiraResponseDetail({ status: 204, contentType: null, url: "", body: "  " }),
+    /\(empty body\)/,
+  );
 });
