@@ -13,7 +13,7 @@ export function jiraConfigError(site: string | null, token: string | null): stri
   return null;
 }
 
-export function jiraBaseUrl(site: string): URL {
+export function jiraBaseUrls(site: string): URL[] {
   let parsed: URL;
   try {
     parsed = new URL(site);
@@ -23,10 +23,13 @@ export function jiraBaseUrl(site: string): URL {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error("Open Settings → Jira and save an http or https site URL.");
   }
-  return new URL(`${parsed.origin}/`);
+  const pathname = parsed.pathname.replace(/\/+$/, "");
+  const withPath = new URL(`${parsed.origin}${pathname}/`);
+  const origin = new URL(`${parsed.origin}/`);
+  return withPath.href === origin.href ? [origin] : [withPath, origin];
 }
 
-/** Turn a fetch failure and its nested cause into a readable reason. */
+/** Describe a fetch failure and its nested cause. */
 export function jiraFetchError(error: unknown): string {
   const parts: string[] = [];
   if (error && typeof error === "object") {
@@ -45,11 +48,14 @@ export function jiraResponseDetail(response: {
   status: number;
   contentType: string | null;
   url: string;
+  requestedUrl?: string;
   body: string;
 }): string {
   const type = response.contentType || "unknown content type";
-  const where = response.url ? ` from ${response.url}` : "";
-  return `Jira returned HTTP ${response.status} (${type})${where}: ${summarizeBody(response.body, response.contentType)}`;
+  const requestUrl = response.requestedUrl || response.url || "the Jira API";
+  const redirected =
+    response.url && response.url !== requestUrl ? ` (redirected to ${response.url})` : "";
+  return `Jira returned HTTP ${response.status} (${type}) for ${requestUrl}${redirected}: ${summarizeBody(response.body, response.contentType)}`;
 }
 
 function summarizeBody(body: string, contentType: string | null): string {

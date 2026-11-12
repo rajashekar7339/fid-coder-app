@@ -754,6 +754,10 @@ function JiraSection({
               Save site
             </button>
           </span>
+          <span className="field-note">
+            Use the Jira base URL. If Jira runs under a context path, include it, for example
+            https://jira.example.com/jira.
+          </span>
         </div>
         <label className="field">
           <span className="field-label">Personal access token</span>

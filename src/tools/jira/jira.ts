@@ -4,7 +4,7 @@ import {
   formatJiraIssue,
   formatJiraIssues,
   formatJiraMyself,
-  jiraBaseUrl,
+  jiraBaseUrls,
   jiraConfigError,
   jiraFetchError,
   jiraResponseDetail,
@@ -79,9 +79,9 @@ async function jiraSend(ctx: ToolContext, paths: string[], init: { method: strin
     ctx.log?.(`Jira tool failed: ${detail}`);
     jiraFail(detail);
   }
-  let base: URL;
+  let bases: URL[];
   try {
-    base = jiraBaseUrl(ctx.jiraSite);
+    bases = jiraBaseUrls(ctx.jiraSite);
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Open Settings → Jira and save an http or https site URL.";
     ctx.log?.(`Jira tool failed: ${detail}`);
@@ -98,42 +98,76 @@ async function jiraSend(ctx: ToolContext, paths: string[], init: { method: strin
   };
   let sawNotFound = false;
   let lastDetail = "Jira could not be reached.";
-  for (const path of paths) {
-    let response: Response;
-    try {
-      response = await jiraFetch(new URL(path, base).toString(), {
-        method: init.method,
-        headers,
-        body: init.body,
-        signal: AbortSignal.timeout(20_000),
-      });
-    } catch (error) {
-      lastDetail = `Jira could not reach ${base.origin}: ${jiraFetchError(error)}`;
-      continue;
-    }
-    if (response.status === 404) {
-      sawNotFound = true;
-      continue;
-    }
-    const text = await response.text();
-    const contentType = response.headers.get("content-type");
-    const finalUrl = response.url;
-    if (response.status === 401 || response.status === 403) {
-      fail(
-        `Jira rejected the token. ${jiraResponseDetail({ status: response.status, contentType, url: finalUrl, body: text })}`,
-      );
-    }
-    if (!response.ok) {
-      fail(jiraResponseDetail({ status: response.status, contentType, url: finalUrl, body: text }));
-    }
-    if (!text.trim()) return {};
-    try {
-      return JSON.parse(text) as unknown;
-    } catch {
-      fail(jiraResponseDetail({ status: response.status, contentType, url: finalUrl, body: text }));
+  for (const base of bases) {
+    for (const path of paths) {
+      const requested = `${base.toString().replace(/\/+$/, "")}${path}`;
+      let response: Response;
+      try {
+        response = await jiraFetch(requested, {
+          method: init.method,
+          headers,
+          body: init.body,
+          signal: AbortSignal.timeout(20_000),
+        });
+      } catch (error) {
+        lastDetail = `Jira could not reach ${requested}: ${jiraFetchError(error)}`;
+        ctx.log?.(`Jira attempt failed (will retry): ${lastDetail}`);
+        continue;
+      }
+      if (response.status === 404) {
+        sawNotFound = true;
+        ctx.log?.(`Jira attempt returned 404 for ${requested}.`);
+        continue;
+      }
+      const text = await response.text();
+      const contentType = response.headers.get("content-type");
+      const finalUrl = response.url;
+      if (response.status === 401 || response.status === 403) {
+        fail(
+          `Jira rejected the token. ${jiraResponseDetail({
+            status: response.status,
+            contentType,
+            url: finalUrl,
+            requestedUrl: requested,
+            body: text,
+          })}`,
+        );
+      }
+      if (!response.ok) {
+        lastDetail = jiraResponseDetail({
+          status: response.status,
+          contentType,
+          url: finalUrl,
+          requestedUrl: requested,
+          body: text,
+        });
+        ctx.log?.(`Jira attempt failed (will retry): ${lastDetail}`);
+        continue;
+      }
+      if (!text.trim()) {
+        lastDetail = `Jira returned an empty response for ${requested}.`;
+        ctx.log?.(`Jira attempt failed (will retry): ${lastDetail}`);
+        continue;
+      }
+      try {
+        return JSON.parse(text) as unknown;
+      } catch {
+        lastDetail = jiraResponseDetail({
+          status: response.status,
+          contentType,
+          url: finalUrl,
+          requestedUrl: requested,
+          body: text,
+        });
+        ctx.log?.(`Jira attempt failed (will retry): ${lastDetail}`);
+      }
     }
   }
-  fail(sawNotFound ? "Jira could not find that API on the saved site." : lastDetail);
+  fail(
+    sawNotFound && lastDetail === "Jira could not be reached."
+      ? "Jira could not find that API on the saved site."
+      : lastDetail,
+  );
 }
 
 function jiraFail(detail: string): never {

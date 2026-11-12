@@ -6,7 +6,7 @@ import {
   formatJiraIssue,
   formatJiraIssues,
   formatJiraMyself,
-  jiraBaseUrl,
+  jiraBaseUrls,
   jiraConfigError,
   jiraFetchError,
   jiraResponseDetail,
@@ -14,8 +14,18 @@ import {
   jiraToolsReady,
 } from "../../src/tools/jira/jira-format.ts";
 
-test("uses the site origin and caps a search at 20 issues", () => {
-  assert.equal(jiraBaseUrl("https://fid.atlassian.net/jira/software").origin, "https://fid.atlassian.net");
+test("keeps a Jira context path and caps a search at 20 issues", () => {
+  const context = jiraBaseUrls("https://jira.example.com/jira");
+  assert.equal(context[0]?.toString(), "https://jira.example.com/jira/");
+  assert.equal(context[1]?.toString(), "https://jira.example.com/");
+  assert.deepEqual(
+    jiraBaseUrls("https://fid.atlassian.net").map((url) => url.toString()),
+    ["https://fid.atlassian.net/"],
+  );
+  assert.deepEqual(
+    jiraBaseUrls("https://fid.atlassian.net/jira/software").map((url) => url.toString()),
+    ["https://fid.atlassian.net/jira/software/", "https://fid.atlassian.net/"],
+  );
   const body = jiraSearchBody("  assignee = currentUser()  ");
   assert.equal(body.maxResults, 20);
   assert.equal(body.jql, "assignee = currentUser()");
@@ -118,4 +128,14 @@ test("describes a non-JSON response with a safe body snippet", () => {
     jiraResponseDetail({ status: 204, contentType: null, url: "", body: "  " }),
     /\(empty body\)/,
   );
+
+  const redirected = jiraResponseDetail({
+    status: 200,
+    contentType: "text/html",
+    url: "https://sso.example.com/login",
+    requestedUrl: "https://jira.example.com/jira/rest/api/3/myself",
+    body: "Log in",
+  });
+  assert.match(redirected, /for https:\/\/jira\.example\.com\/jira\/rest\/api\/3\/myself/);
+  assert.match(redirected, /redirected to https:\/\/sso\.example\.com\/login/);
 });
