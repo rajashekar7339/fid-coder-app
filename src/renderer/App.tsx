@@ -51,6 +51,7 @@ export function App() {
   const [pendingDelete, setPendingDelete] = useState<Agent | null>(null);
   const [deskOpen, setDeskOpen] = useState(() => window.innerWidth >= 1181);
   const [changesOpen, setChangesOpen] = useState(false);
+  const [chatCollapsed, setChatCollapsed] = useState(false);
   const [changesRequest, setChangesRequest] = useState<ChangesOpenRequest | null>(null);
   const [changeSets, setChangeSets] = useState<ChangeSet[]>([]);
   const [changesLoading, setChangesLoading] = useState(false);
@@ -159,6 +160,7 @@ export function App() {
       changesReturnFocus.current =
         document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setDeskOpen(false);
+      setChatCollapsed(false);
       setChangesRequest(request);
       setChangesOpen(true);
       void refreshChanges().catch(() => undefined);
@@ -168,6 +170,7 @@ export function App() {
 
   const closeChanges = useCallback(() => {
     setChangesOpen(false);
+    setChatCollapsed(false);
     setChangesRequest(null);
     const target = changesReturnFocus.current;
     changesReturnFocus.current = null;
@@ -345,6 +348,7 @@ export function App() {
     setChangeSets([]);
     setChangesError(null);
     setChangesOpen(false);
+    setChatCollapsed(false);
     setChangesRequest(null);
     if (agentId) void refreshChanges(agentId);
   }, [agentId, refreshChanges]);
@@ -486,7 +490,11 @@ export function App() {
 
   return (
     <>
-      <div className={`app-shell ${showDesk ? "has-desk" : ""} ${showChanges ? "has-changes" : ""}`}>
+      <div
+        className={`app-shell ${showDesk ? "has-desk" : ""} ${showChanges ? "has-changes" : ""} ${
+          showChanges && chatCollapsed ? "is-chat-collapsed" : ""
+        }`}
+      >
         <Sidebar
           agents={agents}
           selectedId={agentId}
@@ -593,6 +601,8 @@ export function App() {
             loading={changesLoading}
             error={changesError}
             request={changesRequest}
+            chatCollapsed={chatCollapsed}
+            onToggleChat={() => setChatCollapsed((collapsed) => !collapsed)}
             onClose={closeChanges}
             onRefresh={() => refreshChanges()}
           />

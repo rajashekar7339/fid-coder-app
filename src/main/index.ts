@@ -8,9 +8,12 @@ import { AppDatabase } from "./db";
 import { registerIpc } from "./ipc";
 import { checkpointsDir, databasePath } from "./paths";
 import { Runner } from "./chat/runner";
+import { RoutineService } from "./routines/service";
 import { Scheduler } from "./routines/scheduler";
 import { stopClient } from "./copilot";
 import { ensureWindowsToastShortcut } from "./routines/notify";
+import { hasSecret, secretKeys } from "./secrets";
+import { logInfo, logJiraStatus } from "./log";
 import { channels } from "../shared/channels";
 
 app.setName("fid-coder");
@@ -47,6 +50,8 @@ if (!gotLock) {
     const activeRunner = new Runner(db, browser, checkpoints);
     runner = activeRunner;
     scheduler = new Scheduler(db, activeRunner);
+    const routines = new RoutineService(db, scheduler);
+    activeRunner.setRoutinePort(routines);
     activeRunner.setSink((event) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send(channels.chatEvent, event);
@@ -56,11 +61,17 @@ if (!gotLock) {
       db,
       runner: activeRunner,
       scheduler,
+      routines,
       browser,
       checkpoints,
       getWindow: () => mainWindow,
     });
     ensureWindowsToastShortcut();
+    logInfo(`Fid Coder started. appData=${userData}`);
+    logJiraStatus(
+      { site: db.getSetting("jira_site_url"), hasToken: hasSecret(secretKeys.jira) },
+      { force: true },
+    );
     scheduler.reload();
     mainWindow = createWindow();
   });

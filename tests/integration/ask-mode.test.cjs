@@ -29,6 +29,8 @@ const { AppDatabase } = require("../../dist/main/db/index.js");
 
 test("Ask mode is read-only and keeps the workspace readable", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fid-ask-mode-"));
+  const previousUserData = process.env.FID_CODER_USER_DATA;
+  process.env.FID_CODER_USER_DATA = root;
   const workspace = path.join(root, "workspace");
   fs.mkdirSync(path.join(workspace, "src"), { recursive: true });
   fs.writeFileSync(path.join(workspace, "src", "index.ts"), "export const value = 1;\n");
@@ -117,6 +119,8 @@ test("Ask mode is read-only and keeps the workspace readable", async () => {
     assert.match(browserView.systemMessage, /Do not edit files, run shell commands, click, type, submit a form/);
   } finally {
     db.close();
+    if (previousUserData === undefined) delete process.env.FID_CODER_USER_DATA;
+    else process.env.FID_CODER_USER_DATA = previousUserData;
     fs.rmSync(root, { recursive: true, force: true });
   }
 });

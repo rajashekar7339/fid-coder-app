@@ -17,6 +17,8 @@
     "test:integration": "npm run build:node && node --test \"tests/integration/*.test.cjs\" \"tests/integration/*.test.mjs\"",
     "test:features": "npm run build:node && node tests/e2e-live/changes-context.e2e.mjs",
     "test:skills": "npm run build:node && node tests/e2e-live/skills.e2e.mjs",
+    "test:routines": "npm run build:node && node tests/e2e-live/routines-ui.e2e.mjs",
+    "test:routines-live": "npm run build:node && node tests/e2e-live/routines-live.e2e.mjs",
     "test:model-switch": "npm run build:node && electron tests/e2e-live/model-switch.e2e.cjs",
     "test:changes": "npm run build:node && node tests/e2e-live/changes-ui.e2e.mjs",
     "start": "electron .",

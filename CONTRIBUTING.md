@@ -75,7 +75,7 @@ If the owner says “then I will review those,” stop after the review. If they
 - Selecting a skill should keep the current message as the task: `hello` + skill `write-lean` becomes `/skills write-lean hello`. If the draft already has a `/skills` prefix, replace the skill and keep its task.
 - A starter prompt fills the composer and focuses it; it does not send.
 - A cached project map renders without a model call. A missing or stale map offers an explicit build or refresh action.
-- Cite evidence as `path:line`; the citation opens the Changes panel at that file and range. A recorded change shows its diff with the cited lines marked; otherwise the current file is shown read-only with syntax colors. The panel's **References** tab lists every code reference in the answer.
+- Cite evidence as `path:line`; the citation opens the Workspace panel at that file and range. A recorded change shows its diff with the cited lines marked; otherwise the current file is shown read-only with syntax colors. The navigator's **References** section lists every code reference in the answer, **Changed** lists the selected turn's files, and **All files** browses the workspace lazily. A file from **All files** opens read-only and offers **View diff** when the turn recorded a change.
 - Large diagrams get a full-screen view with zoom; keep the inline view usable. Use component names, not file names or `path:line` references, in diagram labels; put the evidence in the surrounding prose and numbered steps.
 - Use accessible names, `role="status"` for changing status text, and keep interactive buttons outside the live region.
 - Date and time labels: use the existing `createdAt`/`lastActivityAt` data. Prefer `Today` / `Yesterday` / a real date, and put the full timestamp in a tooltip.
@@ -89,6 +89,7 @@ If the owner says “then I will review those,” stop after the review. If they
 - **Ask mode:** store `readOnly` on the agent, but decide the tools from it at session build time. `askTools(profile)` filters the agent's normal tool set, so one read-only name set covers workspace and Browser & Jira agents. Never rely on prompt-only restrictions. Switching modes may drop the live session; replaying the conversation is expected.
 - **Project map:** explicit build, one read-only exploration, cached by workspace and git key. Opening the dialog or reading a saved map must not call a model. Mark stale maps; do not inject the map into every turn.
 - **Model calls:** a throwaway session still spends quota. Document it. Do not add a standing model call to a normal turn without asking.
+- **Routines from chat:** `/routine` is the only path that exposes `routine_create`. The runner gives that turn only the create tool and a routine hint; normal turns and Ask mode never get it. Tools are scoped to `ctx.agentId`, capped at 20 per agent, and deduplicated. A bare time is a one-time run, not a daily routine. Routine write tools are removed during a routine turn. One-time runs are marked missed and paused when the app was closed at the chosen time.
 
 ## Testing
 
@@ -99,9 +100,11 @@ Run the smallest set that proves the change, then the relevant end-to-end path.
 | Types | `npm run typecheck` | Every change. |
 | Unit | `npm test` (unit part) | Pure rules, parsing, formatting, prompt text. |
 | Integration | `npm test` (integration part) | DB, main-process wiring, tools, IPC-adjacent logic. Mock Copilot. |
-| Deterministic UI | `npm run test:changes` | Seeded changes card, panel, file tree, citation bridge, file revert, and turn revert. No Copilot turn. |
-| Deterministic UI | `npm run test:skills` | Electron UI, Ask mode, starters, cached project map, the in-place citation view and references, clean diagram labels, full-screen diagrams, library, help screenshots. No Copilot turn. |
+| Deterministic UI | `npm run test:changes` | Seeded changes card, Workspace panel, changed list, lazy file tree, citation bridge, file revert, and turn revert. No Copilot turn. |
+| Deterministic UI | `npm run test:skills` | Electron UI, Ask mode, starters, cached project map, the in-place citation view, navigator references, the lazy workspace tree, clean diagram labels, full-screen diagrams, library, help screenshots. No Copilot turn. |
+| Deterministic UI | `npm run test:routines` | Electron UI for one-time and repeating routines, the Once editor, creation, deletion, and the Desk list. No Copilot turn. |
 | Live UI | `npm run test:skills-reuse` | A real skill turn and reuse on a later turn. Needs Copilot. |
+| Live UI | `npm run test:routines-live` | A real turn that asks the agent to create a one-time routine. Needs Copilot. |
 | Live UI | `npm run test:map` | One real project-map build, read-only workspace check, and cached reopen. Needs Copilot. |
 | Live UI | `npm run test:enhance` | One real rewrite, Undo, skips, and no-send checks. Needs Copilot. |
 | Live UI | `npm run test:features` | Live changes card and panel, file/turn revert, workspace rules, and context inspector. Needs Copilot. |

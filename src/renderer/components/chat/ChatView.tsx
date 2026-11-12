@@ -4,6 +4,9 @@ import {
   ArrowUp,
   BookOpen,
   Bug,
+  CalendarClock,
+  CalendarPlus,
+  CalendarX,
   Check,
   ChevronDown,
   Clock3,
@@ -125,11 +128,16 @@ const TOOL_META: Record<string, ToolMeta> = {
   history_search: { label: "Searched history", active: "Searching history", Icon: ScanSearch },
   history_turn: { label: "Read an earlier turn", active: "Reading an earlier turn", Icon: FileText },
   history_context: { label: "Loaded history", active: "Loading history", Icon: FileText },
+  routine_list: { label: "Checked routines", active: "Checking routines", Icon: CalendarClock },
+  routine_create: { label: "Created a routine", active: "Creating a routine", Icon: CalendarPlus },
+  routine_delete: { label: "Removed a routine", active: "Removing a routine", Icon: CalendarX },
 };
 
 const COMMAND_ICONS: Record<string, LucideIcon> = {
   review: ScanSearch,
   skills: Wrench,
+  routine: CalendarPlus,
+  files: Folder,
   help: BookOpen,
 };
 
@@ -300,7 +308,10 @@ export function ChatView({
       ? matchSkillInvocation(skillCatalog, draftCommand.args)
       : null;
   const commandQuery = draft.startsWith("/") ? draft.slice(1).split(/\s/)[0] : "";
-  const commandMatches = filterCommands(commandQuery);
+  const hasWorkspace = Boolean(agent.workspaceDir?.trim());
+  const commandMatches = filterCommands(commandQuery).filter(
+    (command) => !(command.hideWithoutWorkspace && !hasWorkspace),
+  );
   const activeCommand = commandMatches[commandIndex] ?? null;
   const commandDraft = draft.startsWith("/")
     ? COMMANDS.find(
@@ -378,11 +389,15 @@ export function ChatView({
 
   function commandUnavailable(command: CommandInfo): string | null {
     if (command.id === "review" && !signedIn) return "Sign in to Copilot first.";
-    return commandAvailability(command, agent.toolProfile, Boolean(agent.workspaceDir));
+    return commandAvailability(command, agent.toolProfile, hasWorkspace, agent.readOnly);
   }
 
   function chooseCommand(command: CommandInfo) {
-    if (commandUnavailable(command)) return;
+    const unavailable = commandUnavailable(command);
+    if (unavailable) {
+      setError(unavailable);
+      return;
+    }
     setCommandsOpen(false);
     setCommandIndex(0);
     // A dialog command should not throw away a normal draft the user typed.
@@ -390,6 +405,11 @@ export function ChatView({
     if (command.id === "skills") {
       if (commandDraft) setDraft("");
       onOpenSkills();
+      return;
+    }
+    if (command.id === "files") {
+      if (commandDraft) setDraft("");
+      onOpenChanges({});
       return;
     }
     if (command.ui) {
@@ -637,22 +657,24 @@ export function ChatView({
   function send() {
     if (enhancing) return;
     const text = draft.trim();
+    const parsed = parseCommand(text);
+    if (parsed?.command.id === "routine" && !parsed.args) {
+      setError("Add the task and time after /routine.");
+      return;
+    }
     if (text === "/skills") {
       onOpenSkills();
       return;
     }
-    if (skillCatalogState === "ready") {
-      const parsed = parseCommand(text);
-      if (parsed?.command.id === "skills") {
-        const matched = matchSkillInvocation(skillCatalog, parsed.args);
-        if ("error" in matched) {
-          setError(matched.error);
-          return;
-        }
-        if (!matched.task) {
-          setError("Add the task after the skill name.");
-          return;
-        }
+    if (skillCatalogState === "ready" && parsed?.command.id === "skills") {
+      const matched = matchSkillInvocation(skillCatalog, parsed.args);
+      if ("error" in matched) {
+        setError(matched.error);
+        return;
+      }
+      if (!matched.task) {
+        setError("Add the task after the skill name.");
+        return;
       }
     }
     sendText(text);
@@ -758,7 +780,6 @@ export function ChatView({
   const items = groupToolCalls(projected.messages);
   const latestChange = changeSets[0] ?? null;
   const latestTotals = changeTotals(latestChange);
-  const showChanges = Boolean(agent.workspaceDir && !agent.readOnly && latestChange);
   const lastAssistantByTurn = new Map<string, string>();
   for (const item of items) {
     if (item.kind === "message" && item.message.role === "assistant" && item.message.turnId) {
@@ -822,18 +843,30 @@ export function ChatView({
           </div>
         </div>
         <div className="chat-actions">
-          {showChanges && latestChange ? (
+          {hasWorkspace ? (
             <button
               type="button"
-              className="header-changes"
-              title="Review the latest file changes"
-              onClick={() => onOpenChanges({ turnId: latestChange.turnId })}
+              className="header-workspace"
+              title={
+                latestChange
+                  ? "Browse workspace and review the latest turn"
+                  : "Browse workspace files"
+              }
+              aria-label={
+                latestChange
+                  ? "Browse workspace and review the latest turn"
+                  : "Browse workspace files"
+              }
+              onClick={() => onOpenChanges(latestChange ? { turnId: latestChange.turnId } : {})}
             >
-              Changes
-              <span className="header-changes-stats">
-                <span className="diff-add">+{latestTotals.additions}</span>
-                <span className="diff-remove">−{latestTotals.deletions}</span>
-              </span>
+              <Folder size={14} aria-hidden="true" />
+              Workspace
+              {latestChange ? (
+                <span className="header-workspace-stats">
+                  <span className="diff-add">+{latestTotals.additions}</span>
+                  <span className="diff-remove">−{latestTotals.deletions}</span>
+                </span>
+              ) : null}
             </button>
           ) : null}
           <button

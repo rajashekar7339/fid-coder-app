@@ -16,7 +16,6 @@ import type {
 } from "../../shared/types";
 import type { BrowserManager } from "../browser/browser-manager";
 import type { CheckpointStore } from "../workspace/checkpoints";
-import { assertCron, nextRunIso } from "../routines/cron";
 import {
   getCopilotStatus,
   getCopilotUsage,
@@ -29,24 +28,29 @@ import {
 import type { AppDatabase } from "../db";
 import type { Runner } from "../chat/runner";
 import type { Scheduler } from "../routines/scheduler";
-import { clearSecret, secretKeys, setSecret } from "../secrets";
+import type { RoutineService } from "../routines/service";
+import { clearSecret, hasSecret, secretKeys, setSecret } from "../secrets";
+import { logJiraSettingsChange } from "../log";
 import { listSkillInfo, readSkill, skillRoots } from "../skills";
 import { installSkill, planSkillImport } from "../skills/install";
 import { userSkillsDir } from "../paths";
 import { createAgentsFile, ruleFilePath, workspaceRules } from "../workspace/workspace-rules";
+import { listWorkspaceDirectory } from "../workspace/file-tree";
 import { readWorkspaceFile } from "../workspace/file-peek";
+import { readWorkspaceImage } from "../workspace/image-peek";
 
 type AppServices = {
   db: AppDatabase;
   runner: Runner;
   scheduler: Scheduler;
+  routines: RoutineService;
   browser: BrowserManager;
   checkpoints: CheckpointStore;
   getWindow: () => BrowserWindow | null;
 };
 
 export function registerIpc(services: AppServices): void {
-  const { db, runner, scheduler, browser, checkpoints } = services;
+  const { db, runner, scheduler, routines, browser, checkpoints } = services;
 
   ipcMain.handle(channels.agentsList, () => db.listAgents());
   ipcMain.handle(channels.agentsCreate, (_event, input: AgentInput) => db.createAgent(cleanAgent(input)));
@@ -139,9 +143,22 @@ export function registerIpc(services: AppServices): void {
   ipcMain.handle(channels.workspaceMapBuild, (_event, agentId: string) =>
     runner.buildWorkspaceMap(String(agentId ?? "")),
   );
+  ipcMain.handle(channels.workspaceList, async (_event, agentId: string, relative?: string) => {
+    const agent = db.getAgent(String(agentId ?? ""));
+    if (!agent?.workspaceDir) throw new Error("Pick a workspace folder for this agent first");
+    return listWorkspaceDirectory(agent.workspaceDir, String(relative ?? ""));
+  });
   ipcMain.handle(
     channels.workspaceFileRead,
-    (_event, agentId: string, relative: string, line?: number | null, endLine?: number | null) => {
+    (
+      _event,
+      agentId: string,
+      relative: string,
+      line?: number | null,
+      endLine?: number | null,
+      startLine?: number | null,
+      limit?: number | null,
+    ) => {
       const agent = db.getAgent(String(agentId ?? ""));
       if (!agent?.workspaceDir) throw new Error("Pick a workspace folder for this agent first");
       return readWorkspaceFile(
@@ -149,30 +166,27 @@ export function registerIpc(services: AppServices): void {
         String(relative ?? ""),
         typeof line === "number" ? line : null,
         typeof endLine === "number" ? endLine : null,
+        typeof startLine === "number" ? startLine : null,
+        typeof limit === "number" ? limit : null,
       );
     },
   );
+  ipcMain.handle(channels.workspaceImageRead, (_event, agentId: string, relative: string) => {
+    const agent = db.getAgent(String(agentId ?? ""));
+    if (!agent?.workspaceDir) throw new Error("Pick a workspace folder for this agent first");
+    return readWorkspaceImage(agent.workspaceDir, String(relative ?? ""));
+  });
 
-  ipcMain.handle(channels.routinesList, (_event, agentId: string) => db.listRoutines(agentId));
+  ipcMain.handle(channels.routinesList, (_event, agentId: string) => routines.list(agentId));
   ipcMain.handle(channels.routinesCreate, (_event, input: RoutineInput) => {
-    const cleaned = cleanRoutine(input);
-    if (!db.getAgent(cleaned.agentId)) throw new Error("Agent not found");
-    const routine = db.createRoutine(cleaned, cleaned.enabled ? nextRunIso(cleaned.cron) : null);
-    scheduler.reload();
-    return routine;
+    const { agentId, ...draft } = input;
+    return routines.create(agentId, draft);
   });
-  ipcMain.handle(channels.routinesUpdate, (_event, id: string, patch: RoutinePatch) => {
-    const current = db.getRoutine(id);
-    if (!current) throw new Error("Routine not found");
-    const cronExpr = patch.cron == null ? current.cron : assertCron(patch.cron);
-    const enabled = patch.enabled ?? current.enabled;
-    const routine = db.updateRoutine(id, { ...patch, cron: cronExpr }, enabled ? nextRunIso(cronExpr) : null);
-    scheduler.reload();
-    return routine;
-  });
+  ipcMain.handle(channels.routinesUpdate, (_event, id: string, patch: RoutinePatch) =>
+    routines.update(id, patch),
+  );
   ipcMain.handle(channels.routinesDelete, (_event, id: string) => {
-    db.deleteRoutine(id);
-    scheduler.reload();
+    routines.remove(id);
   });
   ipcMain.handle(channels.routinesRun, async (_event, id: string) => {
     await scheduler.runNow(id);
@@ -220,16 +234,20 @@ export function registerIpc(services: AppServices): void {
     await runner.dropAllSessions();
   });
   ipcMain.handle(channels.settingsSaveJiraSite, async (_event, url: string) => {
-    db.setSetting("jira_site_url", cleanUrl(url));
+    const site = cleanUrl(url);
+    db.setSetting("jira_site_url", site);
     await runner.dropAllSessions();
+    logJiraSettingsChange(site ? "site saved" : "site cleared", site, hasSecret(secretKeys.jira));
   });
   ipcMain.handle(channels.settingsSaveJiraToken, async (_event, token: string) => {
     setSecret(secretKeys.jira, token);
     await runner.dropAllSessions();
+    logJiraSettingsChange("token saved", db.getSetting("jira_site_url"), true);
   });
   ipcMain.handle(channels.settingsClearJiraToken, async () => {
     clearSecret(secretKeys.jira);
     await runner.dropAllSessions();
+    logJiraSettingsChange("token cleared", db.getSetting("jira_site_url"), false);
   });
 
   ipcMain.handle(channels.modelsList, () => listCopilotModels());
@@ -312,22 +330,6 @@ function cleanAgent(input: AgentInput): AgentInput {
     toolProfile: normalizeToolProfile(input?.toolProfile),
     readOnly: input.readOnly === true,
     memoryEnabled: input.memoryEnabled !== false,
-  };
-}
-
-function cleanRoutine(input: RoutineInput): RoutineInput {
-  const name = input?.name?.trim();
-  const prompt = input?.prompt?.trim();
-  if (!input?.agentId) throw new Error("Agent is required");
-  if (!name) throw new Error("Routine name is required");
-  if (!prompt) throw new Error("Routine prompt is required");
-  return {
-    agentId: input.agentId,
-    name,
-    prompt,
-    cron: assertCron(input.cron ?? ""),
-    enabled: input.enabled !== false,
-    notify: input.notify !== false,
   };
 }
 

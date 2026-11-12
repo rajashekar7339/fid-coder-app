@@ -196,9 +196,9 @@ async function main() {
 
     check("new sections are present", agent.id.length > 0);
     check(
-      "disconnected workspace has an empty changes state",
+      "an empty workspace offers the browse button without a changes card",
       (await page.locator(".edited-files-card").count()) === 0 &&
-        (await page.locator(".header-changes").count()) === 0,
+        (await page.locator(".header-workspace").count()) === 1,
     );
 
     if (skipTurns) {
@@ -276,8 +276,8 @@ async function main() {
       /Edited 2 files/.test(cardText) && /demo\.ts/.test(cardText) && /notes\.md/.test(cardText),
       cardText.replace(/\s+/g, " ").slice(0, 200),
     );
-    await page.waitForSelector(".header-changes", { timeout: 15_000 });
-    await page.locator(".header-changes").click();
+    await page.waitForSelector(".header-workspace", { timeout: 15_000 });
+    await page.locator(".header-workspace").click();
     await page.waitForSelector(".changes-panel", { timeout: 15_000 });
     check("opening changes closes the desk", (await page.locator(".agent-desk").count()) === 0);
     await page.waitForFunction(

@@ -1,18 +1,16 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
-  ChevronRight,
   FileText,
   Folder,
   Loader2,
+  PanelLeftClose,
+  PanelLeftOpen,
   RotateCcw,
   X,
 } from "lucide-react";
-import {
-  buildChangeTree,
-  filterChangeTree,
-  type ChangeTreeNode,
-} from "../../../shared/change-tree";
+import { ancestorDirectories, normalizeWorkspacePath } from "../../../shared/file-tree";
+import { imageMimeForPath } from "../../../shared/image";
 import { changeTotals, findChangedFile } from "../../../shared/changes";
 import type { Citation } from "../../../shared/citations";
 import type {
@@ -21,21 +19,15 @@ import type {
   ChangesOpenRequest,
   FileChangeSummary,
   FileDiff,
-  WorkspaceFilePeek,
+  WorkspaceDirectory,
 } from "../../../shared/types";
-import { highlightLines, languageForPath } from "../../lib/code-highlight";
 import { errorText, fid } from "../../lib/fid";
 import { formatRelativeTime } from "../../lib/format";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { DiffView } from "./DiffView";
-
-type CitationView = {
-  path: string;
-  line: number;
-  endLine: number | null;
-};
-
-type SideTab = "files" | "references";
+import { WorkspaceCodePane } from "./WorkspaceCodePane";
+import { WorkspaceNavigator } from "./WorkspaceNavigator";
+import { rangeLabel, type CitationView } from "./workspace-labels";
 
 type Props = {
   agent: Agent;
@@ -43,37 +35,13 @@ type Props = {
   loading: boolean;
   error: string | null;
   request: ChangesOpenRequest | null;
+  chatCollapsed: boolean;
+  onToggleChat: () => void;
   onClose: () => void;
   onRefresh: () => Promise<void> | void;
 };
 
 type Confirm = "turn" | "file";
-
-function citationKey(path: string): string {
-  return path.replace(/\\/g, "/").replace(/^\.\//, "");
-}
-
-function fileName(path: string): string {
-  return path.split(/[\\/]/).pop() || path;
-}
-
-function directoryName(path: string): string {
-  const normalized = path.replace(/\\/g, "/");
-  const at = normalized.lastIndexOf("/");
-  return at > 0 ? normalized.slice(0, at) : "workspace";
-}
-
-function rangeLabel(line: number, endLine: number | null): string {
-  return endLine === null || endLine === line ? String(line) : `${line}–${endLine}`;
-}
-
-function referenceLabel(reference: Citation): string {
-  return `${reference.path}:${reference.line}${
-    reference.endLine === null || reference.endLine === reference.line
-      ? ""
-      : `-${reference.endLine}`
-  }`;
-}
 
 export function ChangesPanel({
   agent,
@@ -81,6 +49,8 @@ export function ChangesPanel({
   loading,
   error,
   request,
+  chatCollapsed,
+  onToggleChat,
   onClose,
   onRefresh,
 }: Props) {
@@ -90,24 +60,125 @@ export function ChangesPanel({
   const [selectedFileId, setSelectedFileId] = useState<string | null>(
     () => request?.fileId ?? changeSets[0]?.files[0]?.id ?? null,
   );
+  const [citation, setCitation] = useState<CitationView | null>(null);
+  const [codePath, setCodePath] = useState<string | null>(request?.path ?? null);
+  const [view, setView] = useState<"diff" | "code">("diff");
   const [filter, setFilter] = useState("");
+  const [changedOnly, setChangedOnly] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [directories, setDirectories] = useState<Record<string, WorkspaceDirectory>>({});
+  const [dirLoading, setDirLoading] = useState<Record<string, boolean>>({});
+  const [dirErrors, setDirErrors] = useState<Record<string, string>>({});
+  const [refsOpen, setRefsOpen] = useState(true);
+  const [changedOpen, setChangedOpen] = useState(true);
   const [turnMenu, setTurnMenu] = useState(false);
   const [diff, setDiff] = useState<FileDiff | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
   const [diffError, setDiffError] = useState<string | null>(null);
-  const [citation, setCitation] = useState<CitationView | null>(null);
-  const [view, setView] = useState<"diff" | "code">("diff");
-  const [sideTab, setSideTab] = useState<SideTab>(() =>
-    request?.related && request.related.length > 1 ? "references" : "files",
-  );
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const panel = useRef<HTMLElement>(null);
+  const filterInput = useRef<HTMLInputElement>(null);
+  const loadedDirs = useRef(new Set<string>());
+  const loadingDirs = useRef(new Set<string>());
+  const treeGeneration = useRef(0);
+  const lastChangeSets = useRef<ChangeSet[] | null>(null);
+  const appliedRequest = useRef<ChangesOpenRequest | null>(null);
 
   useEffect(() => {
     panel.current?.focus();
   }, []);
 
-  const appliedRequest = useRef<ChangesOpenRequest | null>(null);
+  const loadDir = useCallback(
+    async (path: string): Promise<void> => {
+      if (loadedDirs.current.has(path) || loadingDirs.current.has(path)) return;
+      if (!agent.workspaceDir) {
+        setDirErrors((current) => ({
+          ...current,
+          [path]: "Pick a workspace folder for this agent first",
+        }));
+        return;
+      }
+      const generation = treeGeneration.current;
+      loadingDirs.current.add(path);
+      setDirLoading((current) => ({ ...current, [path]: true }));
+      try {
+        const listing = await fid().workspace.list(agent.id, path);
+        if (generation !== treeGeneration.current) return;
+        loadedDirs.current.add(path);
+        setDirectories((current) => ({ ...current, [path]: listing }));
+        setDirErrors((current) => {
+          if (!(path in current)) return current;
+          const next = { ...current };
+          delete next[path];
+          return next;
+        });
+      } catch (caught) {
+        if (generation !== treeGeneration.current) return;
+        setDirErrors((current) => ({ ...current, [path]: errorText(caught) }));
+      } finally {
+        if (generation === treeGeneration.current) {
+          loadingDirs.current.delete(path);
+          setDirLoading((current) => {
+            if (!(path in current)) return current;
+            const next = { ...current };
+            delete next[path];
+            return next;
+          });
+        }
+      }
+    },
+    [agent.id, agent.workspaceDir],
+  );
+
+  useEffect(() => {
+    treeGeneration.current += 1;
+    loadedDirs.current.clear();
+    loadingDirs.current.clear();
+    setDirectories({});
+    setDirLoading({});
+    setDirErrors({});
+    setExpanded(new Set());
+    setFilter("");
+    setChangedOnly(false);
+    setRefsOpen(true);
+    setChangedOpen(true);
+    if (agent.workspaceDir) {
+      void loadDir("");
+    } else {
+      setDirErrors({ "": "Pick a workspace folder for this agent first" });
+    }
+  }, [agent.workspaceDir, loadDir]);
+
+  const expandTo = useCallback(
+    async (path: string): Promise<void> => {
+      const dirs = ancestorDirectories(path);
+      if (dirs.length === 0) return;
+      setExpanded((current) => {
+        const next = new Set(current);
+        for (const dir of dirs) next.add(dir);
+        return next;
+      });
+      await Promise.all(dirs.map((dir) => loadDir(dir)));
+    },
+    [loadDir],
+  );
+
+  useEffect(() => {
+    if (lastChangeSets.current === null) {
+      lastChangeSets.current = changeSets;
+      return;
+    }
+    if (lastChangeSets.current === changeSets) return;
+    lastChangeSets.current = changeSets;
+    const paths = new Set([...loadedDirs.current, ...loadingDirs.current]);
+    if (paths.size === 0) return;
+    treeGeneration.current += 1;
+    loadedDirs.current.clear();
+    loadingDirs.current.clear();
+    setDirLoading({});
+    for (const path of paths) void loadDir(path);
+  }, [changeSets, loadDir]);
+
   useEffect(() => {
     if (request && appliedRequest.current !== request) {
       if (request.path) {
@@ -120,10 +191,15 @@ export function ChangesPanel({
         if (!match && changeSets.length === 0 && loading) return;
         appliedRequest.current = request;
         setCitation(next);
-        setSideTab(request.related && request.related.length > 1 ? "references" : "files");
+        setCodePath(request.path);
+        setFilter("");
+        setChangedOnly(false);
+        setRefsOpen(Boolean(request.related && request.related.length > 0));
+        void expandTo(request.path);
         if (match) {
           setSelectedTurnId(match.turnId);
           setSelectedFileId(match.file.id);
+          setChangedOpen(true);
           setView("diff");
         } else {
           setSelectedFileId(null);
@@ -137,19 +213,33 @@ export function ChangesPanel({
         return;
       }
 
-      const turn = changeSets.find((change) => change.turnId === request.turnId) ?? changeSets[0] ?? null;
-      if (!turn && changeSets.length === 0) return;
+      const requestedTurn = request.turnId
+        ? changeSets.find((change) => change.turnId === request.turnId) ?? null
+        : null;
+      if (request.turnId && !requestedTurn && loading) return;
+      const turn = requestedTurn ?? changeSets[0] ?? null;
       appliedRequest.current = request;
       setCitation(null);
+      setCodePath(null);
       setView("diff");
-      setSideTab("files");
+      setFilter("");
+      setChangedOnly(false);
+      setRefsOpen(false);
+      setChangedOpen(true);
       if (turn) {
-        const fileId =
-          request.fileId && turn.files.some((file) => file.id === request.fileId)
-            ? request.fileId
-            : (turn.files[0]?.id ?? null);
+        const file =
+          request.fileId && turn.files.some((item) => item.id === request.fileId)
+            ? turn.files.find((item) => item.id === request.fileId) ?? null
+            : turn.files[0] ?? null;
         setSelectedTurnId(turn.turnId);
-        setSelectedFileId(fileId);
+        setSelectedFileId(file?.id ?? null);
+        if (file) {
+          setCodePath(file.path);
+          void expandTo(file.path);
+        }
+      } else {
+        setSelectedTurnId(null);
+        setSelectedFileId(null);
       }
       return;
     }
@@ -163,6 +253,7 @@ export function ChangesPanel({
       }
       return;
     }
+    if (view === "code") return;
 
     const turn = changeSets.find((change) => change.turnId === selectedTurnId) ?? changeSets[0] ?? null;
     if (!turn) {
@@ -170,25 +261,69 @@ export function ChangesPanel({
       setSelectedFileId(null);
       return;
     }
+    const nextFile =
+      (selectedFileId ? turn.files.find((file) => file.id === selectedFileId) : null) ??
+      turn.files[0] ??
+      null;
     setSelectedTurnId(turn.turnId);
-    setSelectedFileId((current) =>
-      current && turn.files.some((file) => file.id === current)
-        ? current
-        : (turn.files[0]?.id ?? null),
-    );
-  }, [changeSets, citation, loading, request, selectedTurnId, view]);
+    setSelectedFileId(nextFile?.id ?? null);
+    if (nextFile) {
+      setCodePath(nextFile.path);
+      void expandTo(nextFile.path);
+    }
+  }, [changeSets, citation, expandTo, loading, request, selectedFileId, selectedTurnId, view]);
 
-  const selectedTurn = changeSets.find((change) => change.turnId === selectedTurnId) ?? changeSets[0] ?? null;
+  useEffect(() => {
+    if (!turnMenu) return;
+    const close = (event: PointerEvent) => {
+      if (!(event.target as Element).closest(".changes-turn-menu, .changes-turn-button")) {
+        setTurnMenu(false);
+      }
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [turnMenu]);
 
+  useEffect(() => {
+    const focusFilter = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "p") return;
+      event.preventDefault();
+      filterInput.current?.focus();
+      filterInput.current?.select();
+    };
+    document.addEventListener("keydown", focusFilter);
+    return () => document.removeEventListener("keydown", focusFilter);
+  }, []);
+
+  const selectedTurn =
+    changeSets.find((change) => change.turnId === selectedTurnId) ?? changeSets[0] ?? null;
   const selectedFile =
-    selectedTurn?.files.find((file) => file.id === selectedFileId) ??
-    selectedTurn?.files[0] ??
-    null;
+    view === "diff"
+      ? selectedTurn?.files.find((file) => file.id === selectedFileId) ??
+        selectedTurn?.files[0] ??
+        null
+      : null;
   const totals = changeTotals(selectedTurn);
-  const tree = useMemo(() => buildChangeTree(selectedTurn?.files ?? []), [selectedTurn]);
-  const filtered = useMemo(() => filterChangeTree(tree, filter), [filter, tree]);
   const related = request?.related ?? [];
-  const codeMode = view === "code" && citation !== null;
+  const activePath = view === "diff" ? selectedFile?.path ?? null : codePath;
+  const activeKey = activePath ? normalizeWorkspacePath(activePath) : null;
+  const activeIsImage = activePath ? imageMimeForPath(activePath) !== null : false;
+  const showCitation = Boolean(
+    citation &&
+      activeKey &&
+      normalizeWorkspacePath(citation.path) === activeKey &&
+      !activeIsImage,
+  );
+  const codeChange = codePath ? findChangedFile(changeSets, codePath) : null;
+  const codeCitation = showCitation ? citation : null;
+  const citedStart =
+    view === "diff" &&
+    citation &&
+    selectedFile &&
+    normalizeWorkspacePath(citation.path) === normalizeWorkspacePath(selectedFile.path)
+      ? citation.line
+      : null;
+  const citedEnd = citedStart === null ? null : (citation?.endLine ?? citedStart);
   const turnLabel =
     selectedTurn && selectedTurn.turnId === changeSets[0]?.turnId
       ? "Last turn"
@@ -223,42 +358,29 @@ export function ChangesPanel({
     };
   }, [selectedFile?.id, view]);
 
-  useEffect(() => {
-    if (!turnMenu) return;
-    const close = (event: PointerEvent) => {
-      if (!(event.target as Element).closest(".changes-turn-menu, .changes-turn-button")) {
-        setTurnMenu(false);
-      }
-    };
-    document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
-  }, [turnMenu]);
-
-  const citedStart =
-    view === "diff" &&
-    citation &&
-    selectedFile &&
-    citationKey(citation.path) === citationKey(selectedFile.path)
-      ? citation.line
-      : null;
-  const citedEnd = citedStart === null ? null : (citation?.endLine ?? citedStart);
-
   function selectFile(file: FileChangeSummary) {
     setCitation(null);
     setView("diff");
-    setSideTab("files");
     setSelectedFileId(file.id);
+    setCodePath(file.path);
+    setFilter("");
+    setChangedOnly(false);
+    setChangedOpen(true);
+    void expandTo(file.path);
   }
 
   function selectTurn(turnId: string) {
     const change = changeSets.find((candidate) => candidate.turnId === turnId);
     setSelectedTurnId(turnId);
     setSelectedFileId(change?.files[0]?.id ?? null);
+    setCodePath(change?.files[0]?.path ?? null);
     setFilter("");
+    setChangedOnly(false);
     setTurnMenu(false);
     setCitation(null);
     setView("diff");
-    setSideTab("files");
+    setChangedOpen(true);
+    if (change?.files[0]) void expandTo(change.files[0].path);
   }
 
   function selectReference(reference: Citation) {
@@ -268,16 +390,52 @@ export function ChangesPanel({
       endLine: reference.endLine,
     };
     setCitation(next);
-    setSideTab("references");
+    setCodePath(reference.path);
+    setFilter("");
+    setChangedOnly(false);
+    setRefsOpen(true);
+    void expandTo(reference.path);
     const match = findChangedFile(changeSets, reference.path);
     if (match) {
       setSelectedTurnId(match.turnId);
       setSelectedFileId(match.file.id);
+      setChangedOpen(true);
       setView("diff");
     } else {
       setSelectedFileId(null);
       setView("code");
     }
+  }
+
+  function selectWorkspaceFile(path: string) {
+    setCitation(null);
+    setView("code");
+    setCodePath(path);
+    setSelectedFileId(null);
+    void expandTo(path);
+  }
+
+  function viewDiffForPath(path: string) {
+    const match = findChangedFile(changeSets, path);
+    if (!match) return;
+    setCitation(null);
+    setSelectedTurnId(match.turnId);
+    setSelectedFileId(match.file.id);
+    setCodePath(path);
+    setView("diff");
+    setChangedOpen(true);
+    void expandTo(path);
+  }
+
+  function toggleDir(path: string) {
+    const open = expanded.has(path);
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (open) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+    if (!open) void loadDir(path);
   }
 
   async function revertTurn() {
@@ -286,8 +444,10 @@ export function ChangesPanel({
     setConfirm(null);
     setCitation(null);
     setView("diff");
-    setSideTab("files");
     setSelectedFileId(null);
+    setCodePath(null);
+    setFilter("");
+    setChangedOnly(false);
     await onRefresh();
   }
 
@@ -297,8 +457,10 @@ export function ChangesPanel({
     setConfirm(null);
     setCitation(null);
     setView("diff");
-    setSideTab("files");
     setSelectedFileId(null);
+    setCodePath(null);
+    setFilter("");
+    setChangedOnly(false);
     await onRefresh();
   }
 
@@ -308,20 +470,14 @@ export function ChangesPanel({
     selectedTurn.status !== null &&
     selectedTurn.files.every((file) => file.revertible);
   const canRevertFile = selectedFile?.revertible === true;
-  const title = codeMode ? "Code" : "Changes";
 
   return (
     <>
-      <aside
-        ref={panel}
-        className="changes-panel"
-        aria-label={codeMode ? "Cited code" : "Workspace changes"}
-        tabIndex={-1}
-      >
+      <aside ref={panel} className="changes-panel" aria-label="Workspace" tabIndex={-1}>
         <header className="changes-head">
           <div className="changes-head-copy">
             <div className="changes-kicker">{agent.name}</div>
-            <div className="changes-title">{title}</div>
+            <div className="changes-title">Workspace</div>
           </div>
           <div className="changes-head-actions">
             {changeSets.length > 0 ? (
@@ -347,7 +503,11 @@ export function ChangesPanel({
                             className={`changes-turn-row ${change.turnId === selectedTurn?.turnId ? "is-active" : ""}`}
                             onClick={() => selectTurn(change.turnId)}
                           >
-                            <span>{change.turnId === changeSets[0]?.turnId ? "Last turn" : formatRelativeTime(change.startedAt)}</span>
+                            <span>
+                              {change.turnId === changeSets[0]?.turnId
+                                ? "Last turn"
+                                : formatRelativeTime(change.startedAt)}
+                            </span>
                             <span className="changes-turn-stats">
                               <span className="diff-add">+{sum.additions}</span>
                               <span className="diff-remove">−{sum.deletions}</span>
@@ -383,133 +543,130 @@ export function ChangesPanel({
                 </button>
               </>
             ) : null}
+            <button
+              type="button"
+              className="icon-button changes-chat-toggle"
+              aria-label={chatCollapsed ? "Show chat" : "Collapse chat"}
+              title={chatCollapsed ? "Show the chat" : "Slide the chat left"}
+              onClick={onToggleChat}
+            >
+              {chatCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
+            </button>
             <button type="button" className="icon-button" aria-label="Close changes" onClick={onClose}>
               <X size={15} />
             </button>
           </div>
         </header>
 
-        {citedStart !== null && selectedFile ? (
+        {showCitation && citation ? (
           <div className="changes-cite-context">
             <span>From citation</span>
             <code>
-              {selectedFile.path}:{rangeLabel(citedStart, citedEnd)}
+              {citation.path}:{rangeLabel(citation.line, citation.endLine)}
             </code>
-            <span className="changes-cite-note">Cited lines are marked in the diff.</span>
+            <span className="changes-cite-note">
+              {view === "diff"
+                ? "Cited lines are marked in the diff."
+                : "Cited lines are marked in the file."}
+            </span>
           </div>
         ) : null}
 
-        {codeMode && citation ? (
-          <div className="changes-body">
-            <CitationCodePane agentId={agent.id} citation={citation} />
-            <SidePanel
-              selectedTurn={selectedTurn}
-              selectedFile={selectedFile}
-              related={related}
-              citation={citation}
-              changeSets={changeSets}
-              sideTab={sideTab}
-              onSideTab={setSideTab}
-              filter={filter}
-              onFilter={setFilter}
-              filtered={filtered}
-              totals={totals}
-              onSelectFile={selectFile}
-              onSelectReference={selectReference}
+        <div className="changes-body">
+          {view === "diff" ? (
+            selectedFile ? (
+              <section className="changes-diff-pane" aria-label="Selected file diff">
+                <header className="changes-diff-head">
+                  <FileText size={13} aria-hidden="true" />
+                  <span className={`change-kind is-${selectedFile.kind}`}>
+                    {selectedFile.kind === "create" ? "new" : "edited"}
+                  </span>
+                  <span className="changes-diff-name" title={selectedFile.path}>
+                    {selectedFile.path}
+                  </span>
+                  <span className="changes-diff-stats">
+                    <span className="diff-add">+{selectedFile.additions}</span>
+                    <span className="diff-remove">−{selectedFile.deletions}</span>
+                  </span>
+                </header>
+
+                <div className="changes-diff-scroll">
+                  {diffLoading ? (
+                    <div className="changes-empty">
+                      <Loader2 size={14} className="spin" aria-hidden="true" />
+                      Reading the diff…
+                    </div>
+                  ) : diffError ? (
+                    <div className="changes-empty is-error" role="alert">
+                      <strong>Could not load this diff.</strong>
+                      <span>{diffError}</span>
+                    </div>
+                  ) : diff ? (
+                    <DiffView diff={diff} citedStart={citedStart} citedEnd={citedEnd} />
+                  ) : (
+                    <div className="changes-empty">Select a file to see its diff.</div>
+                  )}
+                </div>
+
+                <footer className="changes-diff-foot">
+                  <span>File tools only. Shell changes are not recorded.</span>
+                  <button
+                    type="button"
+                    className="btn btn-danger-outline"
+                    disabled={!canRevertFile}
+                    title={canRevertFile ? undefined : "This file cannot be restored."}
+                    onClick={() => setConfirm("file")}
+                  >
+                    <RotateCcw size={11} aria-hidden="true" />
+                    Revert file
+                  </button>
+                </footer>
+              </section>
+            ) : (
+              <ViewerPlaceholder hasWorkspace={Boolean(agent.workspaceDir)} loading={loading} />
+            )
+          ) : codePath ? (
+            <WorkspaceCodePane
+              agentId={agent.id}
+              path={codePath}
+              line={codeCitation?.line ?? null}
+              endLine={codeCitation?.endLine ?? null}
+              changed={codeChange?.file ?? null}
+              onViewDiff={() => viewDiffForPath(codePath)}
             />
-          </div>
-        ) : loading && changeSets.length === 0 ? (
-          <div className="changes-empty">
-            <Loader2 size={15} className="spin" aria-hidden="true" />
-            Loading changes…
-          </div>
-        ) : error ? (
-          <div className="changes-empty is-error" role="alert">
-            <strong>Could not load changes.</strong>
-            <span>{error}</span>
-            <button type="button" className="btn btn-secondary" onClick={() => void onRefresh()}>
-              Try again
-            </button>
-          </div>
-        ) : !selectedTurn ? (
-          <div className="changes-empty">
-            <FileText size={20} aria-hidden="true" />
-            <strong>No recorded file changes</strong>
-            <span>File tools are tracked. Shell changes are not recorded.</span>
-          </div>
-        ) : (
-          <div className="changes-body">
-            <section className="changes-diff-pane" aria-label="Selected file diff">
-              <header className="changes-diff-head">
-                {selectedFile ? (
-                  <>
-                    <FileText size={13} aria-hidden="true" />
-                    <span className={`change-kind is-${selectedFile.kind}`}>
-                      {selectedFile.kind === "create" ? "new" : "edited"}
-                    </span>
-                    <span className="changes-diff-name" title={selectedFile.path}>
-                      {selectedFile.path}
-                    </span>
-                    <span className="changes-diff-stats">
-                      <span className="diff-add">+{selectedFile.additions}</span>
-                      <span className="diff-remove">−{selectedFile.deletions}</span>
-                    </span>
-                  </>
-                ) : (
-                  <span className="changes-diff-name">Select a file</span>
-                )}
-              </header>
+          ) : (
+            <ViewerPlaceholder hasWorkspace={Boolean(agent.workspaceDir)} loading={loading} />
+          )}
 
-              <div className="changes-diff-scroll">
-                {diffLoading ? (
-                  <div className="changes-empty">
-                    <Loader2 size={14} className="spin" aria-hidden="true" />
-                    Reading the diff…
-                  </div>
-                ) : diffError ? (
-                  <div className="changes-empty is-error" role="alert">
-                    <strong>Could not load this diff.</strong>
-                    <span>{diffError}</span>
-                  </div>
-                ) : diff ? (
-                  <DiffView diff={diff} citedStart={citedStart} citedEnd={citedEnd} />
-                ) : (
-                  <div className="changes-empty">Select a file to see its diff.</div>
-                )}
-              </div>
-
-              <footer className="changes-diff-foot">
-                <span>File tools only. Shell changes are not recorded.</span>
-                <button
-                  type="button"
-                  className="btn btn-danger-outline"
-                  disabled={!canRevertFile}
-                  title={canRevertFile ? undefined : "This file cannot be restored."}
-                  onClick={() => setConfirm("file")}
-                >
-                  <RotateCcw size={11} aria-hidden="true" />
-                  Revert file
-                </button>
-              </footer>
-            </section>
-
-            <SidePanel
-              selectedTurn={selectedTurn}
-              selectedFile={selectedFile}
-              related={related}
-              citation={citation}
-              changeSets={changeSets}
-              sideTab={sideTab}
-              onSideTab={setSideTab}
-              filter={filter}
-              onFilter={setFilter}
-              filtered={filtered}
-              totals={totals}
-              onSelectFile={selectFile}
-              onSelectReference={selectReference}
-            />
-          </div>
-        )}
+          <WorkspaceNavigator
+            related={related}
+            citation={citation}
+            changeSets={changeSets}
+            selectedTurn={selectedTurn}
+            totals={totals}
+            refsOpen={refsOpen}
+            changedOpen={changedOpen}
+            onToggleRefs={() => setRefsOpen((open) => !open)}
+            onToggleChanged={() => setChangedOpen((open) => !open)}
+            filter={filter}
+            onFilter={setFilter}
+            filterInput={filterInput}
+            changedOnly={changedOnly}
+            onChangedOnly={setChangedOnly}
+            directories={directories}
+            dirLoading={dirLoading}
+            dirErrors={dirErrors}
+            expanded={expanded}
+            onToggleDir={toggleDir}
+            onSelectFile={selectFile}
+            onSelectReference={selectReference}
+            onSelectWorkspaceFile={selectWorkspaceFile}
+            activePath={activePath}
+            changesLoading={loading}
+            changesError={error}
+            onRefresh={onRefresh}
+          />
+        </div>
       </aside>
 
       {confirm === "turn" ? (
@@ -547,356 +704,36 @@ export function ChangesPanel({
   );
 }
 
-function SidePanel({
-  selectedTurn,
-  selectedFile,
-  related,
-  citation,
-  changeSets,
-  sideTab,
-  onSideTab,
-  filter,
-  onFilter,
-  filtered,
-  totals,
-  onSelectFile,
-  onSelectReference,
-}: {
-  selectedTurn: ChangeSet | null;
-  selectedFile: FileChangeSummary | null;
-  related: Citation[];
-  citation: CitationView | null;
-  changeSets: ChangeSet[];
-  sideTab: SideTab;
-  onSideTab: (tab: SideTab) => void;
-  filter: string;
-  onFilter: (value: string) => void;
-  filtered: ChangeTreeNode[];
-  totals: { additions: number; deletions: number };
-  onSelectFile: (file: FileChangeSummary) => void;
-  onSelectReference: (reference: Citation) => void;
-}) {
-  return (
-    <aside className="changes-tree" aria-label="Changes and references">
-      {related.length > 1 ? (
-        <div className="changes-side-tabs" role="tablist" aria-label="Changes and references">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={sideTab === "files"}
-            className={`changes-side-tab ${sideTab === "files" ? "is-active" : ""}`}
-            onClick={() => onSideTab("files")}
-          >
-            Changed
-            <span>{selectedTurn?.files.length ?? 0}</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={sideTab === "references"}
-            className={`changes-side-tab ${sideTab === "references" ? "is-active" : ""}`}
-            onClick={() => onSideTab("references")}
-          >
-            References
-            <span>{related.length}</span>
-          </button>
+function ViewerPlaceholder({ hasWorkspace, loading }: { hasWorkspace: boolean; loading: boolean }) {
+  if (!hasWorkspace) {
+    return (
+      <section className="changes-diff-pane" aria-label="Workspace file">
+        <div className="changes-empty">
+          <Folder size={20} aria-hidden="true" />
+          <strong>No workspace folder</strong>
+          <span>Pick a folder for this agent to browse its files.</span>
         </div>
-      ) : null}
-      {sideTab === "references" && related.length > 0 ? (
-        <ReferenceList
-          references={related}
-          citation={citation}
-          changeSets={changeSets}
-          onSelect={onSelectReference}
-        />
-      ) : (
-        <ChangeFileList
-          selectedTurn={selectedTurn}
-          selectedFile={selectedFile}
-          totals={totals}
-          filter={filter}
-          onFilter={onFilter}
-          filtered={filtered}
-          onSelect={onSelectFile}
-        />
-      )}
-    </aside>
-  );
-}
-
-function ReferenceList({
-  references,
-  citation,
-  changeSets,
-  onSelect,
-}: {
-  references: Citation[];
-  citation: CitationView | null;
-  changeSets: ChangeSet[];
-  onSelect: (reference: Citation) => void;
-}) {
-  return (
-    <div className="changes-refs" aria-label="Code references in this answer">
-      <div className="citation-refs-head">
-        <span>Code references</span>
-        <span className="citation-refs-count">{references.length}</span>
-      </div>
-      <div className="changes-refs-list">
-        {references.map((reference) => {
-          const current =
-            citation !== null &&
-            citationKey(citation.path) === citationKey(reference.path) &&
-            citation.line === reference.line &&
-            (citation.endLine ?? null) === reference.endLine;
-          const changed = findChangedFile(changeSets, reference.path);
-          return (
-            <button
-              key={`${reference.path}:${reference.line}:${reference.endLine ?? ""}`}
-              type="button"
-              className={`citation-ref ${current ? "is-current" : ""}`}
-              aria-label={`Open ${referenceLabel(reference)}`}
-              aria-current={current ? "true" : undefined}
-              title={`${reference.path}:${rangeLabel(reference.line, reference.endLine)}`}
-              onClick={() => onSelect(reference)}
-            >
-              <span className="citation-ref-top">
-                <span className="citation-ref-name">{fileName(reference.path)}</span>
-                <span className="citation-ref-range">
-                  {rangeLabel(reference.line, reference.endLine)}
-                </span>
-              </span>
-              <span className="citation-ref-path">
-                <span className="changes-ref-dir">{directoryName(reference.path)}</span>
-                {changed ? <span className="changes-ref-changed">changed</span> : null}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function ChangeFileList({
-  selectedTurn,
-  selectedFile,
-  totals,
-  filter,
-  onFilter,
-  filtered,
-  onSelect,
-}: {
-  selectedTurn: ChangeSet | null;
-  selectedFile: FileChangeSummary | null;
-  totals: ReturnType<typeof changeTotals>;
-  filter: string;
-  onFilter: (value: string) => void;
-  filtered: ChangeTreeNode[];
-  onSelect: (file: FileChangeSummary) => void;
-}) {
-  return (
-    <>
-      <div className="changes-tree-search">
-        <input
-          value={filter}
-          onChange={(event) => onFilter(event.target.value)}
-          placeholder="Filter files…"
-          aria-label="Filter changed files"
-        />
-      </div>
-      <div className="changes-tree-head">
-        <span>Changed files</span>
-        <span>{selectedTurn?.files.length ?? 0}</span>
-      </div>
-      <div className="changes-tree-list">
-        {filtered.length === 0 ? (
-          <p className="changes-tree-empty">
-            {filter.trim() ? "No matching files." : "No files in this turn."}
-          </p>
-        ) : (
-          <ChangeTree
-            nodes={filtered}
-            depth={0}
-            selectedId={selectedFile?.id ?? null}
-            onSelect={onSelect}
-          />
-        )}
-      </div>
-      <footer className="changes-tree-foot">
-        <span>
-          {selectedTurn?.files.length ?? 0} file{selectedTurn?.files.length === 1 ? "" : "s"}
-        </span>
-        <span>
-          <span className="diff-add">+{totals.additions}</span>{" "}
-          <span className="diff-remove">−{totals.deletions}</span>
-        </span>
-      </footer>
-    </>
-  );
-}
-
-function CitationCodePane({ agentId, citation }: { agentId: string; citation: CitationView }) {
-  const [view, setView] = useState<WorkspaceFilePeek | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const code = useRef<HTMLPreElement>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setView(null);
-    setError(null);
-    setLoading(true);
-    void fid()
-      .workspace.file(agentId, citation.path, citation.line, citation.endLine)
-      .then((next) => {
-        if (!cancelled) setView(next);
-      })
-      .catch((caught: unknown) => {
-        if (!cancelled) setError(errorText(caught));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [agentId, citation.endLine, citation.line, citation.path]);
-
-  const lines = useMemo(() => view?.text.split("\n") ?? [], [view]);
-  const highlighted = useMemo(
-    () => (view ? highlightLines(view.text, languageForPath(view.path)) : null),
-    [view],
-  );
-  const targetEnd = view?.line == null ? null : view.lineEnd ?? view.line;
-  const range = rangeLabel(citation.line, citation.endLine);
-  const lineLabel =
-    citation.endLine === null || citation.endLine === citation.line ? "Line" : "Lines";
-
-  useEffect(() => {
-    const element = code.current;
-    if (!view || !element) return;
-    const target = element.querySelector<HTMLElement>(".citation-line.is-target");
-    if (!target) {
-      element.scrollTop = 0;
-      return;
-    }
-    element.scrollTop = Math.max(
-      0,
-      target.offsetTop - element.clientHeight / 2 + target.offsetHeight / 2,
+      </section>
     );
-  }, [view]);
-
+  }
+  if (loading) {
+    return (
+      <section className="changes-diff-pane" aria-label="Workspace file">
+        <div className="changes-empty">
+          <Loader2 size={15} className="spin" aria-hidden="true" />
+          Loading changes…
+        </div>
+      </section>
+    );
+  }
   return (
-    <section className="changes-diff-pane" aria-label="Cited file">
-      <header className="changes-diff-head">
-        <FileText size={13} aria-hidden="true" />
-        <span className="changes-code-badge">read-only</span>
-        <span className="changes-diff-name" title={citation.path}>
-          {citation.path}
-        </span>
-        <span className="changes-diff-stats">
-          <span className="changes-diff-range">
-            {lineLabel} {range}
-          </span>
-        </span>
-      </header>
-
-      <div className="changes-diff-scroll">
-        {loading ? (
-          <div className="changes-empty">
-            <Loader2 size={14} className="spin" aria-hidden="true" />
-            Reading the file…
-          </div>
-        ) : error ? (
-          <div className="changes-empty is-error" role="alert">
-            <strong>Could not open this file.</strong>
-            <span>{error}</span>
-          </div>
-        ) : view ? (
-          <pre
-            ref={code}
-            className="citation-code"
-            tabIndex={0}
-            aria-label={`Contents of ${view.path}`}
-          >
-            {view.totalLines === 0 ? (
-              <span className="citation-empty-line">(empty file)</span>
-            ) : (
-              lines.map((text, index) => {
-                const number = view.startLine + index;
-                const isTarget =
-                  view.line !== null &&
-                  targetEnd !== null &&
-                  number >= view.line &&
-                  number <= targetEnd;
-                return (
-                  <span key={number} className={`citation-line ${isTarget ? "is-target" : ""}`}>
-                    <span className="citation-line-number">{number}</span>
-                    {highlighted ? (
-                      <span
-                        className="citation-line-text"
-                        dangerouslySetInnerHTML={{ __html: highlighted[index] || " " }}
-                      />
-                    ) : (
-                      <span className="citation-line-text">{text || " "}</span>
-                    )}
-                  </span>
-                );
-              })
-            )}
-          </pre>
-        ) : null}
+    <section className="changes-diff-pane" aria-label="Workspace file">
+      <div className="changes-empty">
+        <FileText size={20} aria-hidden="true" />
+        <strong>Select a file</strong>
+        <span>Choose a file from All files, a reference, or a changed file.</span>
       </div>
-
-      <footer className="changes-diff-foot">
-        <span>No recorded change for this file. Showing the current file.</span>
-      </footer>
     </section>
   );
 }
 
-function ChangeTree({
-  nodes,
-  depth,
-  selectedId,
-  onSelect,
-}: {
-  nodes: ChangeTreeNode[];
-  depth: number;
-  selectedId: string | null;
-  onSelect: (file: FileChangeSummary) => void;
-}) {
-  return (
-    <>
-      {nodes.map((node) =>
-        node.kind === "folder" ? (
-          <Fragment key={node.path}>
-            <div className="changes-tree-folder" style={{ paddingLeft: 8 + depth * 13 }}>
-              {node.children.length > 0 ? <Folder size={11} aria-hidden="true" /> : <ChevronRight size={10} aria-hidden="true" />}
-              <span>{node.name}</span>
-            </div>
-            <ChangeTree nodes={node.children} depth={depth + 1} selectedId={selectedId} onSelect={onSelect} />
-          </Fragment>
-        ) : (
-          <button
-            key={node.path}
-            type="button"
-            className={`changes-tree-file ${node.file.id === selectedId ? "is-active" : ""}`}
-            style={{ paddingLeft: 8 + depth * 13 }}
-            title={node.path}
-            aria-current={node.file.id === selectedId ? "true" : undefined}
-            onClick={() => onSelect(node.file)}
-          >
-            <FileText size={11} aria-hidden="true" />
-            <span className="changes-tree-name">{node.name}</span>
-            {node.file.kind === "create" ? <span className="changes-tree-new" /> : null}
-            <span className="changes-tree-stats">
-              <span className="diff-add">+{node.file.additions}</span>
-              <span className="diff-remove">−{node.file.deletions}</span>
-            </span>
-          </button>
-        ),
-      )}
-    </>
-  );
-}

@@ -6,6 +6,7 @@ import {
   Eye,
   FileText,
   Folder,
+  FolderOpen,
   Monitor,
   PanelRightClose,
   Pencil,
@@ -24,7 +25,7 @@ import type {
 } from "../../../shared/types";
 import { errorText, fid } from "../../lib/fid";
 import { formatNextRun, formatRelativeTime } from "../../lib/format";
-import { scheduleLabel } from "../../lib/routine-schedule";
+import { routineScheduleLabel } from "../../../shared/routine-schedule";
 import { ApprovalHistoryDialog } from "../approvals/ApprovalHistoryDialog";
 import { ContextDialog } from "./ContextDialog";
 import { Switch } from "../ui/Switch";
@@ -362,8 +363,8 @@ export function AgentDesk({
                     <div className="routine-copy">
                       <span className="routine-name">{routine.name}</span>
                       <span className="routine-meta">
-                        {scheduleLabel(routine.cron)}
-                        {routine.enabled && routine.nextRunAt
+                        {routineScheduleLabel(routine)}
+                        {!routine.once && routine.enabled && routine.nextRunAt
                           ? ` · ${formatNextRun(routine.nextRunAt)}`
                           : routine.enabled
                             ? ""
@@ -390,6 +391,16 @@ export function AgentDesk({
           <section className="desk-section">
             <div className="desk-section-head">
               <span>Workspace</span>
+              {agent.workspaceDir ? (
+                <button
+                  type="button"
+                  className="text-button is-browse"
+                  onClick={() => onOpenChanges({})}
+                >
+                  <FolderOpen size={11} aria-hidden="true" />
+                  Browse files
+                </button>
+              ) : null}
             </div>
             <div className="workspace-card">
               <span className="workspace-icon">

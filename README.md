@@ -1,6 +1,6 @@
 # Fid Coder
 
-Fid Coder is a Windows desktop app for local AI agents. Each agent chats through GitHub Copilot, uses tools for files, shell, git, Jira, and a local browser, and can run on a schedule. Ask mode gives an agent a read-only set of tools: workspace reads and git for code questions, or Jira reads and page reading for Browser &amp; Jira agents. Agents, transcripts, file checkpoints, and settings stay on this machine.
+Fid Coder is a Windows desktop app for local AI agents. Each agent chats through GitHub Copilot, uses tools for files, shell, git, Jira, and a local browser, and can run saved routines once or repeatedly. Ask mode gives an agent a read-only set of tools: workspace reads and git for code questions, or Jira reads and page reading for Browser &amp; Jira agents. Agents, transcripts, file checkpoints, and settings stay on this machine.
 
 ## Requirements
 
@@ -33,8 +33,8 @@ npm run dev
 | `npm run test:unit` | Fast tests against source files |
 | `npm run test:integration` | Tests against compiled `dist` output; builds first |
 | `npm run test:features` | Live Electron harness for the changes card and panel, file/turn revert, rules, and the context inspector. Needs Copilot sign-in and runs against a temporary profile. |
-| `npm run test:changes` | Deterministic Electron harness for the edited-files card, Changes panel, file tree, citation bridge, file revert, and turn revert. Seeds its own workspace and checkpoint data. |
-| `npm run test:skills` | Deterministic Electron harness for Ask mode, starters, the project map, the in-place citation view and its answer-wide reference list, clean diagram labels, full-screen diagrams, the Skills library, command menu, and help screenshots. |
+| `npm run test:changes` | Deterministic Electron harness for the edited-files card, Workspace panel, changed list, lazy file tree, citation bridge, Markdown/HTML/image previews, file revert, and turn revert. Seeds its own workspace and checkpoint data. |
+| `npm run test:skills` | Deterministic Electron harness for Ask mode, starters, the project map, the in-place citation view, navigator references, the lazy workspace tree, clean diagram labels, full-screen diagrams, the Skills library, command menu, and help screenshots. |
 | `npm run test:skills-reuse` | Live harness for using a skill once and reloading it on a later turn. Needs Copilot and two turns. |
 | `npm run test:map` | Live harness for building the read-only project map and reopening its cache. Needs Copilot and one turn. |
 | `npm run test:enhance` | Live harness for Enhance Prompt: one real rewrite, Undo, skips, and no-send checks. Needs Copilot. |

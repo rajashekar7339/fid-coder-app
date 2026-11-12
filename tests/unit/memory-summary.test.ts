@@ -51,7 +51,7 @@ test("a fresh session without memory keeps the previous transcript shape", () =>
     routine: true,
     freshSession: true,
   });
-  assert.equal(prompt, "This turn was started by a schedule.\n\nPrevious conversation:\nuser: Hello\n\nUser: Again");
+  assert.equal(prompt, "This turn was started by a routine.\n\nPrevious conversation:\nuser: Hello\n\nUser: Again");
 });
 
 test("a fresh session includes the current time and message timestamps", () => {

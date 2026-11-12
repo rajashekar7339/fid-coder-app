@@ -113,11 +113,15 @@ The separate `FilePeekDialog` reader was removed after the first implementation.
 
 - A recorded change selects the file and turn, shows the diff in place, and marks the cited range in `DiffView`.
 - A file without a recorded change shows a read-only code view in the same pane, with syntax highlighting and the cited range marked.
-- The panel's **References** tab carries the answer-wide citation list. A reference with a recorded change opens its diff; one without opens the read-only view. A **changed** label marks the former.
+- The navigator's **References** section carries the answer-wide citation list. A reference with a recorded change opens its diff; one without opens the read-only view. A **changed** label marks the former.
 - The **Changed** tab stays available for the turn's file tree, with the existing filter, revert file, and turn Undo.
 - There is no changed badge, **View diff** step, **Back to code** step, tab history, or modal. The project map closes when a citation opens the panel.
 
 The deterministic changes e2e covers both changed and unchanged citations, the reference list, revert, and Undo. The skills e2e covers a project-map citation opening the panel and reference-to-file navigation.
+
+## Follow-up: workspace explorer (11 November 2026)
+
+The panel is now a workspace navigator. The **References**, **Changed**, and **All files** sections stack in the right column; **All files** is a lazy, read-only tree built from `workspace:list`. The chat header's **Workspace** button, `/files`, and the Agent Desk's **Browse files** action open the panel even when there are no changes; all are hidden without a workspace folder. A citation selects the path, expands its ancestors, and marks the range in the diff or code. A file from **All files** opens read-only and offers **View diff** when the selected turn recorded a change. Browsing reads 400-line pages through `workspace.file`; citations keep their 160-line window. Markdown and HTML files open with a **Preview / Source** toggle; HTML previews are sandboxed and block scripts and external assets. Images open as read-only previews. At wide widths, **Collapse chat** in the panel header gives the workspace the full width; closing the panel restores the chat. The generic `src/shared/file-tree.ts` helper replaced the change-specific `src/shared/change-tree.ts`, which was removed. See `docs/workspace-explorer.md` for the design and data notes.
 
 ## Recommendation
 

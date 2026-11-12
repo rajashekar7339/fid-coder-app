@@ -30,7 +30,7 @@ export function buildSessionPrompt(input: {
   freshSession: boolean;
   now?: string;
 }): string {
-  const lead = input.routine ? "This turn was started by a schedule.\n\n" : "";
+  const lead = input.routine ? "This turn was started by a routine.\n\n" : "";
   const summary = input.summary.trim();
   if (!input.freshSession || (input.prior.length === 0 && !summary)) return `${lead}${input.latest}`;
   const parts: string[] = [];

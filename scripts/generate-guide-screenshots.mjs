@@ -123,10 +123,21 @@ try {
   await page.waitForTimeout(300);
   await page.getByRole("button", { name: "Manage routines" }).click();
   await page.locator(".routines-modal").waitFor({ state: "visible" });
-  await page.waitForTimeout(500);
+  await page.locator(".routines-nav-item").filter({ hasText: "Morning ticket sweep" }).click();
+  await page.waitForTimeout(300);
   await save(page.locator(".routines-modal"), "routines.png");
+  await page.locator(".routines-nav-item").filter({ hasText: "Afternoon reminder" }).click();
+  await page.waitForTimeout(300);
+  await save(page.locator(".routines-modal"), "routines-once.png");
   await page.getByRole("button", { name: "Close routines" }).click();
   await page.waitForTimeout(300);
+
+  await page.locator(".composer-input").fill("/routine");
+  await page.waitForSelector(".command-menu .command-row", { timeout: 10_000 });
+  await page.waitForTimeout(300);
+  await saveRegion(page, [".command-menu", ".composer-dock"], "routine-command.png");
+  await page.locator(".composer-input").fill("");
+  await page.waitForTimeout(200);
 
   await page.getByRole("button", { name: "Open settings" }).click();
   await page.locator(".settings-modal").waitFor({ state: "visible" });
@@ -281,8 +292,27 @@ async function seedDemoData(page) {
   nextFriday.setHours(16, 0, 0, 0);
   const gitNext = new Date(now + 24 * 60 * 60_000);
   gitNext.setHours(10, 0, 0, 0);
+  const onceAt = new Date(now + 24 * 60 * 60_000);
+  onceAt.setHours(16, 30, 0, 0);
   const createdAt = new Date(now - 7 * 24 * 60 * 60_000).toISOString();
   const updatedAt = new Date(now).toISOString();
+
+  const insertOnce = database.prepare(
+    `INSERT INTO routines (
+      id, agent_id, name, prompt, cron, once, run_at, enabled, notify, last_run_at, next_run_at, last_status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, 1, ?, 1, 1, NULL, ?, NULL, ?, ?)`,
+  );
+  insertOnce.run(
+    randomUUID(),
+    jira.id,
+    "Afternoon reminder",
+    "Run the release checks and report the result.",
+    `${onceAt.getMinutes()} ${onceAt.getHours()} ${onceAt.getDate()} ${onceAt.getMonth() + 1} *`,
+    onceAt.toISOString(),
+    onceAt.toISOString(),
+    createdAt,
+    updatedAt,
+  );
 
   insertRoutine.run(
     randomUUID(),
@@ -413,6 +443,25 @@ async function seedDemoData(page) {
 async function save(locator, name) {
   const file = path.join(outDir, name);
   await locator.screenshot({ path: file, animations: "disabled" });
+  const bytes = fs.statSync(file).size;
+  console.log(`Wrote ${name} (${Math.round(bytes / 1024)} KB)`);
+}
+
+async function saveRegion(page, selectors, name) {
+  const boxes = (
+    await Promise.all(selectors.map((selector) => page.locator(selector).first().boundingBox()))
+  ).filter(Boolean);
+  if (boxes.length === 0) throw new Error(`No visible element for ${selectors.join(", ")}`);
+  const left = Math.max(0, Math.min(...boxes.map((box) => box.x)) - 8);
+  const top = Math.max(0, Math.min(...boxes.map((box) => box.y)) - 8);
+  const right = Math.max(...boxes.map((box) => box.x + box.width)) + 8;
+  const bottom = Math.max(...boxes.map((box) => box.y + box.height)) + 8;
+  const file = path.join(outDir, name);
+  await page.screenshot({
+    path: file,
+    animations: "disabled",
+    clip: { x: left, y: top, width: right - left, height: bottom - top },
+  });
   const bytes = fs.statSync(file).size;
   console.log(`Wrote ${name} (${Math.round(bytes / 1024)} KB)`);
 }

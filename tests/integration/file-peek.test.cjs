@@ -51,6 +51,28 @@ test("reads a window around a citation line and clamps the target", () => {
     assert.equal(noLine.lineEnd, null);
     assert.equal(noLine.startLine, 1);
     assert.equal(noLine.endLine, 160);
+
+    const page = readWorkspaceFile(root, "src/demo.ts", null, null, 161, 50);
+    assert.equal(page.line, null);
+    assert.equal(page.lineEnd, null);
+    assert.equal(page.startLine, 161);
+    assert.equal(page.endLine, 210);
+    assert.equal(page.totalLines, 220);
+    assert.match(page.text, /^line 161\n/);
+    assert.equal(page.truncated, true);
+
+    const lastPage = readWorkspaceFile(root, "src/demo.ts", null, null, 201, 50);
+    assert.equal(lastPage.startLine, 201);
+    assert.equal(lastPage.endLine, 220);
+    assert.equal(lastPage.truncated, true);
+
+    const pastStart = readWorkspaceFile(root, "src/demo.ts", null, null, 999, 50);
+    assert.equal(pastStart.startLine, 220);
+    assert.equal(pastStart.endLine, 220);
+
+    const clampedStart = readWorkspaceFile(root, "src/demo.ts", null, null, 0, 10);
+    assert.equal(clampedStart.startLine, 1);
+    assert.equal(clampedStart.endLine, 10);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

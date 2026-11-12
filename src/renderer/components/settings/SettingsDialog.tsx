@@ -64,7 +64,7 @@ const SECTIONS: Array<{
     id: "jira",
     label: "Jira",
     title: "Jira",
-    subtitle: "The site and personal access token used to read Jira. Without a token, agents use the browser.",
+    subtitle: "The site and personal access token used to read Jira. Without both, agents use the browser.",
     Icon: Ticket,
   },
   {
@@ -261,15 +261,25 @@ export function SettingsDialog({
                   void run(async () => {
                     await fid().settings.saveJiraSite(jiraSite);
                     setJiraSiteDirty(false);
-                  }, jiraSite.trim() ? "Jira site saved." : "Jira site removed.")
+                  }, jiraSite.trim()
+                    ? settings?.hasJiraToken
+                      ? "Jira site saved."
+                      : "Jira site saved. Add a token to enable Jira tools."
+                    : "Jira site removed.")
                 }
                 onSaveToken={() =>
                   void run(async () => {
                     await fid().settings.saveJiraToken(jiraToken);
                     setJiraToken("");
-                  }, "Jira token saved.")
+                  }, settings?.jiraSiteUrl || jiraSite.trim()
+                    ? "Jira token saved."
+                    : "Jira token saved. Add the site URL to enable Jira tools.")
                 }
-                onClearToken={() => void run(() => fid().settings.clearJiraToken(), "Jira token removed.")}
+                onClearToken={() =>
+                  void run(async () => {
+                    await fid().settings.clearJiraToken();
+                  }, "Jira token removed. Jira tools are disabled.")
+                }
               />
             ) : null}
 
@@ -755,7 +765,10 @@ function JiraSection({
             placeholder={hasToken ? "Token saved — paste a new one to replace" : "Jira personal access token"}
             onChange={(event) => onToken(event.target.value)}
           />
-          <span className="field-note">Sent as a Bearer token. Create a PAT in your Jira profile.</span>
+          <span className="field-note">
+            Sent as a Bearer token. Use a Jira Data Center personal access token; Jira Cloud API tokens are not
+            supported yet.
+          </span>
         </label>
         <div className="field-actions">
           <button type="button" className="btn btn-secondary" disabled={busy || !token.trim()} onClick={onSaveToken}>
@@ -768,6 +781,9 @@ function JiraSection({
             </button>
           ) : null}
         </div>
+        <span className="field-note">
+          Jira warnings are written to <code>logs\fid-coder.log</code> in the app data folder.
+        </span>
       </div>
     </div>
   );

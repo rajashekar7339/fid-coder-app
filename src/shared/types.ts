@@ -58,6 +58,8 @@ export type Routine = {
   name: string;
   prompt: string;
   cron: string;
+  once: boolean;
+  runAt: string | null;
   enabled: boolean;
   notify: boolean;
   lastRunAt: string | null;
@@ -288,6 +290,24 @@ export type WorkspaceFilePeek = {
   truncated: boolean;
 };
 
+export type WorkspaceImagePeek = {
+  path: string;
+  mime: string;
+  dataUrl: string;
+  bytes: number;
+};
+
+export type WorkspaceEntry = {
+  name: string;
+  path: string;
+  kind: "dir" | "file";
+};
+
+export type WorkspaceDirectory = {
+  entries: WorkspaceEntry[];
+  truncated: boolean;
+};
+
 export type BrowserPreview = {
   image: string;
   url: string;
@@ -299,6 +319,8 @@ export type RoutineInput = {
   name: string;
   prompt: string;
   cron: string;
+  once: boolean;
+  runAt: string | null;
   enabled: boolean;
   notify: boolean;
 };
@@ -307,6 +329,8 @@ export type RoutinePatch = {
   name?: string;
   prompt?: string;
   cron?: string;
+  once?: boolean;
+  runAt?: string | null;
   enabled?: boolean;
   notify?: boolean;
 };

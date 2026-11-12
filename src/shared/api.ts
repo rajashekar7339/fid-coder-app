@@ -20,7 +20,9 @@ import type {
   SkillContent,
   SkillInstallResult,
   SkillSource,
+  WorkspaceDirectory,
   WorkspaceFilePeek,
+  WorkspaceImagePeek,
   WorkspaceMapView,
   WorkspaceRuleFile,
 } from "./types";
@@ -73,12 +75,16 @@ export interface FidApi {
     openRule: (agentId: string, path: string) => Promise<void>;
     map: (agentId: string) => Promise<WorkspaceMapView | null>;
     buildMap: (agentId: string) => Promise<WorkspaceMapView>;
+    list: (agentId: string, path?: string) => Promise<WorkspaceDirectory>;
     file: (
       agentId: string,
       path: string,
       line?: number | null,
       endLine?: number | null,
+      startLine?: number | null,
+      limit?: number | null,
     ) => Promise<WorkspaceFilePeek>;
+    image: (agentId: string, path: string) => Promise<WorkspaceImagePeek>;
   };
   routines: {
     list: (agentId: string) => Promise<Routine[]>;
