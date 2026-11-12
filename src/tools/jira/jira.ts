@@ -1,3 +1,4 @@
+import { net } from "electron";
 import { asRecord, requiredString } from "../args";
 import {
   formatJiraIssue,
@@ -5,11 +6,17 @@ import {
   formatJiraMyself,
   jiraBaseUrl,
   jiraConfigError,
+  jiraFetchError,
   jiraSearchBody,
 } from "./jira-format";
 import type { AppTool, ToolContext } from "../types";
 
 const ISSUE_FIELDS = ["summary", "status", "assignee", "description", "comment"];
+
+// Use Chromium's network stack in Electron so requests follow the Windows
+// proxy and certificate store. Tests in plain Node fall back to global fetch.
+const jiraFetch: typeof fetch =
+  typeof net?.fetch === "function" ? (net.fetch.bind(net) as unknown as typeof fetch) : fetch;
 
 export const jiraTools: AppTool[] = [
   {
@@ -67,32 +74,40 @@ export const jiraTools: AppTool[] = [
 async function jiraSend(ctx: ToolContext, paths: string[], init: { method: string; body?: string }): Promise<unknown> {
   const problem = jiraConfigError(ctx.jiraSite, ctx.jiraToken);
   if (problem || !ctx.jiraSite || !ctx.jiraToken) {
-    jiraFail(problem ?? "Open Settings → Jira and save the site URL and personal access token.");
+    const detail = problem ?? "Open Settings → Jira and save the site URL and personal access token.";
+    ctx.log?.(`Jira tool failed: ${detail}`);
+    jiraFail(detail);
   }
   let base: URL;
   try {
     base = jiraBaseUrl(ctx.jiraSite);
   } catch (error) {
-    jiraFail(error instanceof Error ? error.message : "Open Settings → Jira and save an http or https site URL.");
+    const detail = error instanceof Error ? error.message : "Open Settings → Jira and save an http or https site URL.";
+    ctx.log?.(`Jira tool failed: ${detail}`);
+    jiraFail(detail);
   }
   const headers: Record<string, string> = {
     Accept: "application/json",
     Authorization: `Bearer ${ctx.jiraToken}`,
   };
   if (init.body) headers["Content-Type"] = "application/json";
+  const fail = (detail: string): never => {
+    ctx.log?.(`Jira tool failed: ${detail}`);
+    return jiraFail(detail);
+  };
   let sawNotFound = false;
   let lastDetail = "Jira could not be reached.";
   for (const path of paths) {
     let response: Response;
     try {
-      response = await fetch(new URL(path, base), {
+      response = await jiraFetch(new URL(path, base).toString(), {
         method: init.method,
         headers,
         body: init.body,
         signal: AbortSignal.timeout(20_000),
       });
     } catch (error) {
-      lastDetail = error instanceof Error ? error.message : "Jira could not be reached.";
+      lastDetail = `Jira could not reach ${base.origin}: ${jiraFetchError(error)}`;
       continue;
     }
     if (response.status === 404) {
@@ -101,23 +116,23 @@ async function jiraSend(ctx: ToolContext, paths: string[], init: { method: strin
     }
     const text = await response.text();
     if (response.status === 401 || response.status === 403) {
-      jiraFail("Jira rejected the token. Check the personal access token in Settings → Jira.");
+      fail("Jira rejected the token. Check the personal access token in Settings → Jira.");
     }
-    if (!response.ok) jiraFail(jiraFailure(response.status, text));
+    if (!response.ok) fail(jiraFailure(response.status, text));
     if (!text.trim()) return {};
     try {
       return JSON.parse(text) as unknown;
     } catch {
-      jiraFail("Jira returned a response that was not JSON.");
+      fail("Jira returned a response that was not JSON.");
     }
   }
-  jiraFail(sawNotFound ? "Jira could not find that API on the saved site." : lastDetail);
+  fail(sawNotFound ? "Jira could not find that API on the saved site." : lastDetail);
 }
 
 function jiraFail(detail: string): never {
-  const safe = detail.replace(/\s+/g, " ").replace(/bearer\s+\S+|basic\s+\S+/gi, "[redacted]").trim().slice(0, 240);
+  const safe = detail.replace(/\s+/g, " ").replace(/bearer\s+\S+|basic\s+\S+/gi, "[redacted]").trim().slice(0, 400);
   console.error(`Jira tool failed: ${safe}`);
-  throw new Error(`${safe} Use the browser tools instead.`);
+  throw new Error("Jira is unavailable.");
 }
 
 function jiraFailure(status: number, body: string): string {

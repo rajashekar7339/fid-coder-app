@@ -52,7 +52,7 @@ import { runCodeExplore } from "../workspace/explore-session";
 import { runCodeReview } from "../workspace/review-session";
 import { architectureMapKey, buildArchitectureMap } from "../workspace/architecture-map";
 import { getSecret, hasSecret, secretKeys } from "../secrets";
-import { logInfo, logJiraStatus, logJiraToolFailure } from "../log";
+import { logInfo, logJiraStatus, logJiraToolFailure, logWarn } from "../log";
 import {
   listSkillFiles,
   loadSkillCatalog,
@@ -159,6 +159,7 @@ export class Runner {
   private readonly activeTurns = new Map<string, string>();
   private readonly turnSources = new Map<string, "chat" | "routine">();
   private readonly turnCommands = new Map<string, "routine">();
+  private readonly jiraTokenWarned = new Set<string>();
   private readonly turnNotifiers = new Map<string, (text: string) => void>();
   private readonly pendingApprovals = new Map<string, PendingApproval>();
   private readonly skillToolsUsed = new Set<string>();
@@ -606,7 +607,7 @@ export class Runner {
       turnId: turnId ?? undefined,
       browser: this.browser,
       githubPat: workspaceTools && hasSecret(secretKeys.githubPat) ? getSecret(secretKeys.githubPat) : null,
-      jiraToken: hasSecret(secretKeys.jira) ? getSecret(secretKeys.jira) : null,
+      jiraToken: this.jiraTokenFor(agentId),
       jiraSite: this.db.getSetting("jira_site_url"),
       explore:
         workspaceDir && (shell || readOnly)
@@ -625,7 +626,25 @@ export class Runner {
       requestApproval: (request) => this.requestApproval(agentId, request),
       history: createHistoryPort(this.db, agentId),
       routines: this.routinePort ?? undefined,
+      log: (message) => logWarn(message),
     };
+  }
+
+  private jiraTokenFor(agentId: string): string | null {
+    if (!hasSecret(secretKeys.jira)) return null;
+    try {
+      return getSecret(secretKeys.jira);
+    } catch (error) {
+      if (!this.jiraTokenWarned.has(agentId)) {
+        this.jiraTokenWarned.add(agentId);
+        const agent = this.db.getAgent(agentId);
+        logWarn(
+          `Jira token could not be decrypted for "${agent?.name ?? agentId}": ` +
+            `${error instanceof Error ? error.message : String(error)}. Save it again in Settings -> Jira.`,
+        );
+      }
+      return null;
+    }
   }
 
   requestApproval(agentId: string, input: ApprovalToolRequest): Promise<ApprovalOutcome> {

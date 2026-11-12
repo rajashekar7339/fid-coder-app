@@ -26,6 +26,52 @@ export function jiraBaseUrl(site: string): URL {
   return new URL(`${parsed.origin}/`);
 }
 
+/** Turn a fetch failure and its nested cause into a readable reason. */
+export function jiraFetchError(error: unknown): string {
+  const parts: string[] = [];
+  if (error && typeof error === "object") {
+    const record = error as { message?: unknown; name?: unknown; cause?: unknown };
+    const message = textOf(record.message) || textOf(record.name);
+    if (message) parts.push(message);
+    appendCause(parts, record.cause);
+  } else if (typeof error === "string" && error.trim()) {
+    parts.push(error.trim());
+  }
+  return parts.length > 0 ? parts.join(": ") : "Jira could not be reached.";
+}
+
+function appendCause(parts: string[], cause: unknown): void {
+  if (!cause || typeof cause !== "object" || parts.length >= 5) return;
+  const record = cause as {
+    code?: unknown;
+    message?: unknown;
+    syscall?: unknown;
+    hostname?: unknown;
+    address?: unknown;
+    port?: unknown;
+    errors?: unknown;
+  };
+  const message = textOf(record.message);
+  if (message && !parts.includes(message)) parts.push(message);
+  const code = textOf(record.code);
+  const host = textOf(record.hostname) || textOf(record.address);
+  const port = typeof record.port === "number" || typeof record.port === "string" ? String(record.port) : "";
+  const location = host && port ? `${host}:${port}` : host;
+  const detail = [textOf(record.syscall), code, location].filter(Boolean).join(" ");
+  const covered = Boolean(
+    (code && message.toLowerCase().includes(code.toLowerCase())) ||
+      (location && message.includes(location)),
+  );
+  if (detail && !covered && !parts.includes(detail)) parts.push(detail);
+  if (!detail && port && !parts.includes(port)) parts.push(port);
+  if (Array.isArray(record.errors)) {
+    for (const child of record.errors) {
+      appendCause(parts, child);
+      if (parts.length >= 5) break;
+    }
+  }
+}
+
 export function jiraSearchBody(jql: string): { jql: string; maxResults: number; fields: string[] } {
   const trimmed = jql.trim();
   if (!trimmed) throw new Error("Missing jql");

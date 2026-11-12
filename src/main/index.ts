@@ -12,8 +12,8 @@ import { RoutineService } from "./routines/service";
 import { Scheduler } from "./routines/scheduler";
 import { stopClient } from "./copilot";
 import { ensureWindowsToastShortcut } from "./routines/notify";
-import { hasSecret, secretKeys } from "./secrets";
-import { logInfo, logJiraStatus } from "./log";
+import { hasSecret, getSecret, secretKeys } from "./secrets";
+import { logInfo, logJiraStatus, logWarn } from "./log";
 import { channels } from "../shared/channels";
 
 app.setName("fid-coder");
@@ -68,8 +68,22 @@ if (!gotLock) {
     });
     ensureWindowsToastShortcut();
     logInfo(`Fid Coder started. appData=${userData}`);
+    const jiraSite = db.getSetting("jira_site_url");
+    const hasJiraToken = hasSecret(secretKeys.jira);
+    let jiraTokenReadable = hasJiraToken;
+    if (hasJiraToken) {
+      try {
+        getSecret(secretKeys.jira);
+      } catch (error) {
+        jiraTokenReadable = false;
+        logWarn(
+          `Jira token is saved but could not be decrypted: ` +
+            `${error instanceof Error ? error.message : String(error)}. Save it again in Settings -> Jira.`,
+        );
+      }
+    }
     logJiraStatus(
-      { site: db.getSetting("jira_site_url"), hasToken: hasSecret(secretKeys.jira) },
+      { site: jiraSite, hasToken: hasJiraToken, readable: jiraTokenReadable },
       { force: true },
     );
     scheduler.reload();

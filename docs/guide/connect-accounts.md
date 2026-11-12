@@ -29,6 +29,8 @@ Jira tools are enabled only when both the site URL and the token are saved. The 
 
 The warning includes the site, whether the token file exists, and the token file path. It never writes the token itself. If you set up Jira on a different machine, check that machine's log; settings are stored per app data folder.
 
+When a Jira request fails, the chat shows only “Jira is unavailable.” The detailed cause — DNS (`ENOTFOUND`), a certificate problem, a proxy, a refused connection, or a timeout — goes to the log. Jira requests use Electron's network stack, so they follow the Windows proxy and certificate store. If Windows cannot decrypt a saved token, saving the token fails and the log records that instead.
+
 ## Review approval rules
 
 Open **Settings → Safety** to review saved allow and deny rules. Each rule names the agent, command, and folder. Choose the trash button to remove a rule and start asking again. Deny rules win over allow rules.

@@ -29,8 +29,8 @@ import type { AppDatabase } from "../db";
 import type { Runner } from "../chat/runner";
 import type { Scheduler } from "../routines/scheduler";
 import type { RoutineService } from "../routines/service";
-import { clearSecret, hasSecret, secretKeys, setSecret } from "../secrets";
-import { logJiraSettingsChange } from "../log";
+import { clearSecret, getSecret, hasSecret, secretKeys, setSecret } from "../secrets";
+import { logJiraSettingsChange, logWarn } from "../log";
 import { listSkillInfo, readSkill, skillRoots } from "../skills";
 import { installSkill, planSkillImport } from "../skills/install";
 import { userSkillsDir } from "../paths";
@@ -241,6 +241,16 @@ export function registerIpc(services: AppServices): void {
   });
   ipcMain.handle(channels.settingsSaveJiraToken, async (_event, token: string) => {
     setSecret(secretKeys.jira, token);
+    try {
+      getSecret(secretKeys.jira);
+    } catch (error) {
+      clearSecret(secretKeys.jira);
+      logWarn(
+        `Jira token save failed: Windows could not decrypt the saved token. ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new Error("Windows could not decrypt the saved Jira token, so it was not kept. Save it again.");
+    }
     await runner.dropAllSessions();
     logJiraSettingsChange("token saved", db.getSetting("jira_site_url"), true);
   });

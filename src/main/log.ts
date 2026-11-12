@@ -10,6 +10,7 @@ let lastJiraStatusKey: string | null = null;
 type JiraStatus = {
   site: string | null;
   hasToken: boolean;
+  readable?: boolean;
   agentName?: string;
   askMode?: boolean;
 };
@@ -24,25 +25,23 @@ export function logWarn(message: string): void {
 
 export function logJiraStatus(status: JiraStatus, options: { force?: boolean } = {}): void {
   const mode = status.askMode ? "ask" : "agent";
-  const key = `${status.site ?? ""}|${status.hasToken}|${status.agentName ?? ""}|${mode}`;
+  const key = `${status.site ?? ""}|${status.hasToken}|${status.readable ?? "unknown"}|${status.agentName ?? ""}|${mode}`;
   if (!options.force && key === lastJiraStatusKey) return;
   lastJiraStatusKey = key;
 
   const where = status.agentName ? ` for "${status.agentName}"` : "";
   const suffix = status.askMode ? " (Ask mode)" : "";
-  if (status.site && status.hasToken) {
+  if (status.site && status.hasToken && status.readable !== false) {
     logInfo(`Jira tools enabled${where}${suffix}: site=${status.site} token=present.`);
     return;
   }
 
-  const missing =
-    !status.site && !status.hasToken
-      ? "the site URL and token are missing"
-      : !status.site
-        ? "the site URL is missing"
-        : "the token is missing";
+  const missing: string[] = [];
+  if (!status.site) missing.push("the site URL is missing");
+  if (!status.hasToken) missing.push("the token is missing");
+  else if (status.readable === false) missing.push("the saved token cannot be decrypted; save it again");
   logWarn(
-    `Jira tools disabled${where}${suffix}: ${missing}. Browser agents will use the browser. ` +
+    `Jira tools disabled${where}${suffix}: ${missing.join(" and ")}. Browser agents will use the browser. ` +
       `Save both the site URL and the personal access token in Settings -> Jira. ` +
       `Token file: ${secretsPath()} (${status.hasToken ? "present" : "missing"}). ` +
       `Log: ${logPath()}.`,

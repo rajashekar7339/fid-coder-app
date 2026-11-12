@@ -58,6 +58,7 @@ export type ToolContext = {
   requestApproval?: (request: ApprovalToolRequest) => Promise<ApprovalOutcome>;
   history?: HistoryPort;
   routines?: RoutinePort;
+  log?: (message: string) => void;
 };
 
 export type AppTool = {

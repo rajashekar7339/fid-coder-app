@@ -29,7 +29,7 @@ test("writes clear Jira warnings without printing the token", () => {
     const file = path.join(dir, "logs", "fid-coder.log");
     assert.equal(fs.existsSync(file), true);
     const text = fs.readFileSync(file, "utf8");
-    assert.match(text, /Jira tools disabled for "JIRA Agent": the site URL and token are missing/);
+    assert.match(text, /Jira tools disabled for "JIRA Agent": the site URL is missing and the token is missing/);
     assert.match(text, /Jira tool jira_search failed for "JIRA Agent"/);
     assert.match(text, /site=https:\/\/example\.atlassian\.net token=present/);
     assert.match(text, /Jira settings token saved: site=missing token=present/);

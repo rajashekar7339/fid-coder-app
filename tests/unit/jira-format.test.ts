@@ -8,6 +8,7 @@ import {
   formatJiraMyself,
   jiraBaseUrl,
   jiraConfigError,
+  jiraFetchError,
   jiraSearchBody,
   jiraToolsReady,
 } from "../../src/tools/jira/jira-format.ts";
@@ -66,4 +67,26 @@ test("Jira tools need both the site and a token", () => {
   assert.equal(jiraToolsReady("https://fid.atlassian.net", true), true);
   assert.equal(jiraToolsReady("", true), false);
   assert.equal(jiraToolsReady("https://fid.atlassian.net", false), false);
+});
+
+test("names the underlying fetch failure", () => {
+  const dns = Object.assign(new Error("fetch failed"), {
+    cause: { code: "ENOTFOUND", syscall: "getaddrinfo", hostname: "jira.example.com" },
+  });
+  assert.match(jiraFetchError(dns), /fetch failed/);
+  assert.match(jiraFetchError(dns), /ENOTFOUND/);
+  assert.match(jiraFetchError(dns), /jira\.example\.com/);
+
+  const tls = Object.assign(new Error("fetch failed"), {
+    cause: { code: "DEPTH_ZERO_SELF_SIGNED_CERT", message: "self-signed certificate" },
+  });
+  assert.match(jiraFetchError(tls), /DEPTH_ZERO_SELF_SIGNED_CERT/);
+  assert.match(jiraFetchError(tls), /self-signed certificate/);
+
+  const refused = Object.assign(new Error("fetch failed"), {
+    cause: { code: "ECONNREFUSED", errors: [{ code: "ECONNREFUSED", address: "127.0.0.1", port: 1 }] },
+  });
+  assert.match(jiraFetchError(refused), /ECONNREFUSED/);
+  assert.match(jiraFetchError(refused), /127\.0\.0\.1/);
+  assert.equal(jiraFetchError(null), "Jira could not be reached.");
 });
