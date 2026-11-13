@@ -72,10 +72,13 @@ test("shapes search, issue, and account fixtures", () => {
 test("names Settings when Jira is not configured", () => {
   assert.match(jiraConfigError(null, null) ?? "", /Settings → Jira/);
   assert.equal(jiraConfigError("https://fid.atlassian.net", "token"), null);
+  assert.equal(jiraConfigError("https://fid.atlassian.net", null, "JSESSIONID=abc"), null);
+  assert.match(jiraConfigError("https://fid.atlassian.net", null, null) ?? "", /browser/i);
 });
 
-test("Jira tools need both the site and a token", () => {
+test("Jira tools need the site and a token or browser session", () => {
   assert.equal(jiraToolsReady("https://fid.atlassian.net", true), true);
+  assert.equal(jiraToolsReady("https://fid.atlassian.net", false, true), true);
   assert.equal(jiraToolsReady("", true), false);
   assert.equal(jiraToolsReady("https://fid.atlassian.net", false), false);
 });

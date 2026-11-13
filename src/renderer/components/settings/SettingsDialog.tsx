@@ -5,6 +5,7 @@ import {
   GitBranch,
   KeyRound,
   Lock,
+  LogIn,
   LogOut,
   RefreshCw,
   ShieldCheck,
@@ -158,6 +159,22 @@ export function SettingsDialog({
     }
   }
 
+  async function browserLogin() {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await fid().settings.jiraLogin(jiraSite);
+      setJiraSiteDirty(false);
+      onSaved();
+      setMessage(result.name ? `Signed in to Jira as ${result.name}.` : "Jira browser session saved.");
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <Modal label="Settings" className="settings-modal" onClose={onClose}>
       <header className="modal-header">
@@ -181,7 +198,9 @@ export function SettingsDialog({
                   ? Boolean(settings?.signedIn)
                   : item.id === "github"
                     ? Boolean(settings?.hasGithubPat)
-                    : Boolean(settings?.hasJiraToken && settings?.jiraSiteUrl);
+                    : item.id === "jira"
+                      ? Boolean(settings?.jiraSiteUrl && (settings?.hasJiraToken || settings?.hasJiraCookie))
+                      : false;
               return (
                 <button
                   key={item.id}
@@ -249,6 +268,7 @@ export function SettingsDialog({
             {section === "jira" ? (
               <JiraSection
                 hasToken={settings?.hasJiraToken ?? false}
+                hasCookie={settings?.hasJiraCookie ?? false}
                 site={jiraSite}
                 token={jiraToken}
                 busy={busy}
@@ -262,10 +282,14 @@ export function SettingsDialog({
                     await fid().settings.saveJiraSite(jiraSite);
                     setJiraSiteDirty(false);
                   }, jiraSite.trim()
-                    ? settings?.hasJiraToken
+                    ? settings?.hasJiraToken || settings?.hasJiraCookie
                       ? "Jira site saved."
-                      : "Jira site saved. Add a token to enable Jira tools."
+                      : "Jira site saved. Add a token or browser sign-in to enable Jira tools."
                     : "Jira site removed.")
+                }
+                onBrowserLogin={() => void browserLogin()}
+                onClearCookie={() =>
+                  void run(() => fid().settings.clearJiraCookie(), "Jira browser session removed.")
                 }
                 onSaveToken={() =>
                   void run(async () => {
@@ -278,7 +302,7 @@ export function SettingsDialog({
                 onClearToken={() =>
                   void run(async () => {
                     await fid().settings.clearJiraToken();
-                  }, "Jira token removed. Jira tools are disabled.")
+                  }, "Jira token removed. Jira tools are disabled without a browser session.")
                 }
               />
             ) : null}
@@ -704,25 +728,32 @@ function SafetySection() {
 
 function JiraSection({
   hasToken,
+  hasCookie,
   site,
   token,
   busy,
   onSite,
   onToken,
   onSaveSite,
+  onBrowserLogin,
+  onClearCookie,
   onSaveToken,
   onClearToken,
 }: {
   hasToken: boolean;
+  hasCookie: boolean;
   site: string;
   token: string;
   busy: boolean;
   onSite: (value: string) => void;
   onToken: (value: string) => void;
   onSaveSite: () => void;
+  onBrowserLogin: () => void;
+  onClearCookie: () => void;
   onSaveToken: () => void;
   onClearToken: () => void;
 }) {
+  const configured = Boolean(site.trim()) && (hasToken || hasCookie);
   return (
     <div className="connection-card">
       <div className="connection-head">
@@ -731,10 +762,10 @@ function JiraSection({
         </div>
         <div className="connection-copy">
           <div className="connection-name">Jira access</div>
-          <div className="connection-note">Site and personal access token. Without a token, agents use the browser.</div>
+          <div className="connection-note">Site and either a personal access token or a browser sign-in.</div>
         </div>
-        <span className={`connection-badge ${hasToken && site ? "is-on" : ""}`}>
-          {hasToken && site ? "Configured" : "Not configured"}
+        <span className={`connection-badge ${configured ? "is-on" : ""}`}>
+          {configured ? "Configured" : "Not configured"}
         </span>
       </div>
       <div className="settings-form">
@@ -758,6 +789,30 @@ function JiraSection({
             Use the Jira base URL. If Jira runs under a context path, include it, for example
             https://jira.example.com/jira.
           </span>
+        </div>
+        <div className="field">
+          <span className="field-label">Browser sign-in</span>
+          <span className="field-note">
+            Opens a browser to sign in through SSO. The session is saved only after Jira confirms it at
+            /rest/api/2/myself.
+          </span>
+          <div className="field-actions">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={busy || !site.trim()}
+              onClick={onBrowserLogin}
+            >
+              <LogIn size={12} />
+              Sign in with browser
+            </button>
+            {hasCookie ? (
+              <button type="button" className="text-button is-danger" disabled={busy} onClick={onClearCookie}>
+                Remove session
+              </button>
+            ) : null}
+          </div>
+          {hasCookie ? <span className="field-note">Browser session saved. Jira tools use it.</span> : null}
         </div>
         <label className="field">
           <span className="field-label">Personal access token</span>

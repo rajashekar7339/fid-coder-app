@@ -5,6 +5,27 @@ import { profileDir } from "../paths";
 
 const channels: Array<"msedge" | "chrome" | null> = ["msedge", "chrome", null];
 
+/** Launch a headed persistent browser context with the desktop channels when available. */
+export async function launchBrowserContext(dir: string): Promise<BrowserContext> {
+  fs.mkdirSync(dir, { recursive: true });
+  const errors: string[] = [];
+  for (const channel of channels) {
+    try {
+      return await chromium.launchPersistentContext(dir, {
+        headless: false,
+        viewport: { width: 1280, height: 800 },
+        ...(channel ? { channel } : {}),
+      });
+    } catch (error) {
+      const label = channel ?? "playwright-chromium";
+      errors.push(`${label}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  throw new Error(
+    `Could not open a local browser. ${errors.join(" | ")}. If Chromium is missing, run npx playwright install chromium in the app folder.`,
+  );
+}
+
 export class BrowserManager {
   private readonly contexts = new Map<string, BrowserContext>();
   private readonly launching = new Map<string, Promise<BrowserContext>>();
@@ -115,23 +136,6 @@ export class BrowserManager {
   }
 
   private async launch(agentId: string): Promise<BrowserContext> {
-    const dir = profileDir(agentId);
-    fs.mkdirSync(dir, { recursive: true });
-    const errors: string[] = [];
-    for (const channel of channels) {
-      try {
-        return await chromium.launchPersistentContext(dir, {
-          headless: false,
-          viewport: { width: 1280, height: 800 },
-          ...(channel ? { channel } : {}),
-        });
-      } catch (error) {
-        const label = channel ?? "playwright-chromium";
-        errors.push(`${label}: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
-    throw new Error(
-      `Could not open a local browser. ${errors.join(" | ")}. If Chromium is missing, run npx playwright install chromium in the app folder.`,
-    );
+    return launchBrowserContext(profileDir(agentId));
   }
 }

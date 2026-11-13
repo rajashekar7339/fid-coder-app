@@ -29,6 +29,7 @@ import type { AppDatabase } from "../db";
 import type { Runner } from "../chat/runner";
 import type { Scheduler } from "../routines/scheduler";
 import type { RoutineService } from "../routines/service";
+import { jiraBrowserLogin } from "../jira/login";
 import { clearSecret, getSecret, hasSecret, secretKeys, setSecret } from "../secrets";
 import { logJiraSettingsChange, logWarn } from "../log";
 import { listSkillInfo, readSkill, skillRoots } from "../skills";
@@ -237,7 +238,12 @@ export function registerIpc(services: AppServices): void {
     const site = cleanUrl(url);
     db.setSetting("jira_site_url", site);
     await runner.dropAllSessions();
-    logJiraSettingsChange(site ? "site saved" : "site cleared", site, hasSecret(secretKeys.jira));
+    logJiraSettingsChange(
+      site ? "site saved" : "site cleared",
+      site,
+      hasSecret(secretKeys.jira),
+      hasSecret(secretKeys.jiraCookie),
+    );
   });
   ipcMain.handle(channels.settingsSaveJiraToken, async (_event, token: string) => {
     setSecret(secretKeys.jira, token);
@@ -252,12 +258,40 @@ export function registerIpc(services: AppServices): void {
       throw new Error("Windows could not decrypt the saved Jira token, so it was not kept. Save it again.");
     }
     await runner.dropAllSessions();
-    logJiraSettingsChange("token saved", db.getSetting("jira_site_url"), true);
+    logJiraSettingsChange(
+      "token saved",
+      db.getSetting("jira_site_url"),
+      true,
+      hasSecret(secretKeys.jiraCookie),
+    );
   });
   ipcMain.handle(channels.settingsClearJiraToken, async () => {
     clearSecret(secretKeys.jira);
     await runner.dropAllSessions();
-    logJiraSettingsChange("token cleared", db.getSetting("jira_site_url"), false);
+    logJiraSettingsChange(
+      "token cleared",
+      db.getSetting("jira_site_url"),
+      false,
+      hasSecret(secretKeys.jiraCookie),
+    );
+  });
+  ipcMain.handle(channels.settingsJiraLogin, async (_event, url: string) => {
+    const site = cleanUrl(url);
+    const result = await jiraBrowserLogin(site);
+    db.setSetting("jira_site_url", site);
+    await runner.dropAllSessions();
+    logJiraSettingsChange("browser session saved", site, hasSecret(secretKeys.jira), true);
+    return result;
+  });
+  ipcMain.handle(channels.settingsClearJiraCookie, async () => {
+    clearSecret(secretKeys.jiraCookie);
+    await runner.dropAllSessions();
+    logJiraSettingsChange(
+      "browser session cleared",
+      db.getSetting("jira_site_url"),
+      hasSecret(secretKeys.jira),
+      false,
+    );
   });
 
   ipcMain.handle(channels.modelsList, () => listCopilotModels());

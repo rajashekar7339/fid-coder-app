@@ -51,6 +51,7 @@ export type ToolContext = {
   browser: BrowserControl;
   githubPat: string | null;
   jiraToken: string | null;
+  jiraCookie: string | null;
   jiraSite: string | null;
   explore?: (question: string) => Promise<string>;
   review?: (target: string) => Promise<string>;

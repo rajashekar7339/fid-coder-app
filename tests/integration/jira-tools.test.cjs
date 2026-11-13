@@ -107,3 +107,70 @@ test("uses a Jira context path before the origin", async () => {
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test("uses a saved browser session cookie", async () => {
+  const cookies = [];
+  const server = http.createServer((request, response) => {
+    cookies.push(request.headers.cookie);
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ displayName: "Ada Lovelace", accountId: "abc" }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  try {
+    const tool = jiraTools.find((item) => item.name === "jira_myself");
+    assert.ok(tool);
+    const result = await tool.handler(
+      {},
+      {
+        jiraSite: `http://127.0.0.1:${port}`,
+        jiraToken: null,
+        jiraCookie: "JSESSIONID=test-session; atl-xsrf-token=test",
+        log: () => undefined,
+      },
+    );
+    assert.match(result, /Ada Lovelace/);
+    assert.equal(cookies[0], "JSESSIONID=test-session; atl-xsrf-token=test");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("falls back to the token when the browser session is rejected", async () => {
+  const server = http.createServer((request, response) => {
+    if (request.headers.cookie) {
+      response.writeHead(401, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ errorMessages: ["session expired"] }));
+      return;
+    }
+    if (request.headers.authorization === "Bearer test-token") {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ displayName: "Grace Hopper" }));
+      return;
+    }
+    response.writeHead(401, { "Content-Type": "application/json" });
+    response.end("{}");
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  try {
+    const tool = jiraTools.find((item) => item.name === "jira_myself");
+    assert.ok(tool);
+    const logged = [];
+    const result = await tool.handler(
+      {},
+      {
+        jiraSite: `http://127.0.0.1:${port}`,
+        jiraToken: "test-token",
+        jiraCookie: "JSESSIONID=expired",
+        log: (message) => logged.push(message),
+      },
+    );
+    assert.match(result, /Grace Hopper/);
+    assert.match(logged.join("\n"), /Jira rejected the browser session/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

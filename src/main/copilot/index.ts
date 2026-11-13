@@ -519,6 +519,7 @@ export async function getCopilotStatus(): Promise<SettingsView> {
     hasStoredToken: stored,
     hasGithubPat: hasSecret(secretKeys.githubPat),
     hasJiraToken: hasSecret(secretKeys.jira),
+    hasJiraCookie: hasSecret(secretKeys.jiraCookie),
     jiraSiteUrl: "",
   };
 }

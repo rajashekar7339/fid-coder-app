@@ -160,6 +160,7 @@ export class Runner {
   private readonly turnSources = new Map<string, "chat" | "routine">();
   private readonly turnCommands = new Map<string, "routine">();
   private readonly jiraTokenWarned = new Set<string>();
+  private readonly jiraCookieWarned = new Set<string>();
   private readonly turnNotifiers = new Map<string, (text: string) => void>();
   private readonly pendingApprovals = new Map<string, PendingApproval>();
   private readonly skillToolsUsed = new Set<string>();
@@ -528,6 +529,7 @@ export class Runner {
             logJiraToolFailure(agent.name, toolName, text, {
               site: this.db.getSetting("jira_site_url"),
               hasToken: hasSecret(secretKeys.jira),
+              hasCookie: hasSecret(secretKeys.jiraCookie),
             });
           }
         }
@@ -608,6 +610,7 @@ export class Runner {
       browser: this.browser,
       githubPat: workspaceTools && hasSecret(secretKeys.githubPat) ? getSecret(secretKeys.githubPat) : null,
       jiraToken: this.jiraTokenFor(agentId),
+      jiraCookie: this.jiraCookieFor(agentId),
       jiraSite: this.db.getSetting("jira_site_url"),
       explore:
         workspaceDir && (shell || readOnly)
@@ -641,6 +644,23 @@ export class Runner {
         logWarn(
           `Jira token could not be decrypted for "${agent?.name ?? agentId}": ` +
             `${error instanceof Error ? error.message : String(error)}. Save it again in Settings -> Jira.`,
+        );
+      }
+      return null;
+    }
+  }
+
+  private jiraCookieFor(agentId: string): string | null {
+    if (!hasSecret(secretKeys.jiraCookie)) return null;
+    try {
+      return getSecret(secretKeys.jiraCookie);
+    } catch (error) {
+      if (!this.jiraCookieWarned.has(agentId)) {
+        this.jiraCookieWarned.add(agentId);
+        const agent = this.db.getAgent(agentId);
+        logWarn(
+          `Jira browser session could not be decrypted for "${agent?.name ?? agentId}": ` +
+            `${error instanceof Error ? error.message : String(error)}. Sign in again in Settings -> Jira.`,
         );
       }
       return null;
@@ -826,13 +846,15 @@ export class Runner {
     const jiraSite = this.db.getSetting("jira_site_url");
     if (jiraSite && (browser || shell || browserRead)) lines.push(`Jira site URL: ${jiraSite}`);
     if (browser || browserRead) {
-      const ready = jiraToolsReady(jiraSite, hasSecret(secretKeys.jira));
+      const hasJiraToken = hasSecret(secretKeys.jira);
+      const hasJiraCookie = hasSecret(secretKeys.jiraCookie);
+      const ready = jiraToolsReady(jiraSite, hasJiraToken, hasJiraCookie);
       lines.push(
         ready
-          ? "Jira tools are available. Use them for tickets; do not print the token."
+          ? "Jira tools are available. Use them for tickets; never print the token or browser session."
           : browserRead
             ? "Jira tools are not configured. Use browser_navigate and browser_snapshot to read a page."
-            : "Jira tools are not configured. Use the browser for Jira, or save the site and token in Settings → Jira.",
+            : "Jira tools are not configured. Use the browser for Jira, or save the site and a token or browser sign-in in Settings → Jira.",
       );
     }
     if (shell && hasSecret(secretKeys.jira)) {
@@ -864,15 +886,17 @@ export class Runner {
     }
     const jiraSite = this.db.getSetting("jira_site_url");
     const hasJiraToken = hasSecret(secretKeys.jira);
+    const hasJiraCookie = hasSecret(secretKeys.jiraCookie);
     if (agent.toolProfile !== "developer") {
       logJiraStatus({
         site: jiraSite,
         hasToken: hasJiraToken,
+        hasCookie: hasJiraCookie,
         agentName: agent.name,
         askMode: askMode(agent),
       });
     }
-    if (!jiraToolsReady(jiraSite, hasJiraToken)) {
+    if (!jiraToolsReady(jiraSite, hasJiraToken, hasJiraCookie)) {
       tools = tools.filter((tool) => !tool.name.startsWith("jira_"));
     }
     if (this.turnSources.get(agent.id) === "routine") {

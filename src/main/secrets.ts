@@ -8,6 +8,7 @@ export const secretKeys = {
   copilot: "copilot-token",
   githubPat: "github-pat",
   jira: "jira-token",
+  jiraCookie: "jira-cookie",
 } as const;
 
 function readFile(): SecretFile {

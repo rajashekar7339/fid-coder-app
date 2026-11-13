@@ -73,9 +73,9 @@ export const jiraTools: AppTool[] = [
 ];
 
 async function jiraSend(ctx: ToolContext, paths: string[], init: { method: string; body?: string }): Promise<unknown> {
-  const problem = jiraConfigError(ctx.jiraSite, ctx.jiraToken);
-  if (problem || !ctx.jiraSite || !ctx.jiraToken) {
-    const detail = problem ?? "Open Settings → Jira and save the site URL and personal access token.";
+  const problem = jiraConfigError(ctx.jiraSite, ctx.jiraToken, ctx.jiraCookie);
+  if (problem || !ctx.jiraSite) {
+    const detail = problem ?? "Open Settings → Jira and save a personal access token, or sign in with the browser.";
     ctx.log?.(`Jira tool failed: ${detail}`);
     jiraFail(detail);
   }
@@ -87,82 +87,94 @@ async function jiraSend(ctx: ToolContext, paths: string[], init: { method: strin
     ctx.log?.(`Jira tool failed: ${detail}`);
     jiraFail(detail);
   }
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-    Authorization: `Bearer ${ctx.jiraToken}`,
-  };
-  if (init.body) headers["Content-Type"] = "application/json";
   const fail = (detail: string): never => {
     ctx.log?.(`Jira tool failed: ${detail}`);
     return jiraFail(detail);
   };
+  const auths: Array<{ label: string; headers: Record<string, string> }> = [];
+  const cookie = ctx.jiraCookie?.trim();
+  if (cookie) auths.push({ label: "browser session", headers: { Cookie: cookie } });
+  const token = ctx.jiraToken?.trim();
+  if (token) auths.push({ label: "personal access token", headers: { Authorization: `Bearer ${token}` } });
+  if (auths.length === 0) {
+    fail("Open Settings → Jira and save a personal access token, or sign in with the browser.");
+  }
+
   let sawNotFound = false;
   let lastDetail = "Jira could not be reached.";
+  let lastRejected: string | null = null;
   for (const base of bases) {
     for (const path of paths) {
       const requested = `${base.toString().replace(/\/+$/, "")}${path}`;
-      let response: Response;
-      try {
-        response = await jiraFetch(requested, {
-          method: init.method,
-          headers,
-          body: init.body,
-          signal: AbortSignal.timeout(20_000),
-        });
-      } catch (error) {
-        lastDetail = `Jira could not reach ${requested}: ${jiraFetchError(error)}`;
-        ctx.log?.(`Jira attempt failed (will retry): ${lastDetail}`);
-        continue;
-      }
-      if (response.status === 404) {
-        sawNotFound = true;
-        ctx.log?.(`Jira attempt returned 404 for ${requested}.`);
-        continue;
-      }
-      const text = await response.text();
-      const contentType = response.headers.get("content-type");
-      const finalUrl = response.url;
-      if (response.status === 401 || response.status === 403) {
-        fail(
-          `Jira rejected the token. ${jiraResponseDetail({
+      for (const auth of auths) {
+        let response: Response;
+        try {
+          response = await jiraFetch(requested, {
+            method: init.method,
+            headers: {
+              Accept: "application/json",
+              ...auth.headers,
+              ...(init.body ? { "Content-Type": "application/json" } : {}),
+            },
+            body: init.body,
+            signal: AbortSignal.timeout(20_000),
+          });
+        } catch (error) {
+          lastDetail = `Jira could not reach ${requested}: ${jiraFetchError(error)}`;
+          ctx.log?.(`Jira attempt with the ${auth.label} failed (will retry): ${lastDetail}`);
+          continue;
+        }
+        if (response.status === 404) {
+          sawNotFound = true;
+          ctx.log?.(`Jira attempt with the ${auth.label} returned 404 for ${requested}.`);
+          continue;
+        }
+        const text = await response.text();
+        const contentType = response.headers.get("content-type");
+        const finalUrl = response.url;
+        if (response.status === 401 || response.status === 403) {
+          lastRejected = `Jira rejected the ${auth.label}. ${jiraResponseDetail({
             status: response.status,
             contentType,
             url: finalUrl,
             requestedUrl: requested,
             body: text,
-          })}`,
-        );
-      }
-      if (!response.ok) {
-        lastDetail = jiraResponseDetail({
-          status: response.status,
-          contentType,
-          url: finalUrl,
-          requestedUrl: requested,
-          body: text,
-        });
-        ctx.log?.(`Jira attempt failed (will retry): ${lastDetail}`);
-        continue;
-      }
-      if (!text.trim()) {
-        lastDetail = `Jira returned an empty response for ${requested}.`;
-        ctx.log?.(`Jira attempt failed (will retry): ${lastDetail}`);
-        continue;
-      }
-      try {
-        return JSON.parse(text) as unknown;
-      } catch {
-        lastDetail = jiraResponseDetail({
-          status: response.status,
-          contentType,
-          url: finalUrl,
-          requestedUrl: requested,
-          body: text,
-        });
-        ctx.log?.(`Jira attempt failed (will retry): ${lastDetail}`);
+          })}`;
+          ctx.log?.(`Jira attempt failed (will retry): ${lastRejected}`);
+          continue;
+        }
+        if (!response.ok) {
+          lastDetail = jiraResponseDetail({
+            status: response.status,
+            contentType,
+            url: finalUrl,
+            requestedUrl: requested,
+            body: text,
+          });
+          ctx.log?.(`Jira attempt with the ${auth.label} failed (will retry): ${lastDetail}`);
+          continue;
+        }
+        if (!text.trim()) {
+          lastDetail = `Jira returned an empty response for ${requested}.`;
+          ctx.log?.(`Jira attempt with the ${auth.label} failed (will retry): ${lastDetail}`);
+          continue;
+        }
+        try {
+          return JSON.parse(text) as unknown;
+        } catch {
+          lastDetail = jiraResponseDetail({
+            status: response.status,
+            contentType,
+            url: finalUrl,
+            requestedUrl: requested,
+            body: text,
+          });
+          ctx.log?.(`Jira attempt with the ${auth.label} failed (will retry): ${lastDetail}`);
+        }
       }
     }
   }
+  if (lastRejected && lastDetail === "Jira could not be reached.") lastDetail = lastRejected;
   fail(
     sawNotFound && lastDetail === "Jira could not be reached."
       ? "Jira could not find that API on the saved site."

@@ -3,6 +3,7 @@ import os from "os";
 import path from "path";
 import { app, BrowserWindow, nativeTheme } from "electron";
 import { BrowserManager } from "./browser/browser-manager";
+import { cancelJiraBrowserLogin } from "./jira/login";
 import { CheckpointStore } from "./workspace/checkpoints";
 import { AppDatabase } from "./db";
 import { registerIpc } from "./ipc";
@@ -83,7 +84,12 @@ if (!gotLock) {
       }
     }
     logJiraStatus(
-      { site: jiraSite, hasToken: hasJiraToken, readable: jiraTokenReadable },
+      {
+        site: jiraSite,
+        hasToken: hasJiraToken,
+        hasCookie: hasSecret(secretKeys.jiraCookie),
+        readable: jiraTokenReadable,
+      },
       { force: true },
     );
     scheduler.reload();
@@ -104,6 +110,7 @@ if (!gotLock) {
   async function shutdown(): Promise<void> {
     runner?.denyAllApprovals("The app closed before approval.");
     scheduler?.stop();
+    await cancelJiraBrowserLogin();
     await browser.closeAll();
     await stopClient();
     db?.close();

@@ -30,6 +30,10 @@ export function profileDir(agentId: string): string {
   return path.join(userDataDir(), "browser-profiles", agentId);
 }
 
+export function jiraLoginProfileDir(): string {
+  return path.join(userDataDir(), "browser-profiles", "jira-login");
+}
+
 export function checkpointsDir(): string {
   return path.join(userDataDir(), "checkpoints");
 }

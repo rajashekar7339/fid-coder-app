@@ -45,6 +45,8 @@ export const channels = {
   settingsSaveJiraSite: "settings:save-jira-site",
   settingsSaveJiraToken: "settings:save-jira-token",
   settingsClearJiraToken: "settings:clear-jira-token",
+  settingsJiraLogin: "settings:jira-login",
+  settingsClearJiraCookie: "settings:clear-jira-cookie",
   dialogPickFolder: "dialog:pick-folder",
   modelsList: "models:list",
   skillsList: "skills:list",

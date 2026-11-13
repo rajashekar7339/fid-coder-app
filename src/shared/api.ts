@@ -11,6 +11,7 @@ import type {
   ContextView,
   CopilotModel,
   FileDiff,
+  JiraLoginResult,
   Message,
   Routine,
   RoutineInput,
@@ -103,6 +104,8 @@ export interface FidApi {
     saveJiraSite: (url: string) => Promise<void>;
     saveJiraToken: (token: string) => Promise<void>;
     clearJiraToken: () => Promise<void>;
+    jiraLogin: (site: string) => Promise<JiraLoginResult>;
+    clearJiraCookie: () => Promise<void>;
   };
   dialog: {
     pickFolder: () => Promise<string | null>;

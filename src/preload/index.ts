@@ -60,6 +60,8 @@ const channels = {
   settingsSaveJiraSite: "settings:save-jira-site",
   settingsSaveJiraToken: "settings:save-jira-token",
   settingsClearJiraToken: "settings:clear-jira-token",
+  settingsJiraLogin: "settings:jira-login",
+  settingsClearJiraCookie: "settings:clear-jira-cookie",
   dialogPickFolder: "dialog:pick-folder",
   modelsList: "models:list",
   skillsList: "skills:list",
@@ -171,6 +173,8 @@ const api: FidApi = {
     saveJiraSite: (url: string) => ipcRenderer.invoke(channels.settingsSaveJiraSite, url),
     saveJiraToken: (token: string) => ipcRenderer.invoke(channels.settingsSaveJiraToken, token),
     clearJiraToken: () => ipcRenderer.invoke(channels.settingsClearJiraToken),
+    jiraLogin: (site: string) => ipcRenderer.invoke(channels.settingsJiraLogin, site),
+    clearJiraCookie: () => ipcRenderer.invoke(channels.settingsClearJiraCookie),
   },
   dialog: {
     pickFolder: () => ipcRenderer.invoke(channels.dialogPickFolder),

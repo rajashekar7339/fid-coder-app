@@ -2,14 +2,22 @@ const SEARCH_FIELDS = ["summary", "status", "assignee"];
 const MAX_ISSUES = 20;
 const MAX_COMMENTS = 5;
 
-export function jiraToolsReady(site: string | null, hasToken: boolean): boolean {
-  return Boolean(site) && hasToken;
+export function jiraToolsReady(site: string | null, hasToken: boolean, hasCookie = false): boolean {
+  return Boolean(site) && (hasToken || hasCookie);
 }
 
-export function jiraConfigError(site: string | null, token: string | null): string | null {
-  if (!site && !token) return "Open Settings → Jira and save the site URL and personal access token.";
+export function jiraConfigError(
+  site: string | null,
+  token: string | null,
+  cookie: string | null = null,
+): string | null {
+  if (!site && !token && !cookie) {
+    return "Open Settings → Jira and save the site URL and either a personal access token or a browser sign-in.";
+  }
   if (!site) return "Open Settings → Jira and save the site URL.";
-  if (!token) return "Open Settings → Jira and save the personal access token.";
+  if (!token && !cookie) {
+    return "Open Settings → Jira and save a personal access token, or sign in with the browser.";
+  }
   return null;
 }
 

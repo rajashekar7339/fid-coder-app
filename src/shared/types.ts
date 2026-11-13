@@ -259,7 +259,13 @@ export type SettingsView = {
   hasStoredToken: boolean;
   hasGithubPat: boolean;
   hasJiraToken: boolean;
+  hasJiraCookie: boolean;
   jiraSiteUrl: string;
+};
+
+export type JiraLoginResult = {
+  name: string;
+  url: string;
 };
 
 export type AgentInput = {
