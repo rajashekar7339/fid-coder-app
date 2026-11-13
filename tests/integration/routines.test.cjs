@@ -73,6 +73,12 @@ test("the service creates repeating and one-time routines with the right next ru
     assert.equal(repeating.once, false);
     assert.equal(repeating.runAt, null);
     assert.ok(repeating.nextRunAt);
+    const next = new Date(repeating.nextRunAt);
+    assert.ok(next.getTime() > Date.now());
+    assert.equal(next.getHours(), 9);
+    assert.equal(next.getMinutes(), 0);
+    assert.equal(next.getSeconds(), 0);
+    assert.ok(next.getDay() >= 1 && next.getDay() <= 5);
 
     const once = service.create(agent.id, {
       name: "Run the build",

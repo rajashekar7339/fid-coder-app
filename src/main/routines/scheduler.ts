@@ -32,7 +32,7 @@ export class Scheduler {
   }
 
   stop(): void {
-    for (const job of this.jobs.values()) job.stop();
+    for (const job of this.jobs.values()) void job.destroy();
     this.jobs.clear();
     for (const timer of this.onceJobs.values()) clearTimeout(timer);
     this.onceJobs.clear();
