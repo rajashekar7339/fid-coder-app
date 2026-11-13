@@ -9,7 +9,7 @@ import {
   RotateCcw,
   X,
 } from "lucide-react";
-import { ancestorDirectories, normalizeWorkspacePath } from "../../../shared/file-tree";
+import { ancestorDirectories, workspacePathMatches } from "../../../shared/file-tree";
 import { imageMimeForPath } from "../../../shared/image";
 import { changeTotals, findChangedFile } from "../../../shared/changes";
 import type { Citation } from "../../../shared/citations";
@@ -189,13 +189,14 @@ export function ChangesPanel({
         };
         const match = findChangedFile(changeSets, request.path);
         if (!match && changeSets.length === 0 && loading) return;
+        const readPath = match?.file.path ?? request.path;
         appliedRequest.current = request;
         setCitation(next);
-        setCodePath(request.path);
+        setCodePath(readPath);
         setFilter("");
         setChangedOnly(false);
         setRefsOpen(Boolean(request.related && request.related.length > 0));
-        void expandTo(request.path);
+        void expandTo(readPath);
         if (match) {
           setSelectedTurnId(match.turnId);
           setSelectedFileId(match.file.id);
@@ -306,12 +307,11 @@ export function ChangesPanel({
   const totals = changeTotals(selectedTurn);
   const related = request?.related ?? [];
   const activePath = view === "diff" ? selectedFile?.path ?? null : codePath;
-  const activeKey = activePath ? normalizeWorkspacePath(activePath) : null;
   const activeIsImage = activePath ? imageMimeForPath(activePath) !== null : false;
   const showCitation = Boolean(
     citation &&
-      activeKey &&
-      normalizeWorkspacePath(citation.path) === activeKey &&
+      activePath &&
+      workspacePathMatches(activePath, citation.path) &&
       !activeIsImage,
   );
   const codeChange = codePath ? findChangedFile(changeSets, codePath) : null;
@@ -320,7 +320,7 @@ export function ChangesPanel({
     view === "diff" &&
     citation &&
     selectedFile &&
-    normalizeWorkspacePath(citation.path) === normalizeWorkspacePath(selectedFile.path)
+    workspacePathMatches(selectedFile.path, citation.path)
       ? citation.line
       : null;
   const citedEnd = citedStart === null ? null : (citation?.endLine ?? citedStart);
@@ -389,13 +389,14 @@ export function ChangesPanel({
       line: reference.line,
       endLine: reference.endLine,
     };
+    const match = findChangedFile(changeSets, reference.path);
+    const readPath = match?.file.path ?? reference.path;
     setCitation(next);
-    setCodePath(reference.path);
+    setCodePath(readPath);
     setFilter("");
     setChangedOnly(false);
     setRefsOpen(true);
-    void expandTo(reference.path);
-    const match = findChangedFile(changeSets, reference.path);
+    void expandTo(readPath);
     if (match) {
       setSelectedTurnId(match.turnId);
       setSelectedFileId(match.file.id);
@@ -421,10 +422,10 @@ export function ChangesPanel({
     setCitation(null);
     setSelectedTurnId(match.turnId);
     setSelectedFileId(match.file.id);
-    setCodePath(path);
+    setCodePath(match.file.path);
     setView("diff");
     setChangedOpen(true);
-    void expandTo(path);
+    void expandTo(match.file.path);
   }
 
   function toggleDir(path: string) {
