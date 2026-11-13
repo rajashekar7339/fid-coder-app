@@ -1,6 +1,6 @@
 import fs from "fs";
-import { relativeInside, resolveInside } from "../../tools/workspace";
 import type { WorkspaceFilePeek } from "../../shared/types";
+import { resolveWorkspaceFile } from "./resolve-file";
 
 const MAX_BYTES = 512_000;
 const WINDOW_LINES = 160;
@@ -17,14 +17,14 @@ export function readWorkspaceFile(
   limit: number | null = null,
 ): WorkspaceFilePeek {
   if (!requested.trim()) throw new Error("Choose a file to read");
-  const file = resolveInside(workspaceDir, requested);
+  const resolved = resolveWorkspaceFile(workspaceDir, requested);
+  const file = resolved.file;
   let stat: fs.Stats;
   try {
     stat = fs.statSync(file);
   } catch {
     throw new Error("That file was not found");
   }
-  if (!stat.isFile()) throw new Error("That path is not a file");
   if (stat.size > MAX_BYTES) throw new Error("That file is too large to preview");
 
   const data = fs.readFileSync(file);
@@ -34,7 +34,7 @@ export function readWorkspaceFile(
   const totalLines = lines.length;
   if (totalLines === 0) {
     return {
-      path: relativeInside(workspaceDir, file),
+      path: resolved.relative,
       text: "",
       startLine: 1,
       endLine: 0,
@@ -69,7 +69,7 @@ export function readWorkspaceFile(
       ? Math.min(totalLines, windowStart + WINDOW_LINES - 1)
       : Math.min(totalLines, windowStart + pageSize - 1);
   return {
-    path: relativeInside(workspaceDir, file),
+    path: resolved.relative,
     text: lines.slice(windowStart - 1, windowEnd).join("\n"),
     startLine: windowStart,
     endLine: windowEnd,

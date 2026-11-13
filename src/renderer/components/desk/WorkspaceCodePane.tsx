@@ -161,6 +161,7 @@ export function WorkspaceCodePane({
   const first = pages[0] ?? null;
   const last = pages[pages.length - 1] ?? null;
   const total = last?.totalLines ?? 0;
+  const displayPath = image?.path ?? first?.path ?? path;
   const language = languageForPath(path);
   const anchorLine = line === null ? null : first?.line ?? line;
   const anchorEnd = anchorLine === null ? null : first?.lineEnd ?? anchorLine;
@@ -234,8 +235,8 @@ export function WorkspaceCodePane({
           <FileText size={13} aria-hidden="true" />
         )}
         <span className="changes-code-badge">{isImage ? "image" : "read-only"}</span>
-        <span className="changes-diff-name" title={path}>
-          {path}
+        <span className="changes-diff-name" title={displayPath}>
+          {displayPath}
         </span>
         {previewKind ? (
           <div className="changes-view-toggle" role="group" aria-label="File view">
@@ -328,7 +329,12 @@ export function WorkspaceCodePane({
             />
           </div>
         ) : pages.length > 0 ? (
-          <pre ref={code} className="citation-code" tabIndex={0} aria-label={`Contents of ${path}`}>
+          <pre
+            ref={code}
+            className="citation-code"
+            tabIndex={0}
+            aria-label={`Contents of ${displayPath}`}
+          >
             {total === 0 ? (
               <span className="citation-empty-line">(empty file)</span>
             ) : (

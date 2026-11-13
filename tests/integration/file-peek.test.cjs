@@ -78,6 +78,47 @@ test("reads a window around a citation line and clamps the target", () => {
   }
 });
 
+test("resolves a bare or partial file name inside the workspace", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "fid-file-peek-name-"));
+  try {
+    const nested = path.join(root, "src", "main", "java", "Test.java");
+    fs.mkdirSync(path.dirname(nested), { recursive: true });
+    fs.writeFileSync(nested, ["class Test {", "  void run() {}", "}"].join("\n"));
+
+    const bare = readWorkspaceFile(root, "Test.java", 2);
+    assert.equal(bare.path, "src/main/java/Test.java");
+    assert.equal(bare.line, 2);
+    assert.match(bare.text, /void run/);
+
+    const lowerCase = readWorkspaceFile(root, "test.java", 1);
+    assert.equal(lowerCase.path, "src/main/java/Test.java");
+
+    const partial = readWorkspaceFile(root, "main/java/Test.java", 1);
+    assert.equal(partial.path, "src/main/java/Test.java");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects an ambiguous bare file name", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "fid-file-peek-ambiguous-"));
+  try {
+    fs.mkdirSync(path.join(root, "src"), { recursive: true });
+    fs.mkdirSync(path.join(root, "test"), { recursive: true });
+    fs.writeFileSync(path.join(root, "src", "Test.java"), "one\n");
+    fs.writeFileSync(path.join(root, "test", "Test.java"), "two\n");
+    assert.throws(
+      () => readWorkspaceFile(root, "Test.java", 1),
+      (error) =>
+        /ambiguous/.test(error.message) &&
+        /src\/Test\.java/.test(error.message) &&
+        /test\/Test\.java/.test(error.message),
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("rejects traversal, missing files, and binary data", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fid-file-peek-safety-"));
   try {

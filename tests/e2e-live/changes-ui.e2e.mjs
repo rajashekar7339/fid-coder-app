@@ -51,6 +51,7 @@ async function seed() {
   fs.mkdirSync(shots, { recursive: true });
   write("src/demo.ts", "export const value = 1;\n");
   write("src/other.ts", "export const other = 1;\n");
+  write("lib/Helper.java", "public class Helper {\n  static int value() { return 42; }\n}\n");
   write("README.md", "# Demo\nA sample workspace.\n");
   write(
     "docs/guide.md",
@@ -118,7 +119,7 @@ async function seed() {
   db.addMessage(
     agent.id,
     "assistant",
-    "I changed `src/demo.ts:1-2` and added `docs/notes.md:1-2`. See `README.md:1-1`.",
+    "I changed `src/demo.ts:1-2` and added `docs/notes.md:1-2`. See `README.md:1-1`. Also `Helper.java:2-2`.",
     latest,
   );
 
@@ -295,7 +296,7 @@ async function main() {
     check("a citation opens in place in the Changes panel", (await page.locator(".modal").count()) === 0);
     check("the cited range is marked in the diff", cited >= 1, String(cited));
     const references = await page.locator(".citation-ref").count();
-    check("the panel lists every citation in the answer", references === 3, String(references));
+    check("the panel lists every citation in the answer", references === 4, String(references));
     await shot(page, "03-cited-diff");
 
     const readmeCitation = page.locator("article.message .md-citation", { hasText: "README.md:1-1" }).last();
@@ -334,6 +335,28 @@ async function main() {
       explorerText.replace(/\s+/g, " ").slice(0, 160),
     );
     await shot(page, "04b-explorer");
+
+    const helperCitation = page
+      .locator("article.message .md-citation", { hasText: "Helper.java:2-2" })
+      .last();
+    await helperCitation.click();
+    await page.waitForFunction(
+      () => /lib\/Helper\.java/.test(document.querySelector(".changes-diff-name")?.textContent ?? ""),
+      null,
+      { timeout: 15_000 },
+    );
+    await page.waitForFunction(
+      () => document.querySelectorAll(".citation-line.is-target").length === 1,
+      null,
+      { timeout: 15_000 },
+    );
+    check(
+      "a bare file name citation resolves inside the workspace",
+      /return 42/.test(await page.locator(".citation-code").innerText()) &&
+        /No recorded change/.test(await page.locator(".changes-diff-foot").innerText()),
+      await page.locator(".changes-diff-name").innerText(),
+    );
+    await shot(page, "04a-bare-name-citation");
 
     const imageRow = page.locator(".workspace-tree-file", { hasText: "preview.png" }).first();
     await imageRow.waitFor({ timeout: 15_000 });
