@@ -4,7 +4,7 @@ import path from "path";
 import { diffLines } from "../../shared/diff";
 import type { ChangeSet, FileChangeSummary, FileDiff } from "../../shared/types";
 import { MAX_CHECKPOINT_BYTES } from "../../tools/types";
-import type { AppDatabase, FileChangeRecord } from "../db";
+import type { AppDatabase, ChangeSetRecord, FileChangeRecord } from "../db";
 
 const MAX_CURRENT_BYTES = 8_000_000;
 const MAX_DIFF_CHARS = 400_000;
@@ -112,7 +112,14 @@ export class CheckpointStore {
 
   latest(agentId: string): ChangeSet | null {
     const set = this.db.latestChangeSet(agentId);
-    if (!set) return null;
+    return set ? this.toChangeSet(agentId, set) : null;
+  }
+
+  list(agentId: string, limit = 30): ChangeSet[] {
+    return this.db.listChangeSets(agentId, limit).map((set) => this.toChangeSet(agentId, set));
+  }
+
+  private toChangeSet(agentId: string, set: ChangeSetRecord): ChangeSet {
     const agent = this.db.getAgent(agentId);
     const files: FileChangeSummary[] = set.files.slice(0, MAX_FILES_PER_TURN).map((file) => ({
       id: file.id,

@@ -8,7 +8,9 @@ export type CommandInfo = {
   category: "agent" | "app";
   profiles?: AgentToolProfile[];
   requiresWorkspace?: boolean;
+  requiresAgentMode?: boolean;
   ui?: boolean;
+  hideWithoutWorkspace?: boolean;
 };
 
 export const COMMANDS: CommandInfo[] = [
@@ -27,6 +29,24 @@ export const COMMANDS: CommandInfo[] = [
     description: "Open the Skills library, or use a skill for this message.",
     usage: "/skills <skill-id> <task>",
     category: "agent",
+  },
+  {
+    id: "routine",
+    label: "Create a routine",
+    description: "Create a routine for this agent. Add the task and when to run it.",
+    usage: "/routine <task> [when]",
+    category: "agent",
+    requiresAgentMode: true,
+  },
+  {
+    id: "files",
+    label: "Browse files",
+    description: "Open the workspace file browser.",
+    usage: "/files",
+    category: "app",
+    requiresWorkspace: true,
+    ui: true,
+    hideWithoutWorkspace: true,
   },
   {
     id: "help",
@@ -58,7 +78,9 @@ export function commandAvailability(
   command: CommandInfo,
   profile: AgentToolProfile,
   hasWorkspace: boolean,
+  readOnly = false,
 ): string | null {
+  if (command.requiresAgentMode && readOnly) return "Switch to Agent mode to use this command.";
   if (command.requiresWorkspace && !hasWorkspace) return "Set a workspace folder first.";
   if (command.profiles && !command.profiles.includes(profile)) return "Needs developer tools.";
   return null;

@@ -6,14 +6,26 @@ import {
   formatJiraIssue,
   formatJiraIssues,
   formatJiraMyself,
-  jiraBaseUrl,
+  jiraBaseUrls,
   jiraConfigError,
+  jiraFetchError,
+  jiraResponseDetail,
   jiraSearchBody,
   jiraToolsReady,
 } from "../../src/tools/jira/jira-format.ts";
 
-test("uses the site origin and caps a search at 20 issues", () => {
-  assert.equal(jiraBaseUrl("https://fid.atlassian.net/jira/software").origin, "https://fid.atlassian.net");
+test("keeps a Jira context path and caps a search at 20 issues", () => {
+  const context = jiraBaseUrls("https://jira.example.com/jira");
+  assert.equal(context[0]?.toString(), "https://jira.example.com/jira/");
+  assert.equal(context[1]?.toString(), "https://jira.example.com/");
+  assert.deepEqual(
+    jiraBaseUrls("https://fid.atlassian.net").map((url) => url.toString()),
+    ["https://fid.atlassian.net/"],
+  );
+  assert.deepEqual(
+    jiraBaseUrls("https://fid.atlassian.net/jira/software").map((url) => url.toString()),
+    ["https://fid.atlassian.net/jira/software/", "https://fid.atlassian.net/"],
+  );
   const body = jiraSearchBody("  assignee = currentUser()  ");
   assert.equal(body.maxResults, 20);
   assert.equal(body.jql, "assignee = currentUser()");
@@ -66,4 +78,64 @@ test("Jira tools need both the site and a token", () => {
   assert.equal(jiraToolsReady("https://fid.atlassian.net", true), true);
   assert.equal(jiraToolsReady("", true), false);
   assert.equal(jiraToolsReady("https://fid.atlassian.net", false), false);
+});
+
+test("names the underlying fetch failure", () => {
+  const dns = Object.assign(new Error("fetch failed"), {
+    cause: { code: "ENOTFOUND", syscall: "getaddrinfo", hostname: "jira.example.com" },
+  });
+  assert.match(jiraFetchError(dns), /fetch failed/);
+  assert.match(jiraFetchError(dns), /ENOTFOUND/);
+  assert.match(jiraFetchError(dns), /jira\.example\.com/);
+
+  const tls = Object.assign(new Error("fetch failed"), {
+    cause: { code: "DEPTH_ZERO_SELF_SIGNED_CERT", message: "self-signed certificate" },
+  });
+  assert.match(jiraFetchError(tls), /DEPTH_ZERO_SELF_SIGNED_CERT/);
+  assert.match(jiraFetchError(tls), /self-signed certificate/);
+
+  const refused = Object.assign(new Error("fetch failed"), {
+    cause: { code: "ECONNREFUSED", errors: [{ code: "ECONNREFUSED", address: "127.0.0.1", port: 1 }] },
+  });
+  assert.match(jiraFetchError(refused), /ECONNREFUSED/);
+  assert.match(jiraFetchError(refused), /127\.0\.0\.1/);
+  assert.equal(jiraFetchError(null), "Jira could not be reached.");
+});
+
+test("describes a non-JSON response with a safe body snippet", () => {
+  const html = jiraResponseDetail({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    url: "https://jira.example.com/login",
+    body: "<html><head><title>Log in</title><script>secret()</script></head><body>Sign in to continue</body></html>",
+  });
+  assert.match(html, /HTTP 200/);
+  assert.match(html, /text\/html/);
+  assert.match(html, /https:\/\/jira\.example\.com\/login/);
+  assert.match(html, /Sign in to continue/);
+  assert.doesNotMatch(html, /<html>|<script>|secret\(\)/);
+
+  const redacted = jiraResponseDetail({
+    status: 500,
+    contentType: "text/plain",
+    url: "https://jira.example.com/rest/api/3/myself",
+    body: "Bearer super-secret-value atl_token=hidden",
+  });
+  assert.match(redacted, /\[redacted\]/);
+  assert.doesNotMatch(redacted, /super-secret-value|hidden/);
+
+  assert.match(
+    jiraResponseDetail({ status: 204, contentType: null, url: "", body: "  " }),
+    /\(empty body\)/,
+  );
+
+  const redirected = jiraResponseDetail({
+    status: 200,
+    contentType: "text/html",
+    url: "https://sso.example.com/login",
+    requestedUrl: "https://jira.example.com/jira/rest/api/3/myself",
+    body: "Log in",
+  });
+  assert.match(redirected, /for https:\/\/jira\.example\.com\/jira\/rest\/api\/3\/myself/);
+  assert.match(redirected, /redirected to https:\/\/sso\.example\.com\/login/);
 });

@@ -19,6 +19,10 @@ export function secretsPath(): string {
   return path.join(userDataDir(), "secrets.bin.json");
 }
 
+export function logPath(): string {
+  return path.join(userDataDir(), "logs", "fid-coder.log");
+}
+
 export function profileDir(agentId: string): string {
   if (!AGENT_ID.test(agentId)) {
     throw new Error("Invalid agent id");

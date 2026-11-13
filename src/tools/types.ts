@@ -1,5 +1,6 @@
 import type { HistoryPort } from "../shared/history";
-import type { ApprovalKind, ApprovalOutcome, SkillFile } from "../shared/types";
+import type { RoutineDraft } from "../shared/routine-schedule";
+import type { ApprovalKind, ApprovalOutcome, Routine, SkillFile } from "../shared/types";
 
 export interface BrowserControl {
   navigate(agentId: string, url: string): Promise<string>;
@@ -9,6 +10,12 @@ export interface BrowserControl {
 }
 
 export const MAX_CHECKPOINT_BYTES = 2_000_000;
+
+export type RoutinePort = {
+  list(agentId: string): Routine[];
+  create(agentId: string, draft: RoutineDraft): Routine;
+  remove(agentId: string, id: string): Routine;
+};
 
 export type CheckpointPort = {
   capture(file: string, previous: Buffer | null, existed?: boolean): void;
@@ -50,6 +57,8 @@ export type ToolContext = {
   checkpoint?: CheckpointPort;
   requestApproval?: (request: ApprovalToolRequest) => Promise<ApprovalOutcome>;
   history?: HistoryPort;
+  routines?: RoutinePort;
+  log?: (message: string) => void;
 };
 
 export type AppTool = {

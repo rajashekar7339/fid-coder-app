@@ -1,15 +1,23 @@
+import { net } from "electron";
 import { asRecord, requiredString } from "../args";
 import {
   formatJiraIssue,
   formatJiraIssues,
   formatJiraMyself,
-  jiraBaseUrl,
+  jiraBaseUrls,
   jiraConfigError,
+  jiraFetchError,
+  jiraResponseDetail,
   jiraSearchBody,
 } from "./jira-format";
 import type { AppTool, ToolContext } from "../types";
 
 const ISSUE_FIELDS = ["summary", "status", "assignee", "description", "comment"];
+
+// Use Chromium's network stack in Electron so requests follow the Windows
+// proxy and certificate store. Tests in plain Node fall back to global fetch.
+const jiraFetch: typeof fetch =
+  typeof net?.fetch === "function" ? (net.fetch.bind(net) as unknown as typeof fetch) : fetch;
 
 export const jiraTools: AppTool[] = [
   {
@@ -67,63 +75,105 @@ export const jiraTools: AppTool[] = [
 async function jiraSend(ctx: ToolContext, paths: string[], init: { method: string; body?: string }): Promise<unknown> {
   const problem = jiraConfigError(ctx.jiraSite, ctx.jiraToken);
   if (problem || !ctx.jiraSite || !ctx.jiraToken) {
-    jiraFail(problem ?? "Open Settings → Jira and save the site URL and personal access token.");
+    const detail = problem ?? "Open Settings → Jira and save the site URL and personal access token.";
+    ctx.log?.(`Jira tool failed: ${detail}`);
+    jiraFail(detail);
   }
-  let base: URL;
+  let bases: URL[];
   try {
-    base = jiraBaseUrl(ctx.jiraSite);
+    bases = jiraBaseUrls(ctx.jiraSite);
   } catch (error) {
-    jiraFail(error instanceof Error ? error.message : "Open Settings → Jira and save an http or https site URL.");
+    const detail = error instanceof Error ? error.message : "Open Settings → Jira and save an http or https site URL.";
+    ctx.log?.(`Jira tool failed: ${detail}`);
+    jiraFail(detail);
   }
   const headers: Record<string, string> = {
     Accept: "application/json",
     Authorization: `Bearer ${ctx.jiraToken}`,
   };
   if (init.body) headers["Content-Type"] = "application/json";
+  const fail = (detail: string): never => {
+    ctx.log?.(`Jira tool failed: ${detail}`);
+    return jiraFail(detail);
+  };
   let sawNotFound = false;
   let lastDetail = "Jira could not be reached.";
-  for (const path of paths) {
-    let response: Response;
-    try {
-      response = await fetch(new URL(path, base), {
-        method: init.method,
-        headers,
-        body: init.body,
-        signal: AbortSignal.timeout(20_000),
-      });
-    } catch (error) {
-      lastDetail = error instanceof Error ? error.message : "Jira could not be reached.";
-      continue;
-    }
-    if (response.status === 404) {
-      sawNotFound = true;
-      continue;
-    }
-    const text = await response.text();
-    if (response.status === 401 || response.status === 403) {
-      jiraFail("Jira rejected the token. Check the personal access token in Settings → Jira.");
-    }
-    if (!response.ok) jiraFail(jiraFailure(response.status, text));
-    if (!text.trim()) return {};
-    try {
-      return JSON.parse(text) as unknown;
-    } catch {
-      jiraFail("Jira returned a response that was not JSON.");
+  for (const base of bases) {
+    for (const path of paths) {
+      const requested = `${base.toString().replace(/\/+$/, "")}${path}`;
+      let response: Response;
+      try {
+        response = await jiraFetch(requested, {
+          method: init.method,
+          headers,
+          body: init.body,
+          signal: AbortSignal.timeout(20_000),
+        });
+      } catch (error) {
+        lastDetail = `Jira could not reach ${requested}: ${jiraFetchError(error)}`;
+        ctx.log?.(`Jira attempt failed (will retry): ${lastDetail}`);
+        continue;
+      }
+      if (response.status === 404) {
+        sawNotFound = true;
+        ctx.log?.(`Jira attempt returned 404 for ${requested}.`);
+        continue;
+      }
+      const text = await response.text();
+      const contentType = response.headers.get("content-type");
+      const finalUrl = response.url;
+      if (response.status === 401 || response.status === 403) {
+        fail(
+          `Jira rejected the token. ${jiraResponseDetail({
+            status: response.status,
+            contentType,
+            url: finalUrl,
+            requestedUrl: requested,
+            body: text,
+          })}`,
+        );
+      }
+      if (!response.ok) {
+        lastDetail = jiraResponseDetail({
+          status: response.status,
+          contentType,
+          url: finalUrl,
+          requestedUrl: requested,
+          body: text,
+        });
+        ctx.log?.(`Jira attempt failed (will retry): ${lastDetail}`);
+        continue;
+      }
+      if (!text.trim()) {
+        lastDetail = `Jira returned an empty response for ${requested}.`;
+        ctx.log?.(`Jira attempt failed (will retry): ${lastDetail}`);
+        continue;
+      }
+      try {
+        return JSON.parse(text) as unknown;
+      } catch {
+        lastDetail = jiraResponseDetail({
+          status: response.status,
+          contentType,
+          url: finalUrl,
+          requestedUrl: requested,
+          body: text,
+        });
+        ctx.log?.(`Jira attempt failed (will retry): ${lastDetail}`);
+      }
     }
   }
-  jiraFail(sawNotFound ? "Jira could not find that API on the saved site." : lastDetail);
+  fail(
+    sawNotFound && lastDetail === "Jira could not be reached."
+      ? "Jira could not find that API on the saved site."
+      : lastDetail,
+  );
 }
 
 function jiraFail(detail: string): never {
-  const safe = detail.replace(/\s+/g, " ").replace(/bearer\s+\S+|basic\s+\S+/gi, "[redacted]").trim().slice(0, 240);
+  const safe = detail.replace(/\s+/g, " ").replace(/bearer\s+\S+|basic\s+\S+/gi, "[redacted]").trim().slice(0, 1_200);
   console.error(`Jira tool failed: ${safe}`);
-  throw new Error(`${safe} Use the browser tools instead.`);
-}
-
-function jiraFailure(status: number, body: string): string {
-  const cleaned = body.replace(/\s+/g, " ").trim().slice(0, 180);
-  if (!cleaned || /bearer|basic |api[_ ]?token|authorization/i.test(cleaned)) return `Jira returned ${status}.`;
-  return `Jira returned ${status}. ${cleaned}`;
+  throw new Error("Jira is unavailable.");
 }
 
 function issueKey(value: string): string {

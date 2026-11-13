@@ -6,12 +6,14 @@ import { formatNextRun, formatRelativeTime } from "../../lib/format";
 import {
   cronFromSchedule,
   emptySchedule,
-  scheduleFromCron,
-  scheduleLabel,
+  localDateText,
+  routineScheduleLabel,
+  runAtFromSchedule,
+  scheduleFromRoutine,
   WEEKDAYS,
   type RoutineFrequency,
   type RoutineSchedule,
-} from "../../lib/routine-schedule";
+} from "../../../shared/routine-schedule";
 import { Modal } from "../ui/Modal";
 import { Switch } from "../ui/Switch";
 
@@ -97,12 +99,14 @@ export function RoutinesDialog({ agent, routines, onClose, onRefresh }: Props) {
                   {routine.name}
                 </span>
                 <span className="routine-nav-meta">
-                  {scheduleLabel(routine.cron)}
-                  {routine.enabled && routine.nextRunAt ? ` · ${formatNextRun(routine.nextRunAt)}` : ""}
+                  {routineScheduleLabel(routine)}
+                  {!routine.once && routine.enabled && routine.nextRunAt
+                    ? ` · ${formatNextRun(routine.nextRunAt)}`
+                    : ""}
                 </span>
               </button>
             ))}
-            {list.length === 0 ? <p className="routines-nav-empty">Nothing scheduled yet.</p> : null}
+            {list.length === 0 ? <p className="routines-nav-empty">No routines yet.</p> : null}
           </div>
 
           <button type="button" className="new-routine-button" onClick={() => setSelection({ kind: "new" })}>
@@ -140,7 +144,7 @@ function RoutineEditor({
   onDeleted: () => Promise<void>;
   onClose: () => void;
 }) {
-  const initial = routine ? scheduleFromCron(routine.cron) : emptySchedule();
+  const initial = routine ? scheduleFromRoutine(routine) : emptySchedule();
   const [name, setName] = useState(routine?.name ?? "");
   const [prompt, setPrompt] = useState(routine?.prompt ?? "");
   const [enabled, setEnabled] = useState(routine?.enabled ?? true);
@@ -148,21 +152,29 @@ function RoutineEditor({
   const [frequency, setFrequency] = useState<RoutineFrequency>(initial.frequency);
   const [time, setTime] = useState(initial.time);
   const [weekday, setWeekday] = useState(initial.weekday);
+  const [date, setDate] = useState(initial.date);
   const [custom, setCustom] = useState(initial.custom);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [runningNow, setRunningNow] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const schedule: RoutineSchedule = { frequency, time, weekday, custom };
+  const schedule: RoutineSchedule = { frequency, time, weekday, date, custom };
   const cron = cronFromSchedule(schedule);
-  const unchangedSchedule = Boolean(routine && routine.cron.trim() === cron.trim());
-  const showNext = Boolean(enabled && routine?.nextRunAt && unchangedSchedule);
+  const runAt = runAtFromSchedule(schedule);
+  const once = frequency === "once";
+  const scheduleChanged = Boolean(
+    !routine ||
+      cron.trim() !== routine.cron.trim() ||
+      once !== routine.once ||
+      (once && runAt !== routine.runAt),
+  );
+  const showNext = Boolean(enabled && routine?.nextRunAt && !scheduleChanged);
   const dirty = Boolean(
     !routine ||
       name !== routine.name ||
       prompt !== routine.prompt ||
-      cron.trim() !== routine.cron.trim() ||
+      scheduleChanged ||
       enabled !== routine.enabled ||
       notify !== routine.notify,
   );
@@ -193,13 +205,29 @@ function RoutineEditor({
       return;
     }
     if (!cron.trim()) {
-      setError("Add a cron expression for the custom schedule.");
+      setError("Add a cron expression for Custom.");
+      return;
+    }
+    if (once && !runAt) {
+      setError("Pick a date and time for the one-time run.");
+      return;
+    }
+    if (once && runAt && enabled && Date.parse(runAt) <= Date.now()) {
+      setError("That time has already passed. Pick a future time.");
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      const input = { name: name.trim(), prompt: prompt.trim(), cron, enabled, notify };
+      const input = {
+        name: name.trim(),
+        prompt: prompt.trim(),
+        cron,
+        once,
+        runAt: once ? runAt : null,
+        enabled,
+        notify,
+      };
       const next = routine
         ? await fid().routines.update(routine.id, input)
         : await fid().routines.create({ agentId, ...input });
@@ -274,21 +302,32 @@ function RoutineEditor({
             When to run <span className="field-optional">Local time</span>
           </span>
           <div
-            className={`schedule-grid ${frequency === "weekly" ? "has-day" : ""} ${frequency === "custom" ? "is-custom" : ""}`}
+            className={`schedule-grid ${frequency === "weekly" || frequency === "once" ? "has-day" : ""} ${frequency === "custom" ? "is-custom" : ""}`}
           >
             <label className="sub-field">
               <span>Frequency</span>
               <select
                 className="select"
                 value={frequency}
-                onChange={(event) => setFrequency(event.target.value as RoutineFrequency)}
+                onChange={(event) => {
+                  const next = event.target.value as RoutineFrequency;
+                  setFrequency(next);
+                  if (next === "once" && !date) setDate(localDateText(new Date()));
+                }}
               >
+                <option value="once">Once</option>
                 <option value="daily">Every day</option>
                 <option value="weekdays">Weekdays</option>
                 <option value="weekly">Every week</option>
                 <option value="custom">Custom</option>
               </select>
             </label>
+            {frequency === "once" ? (
+              <label className="sub-field">
+                <span>Date</span>
+                <input className="input" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+              </label>
+            ) : null}
             {frequency === "weekly" ? (
               <label className="sub-field">
                 <span>Day</span>
@@ -321,11 +360,17 @@ function RoutineEditor({
           <span className="field-note">
             {frequency === "custom"
               ? "Five fields: minute, hour, day of month, month, day of week."
-              : showNext
-                ? `Next run ${formatNextRun(routine?.nextRunAt)}`
-                : enabled
-                  ? "Save to update the next run."
-                  : "This routine is paused."}
+              : frequency === "once"
+                ? showNext
+                  ? `Next run ${formatNextRun(routine?.nextRunAt)}`
+                  : enabled
+                    ? "Save to set the one-time run. A missed run is marked when Fid Coder is closed."
+                    : "This routine is paused."
+                : showNext
+                  ? `Next run ${formatNextRun(routine?.nextRunAt)}`
+                  : enabled
+                    ? "Save to update the next run."
+                    : "This routine is paused."}
           </span>
         </div>
 
@@ -347,7 +392,7 @@ function RoutineEditor({
         <div className="inline-row">
           <div className="inline-row-copy">
             <span>Windows notification</span>
-            <span>Notify when this routine finishes or needs input.</span>
+            <span>Notify when this routine finishes, fails, is skipped, or needs approval.</span>
           </div>
           <Switch checked={notify} label="Windows notification" onChange={setNotify} />
         </div>
@@ -414,6 +459,7 @@ function RoutineEditor({
 function routineStatusLabel(status: string | null): string {
   if (!status) return "Unknown";
   if (status === "ok") return "Completed";
+  if (status.startsWith("missed")) return "Missed";
   if (status.startsWith("skipped")) return "Skipped";
   if (status.startsWith("error")) return "Failed";
   return status;
@@ -421,6 +467,6 @@ function routineStatusLabel(status: string | null): string {
 
 function routineStatusTone(status: string | null): string {
   if (status === "ok") return "is-success";
-  if (status?.startsWith("error")) return "is-error";
+  if (status?.startsWith("error") || status?.startsWith("missed")) return "is-error";
   return "";
 }

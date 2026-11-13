@@ -36,6 +36,14 @@ Inside the workspace, a developer agent in Agent mode has:
 
 The app also builds a workspace brief for the system message: the top of the folder tree, package scripts, Maven or Gradle clues, the README heading, the current branch, git status, and recent commits. It refreshes when the git HEAD changes.
 
+## Review the changes
+
+When a turn edits files, one **Edited N files** card appears under the assistant reply. It shows the turn totals, the changed paths, **Undo**, and **View changes**. File tools are tracked; shell changes are not.
+
+Choose **View changes** on an edited-files card, or **Workspace** in the chat header, to open the Workspace panel. It has the selected diff or read-only file, the answer's references, the selected turn's changed files, and the workspace tree. The turn picker goes back through the last 30 recorded turns. It keeps per-file **Revert file** and **Undo**, and replaces the Agent Desk while it is open.
+
+When a review answer cites `path:line`, choose the citation to open the Workspace panel at that file. The **Workspace** button in the chat header, `/files`, or **Browse files** on the Agent Desk opens the panel at any time, even before the agent has changed a file; with recorded changes the button selects the latest turn. The entries are hidden when the agent has no workspace folder. If the file is part of a recorded turn, the panel shows its diff and marks the cited lines. If the file has no recorded change, the panel shows the current file read-only. The **References** section lists every citation in the answer, **Changed** lists the selected turn's files, and **All files** browses the rest of the workspace. A file from **All files** opens read-only; when the turn recorded a change, **View diff** switches to it. Markdown files open as a rendered document and HTML files open in a sandboxed preview; use **Preview / Source** to switch. HTML previews do not run scripts or load external assets. On a wide window, **Collapse chat** in the panel header slides the chat left so the workspace takes the width; **Show chat** restores the split. There is no separate code window or **Back to code** step.
+
 ## Workspace skills
 
 Skills under `.skills`, `.github/skills`, `.agents/skills`, or `.claude/skills` in this folder appear in the **Skills** library with the **Workspace** source. They override a skill with the same folder name from your app skills folder, Copilot, or the built-in library. Add `.skills/<name>/SKILL.md` to share a rubric with the repository and its version with every agent that uses this workspace. Use `/skills <skill> <task>` in the chat to apply one to a message.

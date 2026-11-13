@@ -40,7 +40,7 @@ The map is cached for the workspace and marked **Up to date** or **The repositor
 
 `Review architecture` invokes the built-in skill. It returns a structured review: components, flows, boundaries, coupling, a risk table with evidence, test and observability gaps, and an explicit confidence and unknowns section. It is not a diff review; use `/review` for a change.
 
-Flowcharts are the default for module structure, control flow, and data flows. Sequence diagrams are used when the order between actors over time is the point. Data models can use an ER diagram. Use component names, not file names or `path:line` references, in diagram labels; put the evidence in the prose and numbered steps. The reader's **Code references** list still shows every citation in the answer. Expand any diagram to a full-screen view, zoom it, copy it as an image, or switch to its source. Expand, zoom, copy, and source also work in the help guide.
+Flowcharts are the default for module structure, control flow, and data flows. Sequence diagrams are used when the order between actors over time is the point. Data models can use an ER diagram. Use component names, not file names or `path:line` references, in diagram labels; put the evidence in the prose and numbered steps. The **References** section in the Workspace panel still shows every citation in the answer. Expand any diagram to a full-screen view, zoom it, copy it as an image, or switch to its source. Expand, zoom, copy, and source also work in the help guide.
 
 ```mermaid
 flowchart TD
@@ -50,11 +50,11 @@ flowchart TD
   W --> A
 ```
 
-## Evidence and the code reader
+## Evidence and the Workspace panel
 
-Architecture answers cite files as `path:line`, for example `src/main/chat/runner.ts:420`. Choose the citation to open the read-only code reader. It highlights the exact line range, adds syntax colors, and scrolls to the cited code. A **path:line** that names a range such as `bench.ps1:34-42` highlights the whole range.
+Architecture answers cite files as `path:line`, for example `src/main/chat/runner.ts:420`. Choose the citation to open it in the Workspace panel. To browse without a citation, choose **Workspace** in the chat header. If the file belongs to a recorded turn, the panel shows its diff with the cited lines marked. If the file has no recorded change, the panel shows the current file read-only with syntax colors and the cited range highlighted. A **path:line** that names a range such as `bench.ps1:34-42` highlights the whole range. The same panel reviews an agent's edits; there is no separate code window.
 
-The reader keeps previously opened files in tabs, so you can compare two parts of the answer without leaving the app. The **Code references** list shows every citation in the answer; choose one to open it as a tab without closing the reader. Use **Back** and **Forward** (or `Alt+Left` and `Alt+Right`) to return to an earlier citation in the same file. **Copy path and line** copies a reference you can paste into a ticket or a chat. The reader is limited to a window around the citation; it does not modify the file.
+The **References** section lists every citation in the answer. Choose one to open that file and range in place. Files with a recorded change are marked **changed** and open as a diff; the rest open as a read-only file. Use the **Changed** section to browse the turn's files, or **All files** to explore the rest of the workspace. **All files** loads one folder at a time, marks files changed in the selected turn, and opens files read-only; **View diff** returns to the recorded change. Markdown files open as a rendered document and HTML files open in a sandboxed preview; use **Preview / Source** to switch. The panel reads a window around the citation and never modifies the file.
 
 ## Troubleshooting
 

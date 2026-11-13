@@ -8,9 +8,12 @@ import { AppDatabase } from "./db";
 import { registerIpc } from "./ipc";
 import { checkpointsDir, databasePath } from "./paths";
 import { Runner } from "./chat/runner";
+import { RoutineService } from "./routines/service";
 import { Scheduler } from "./routines/scheduler";
 import { stopClient } from "./copilot";
 import { ensureWindowsToastShortcut } from "./routines/notify";
+import { hasSecret, getSecret, secretKeys } from "./secrets";
+import { logInfo, logJiraStatus, logWarn } from "./log";
 import { channels } from "../shared/channels";
 
 app.setName("fid-coder");
@@ -47,6 +50,8 @@ if (!gotLock) {
     const activeRunner = new Runner(db, browser, checkpoints);
     runner = activeRunner;
     scheduler = new Scheduler(db, activeRunner);
+    const routines = new RoutineService(db, scheduler);
+    activeRunner.setRoutinePort(routines);
     activeRunner.setSink((event) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send(channels.chatEvent, event);
@@ -56,11 +61,31 @@ if (!gotLock) {
       db,
       runner: activeRunner,
       scheduler,
+      routines,
       browser,
       checkpoints,
       getWindow: () => mainWindow,
     });
     ensureWindowsToastShortcut();
+    logInfo(`Fid Coder started. appData=${userData}`);
+    const jiraSite = db.getSetting("jira_site_url");
+    const hasJiraToken = hasSecret(secretKeys.jira);
+    let jiraTokenReadable = hasJiraToken;
+    if (hasJiraToken) {
+      try {
+        getSecret(secretKeys.jira);
+      } catch (error) {
+        jiraTokenReadable = false;
+        logWarn(
+          `Jira token is saved but could not be decrypted: ` +
+            `${error instanceof Error ? error.message : String(error)}. Save it again in Settings -> Jira.`,
+        );
+      }
+    }
+    logJiraStatus(
+      { site: jiraSite, hasToken: hasJiraToken, readable: jiraTokenReadable },
+      { force: true },
+    );
     scheduler.reload();
     mainWindow = createWindow();
   });

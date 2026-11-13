@@ -18,6 +18,7 @@ import {
 import { AUTO_MODEL_ID } from "../../shared/model";
 import { approvalActionDecision, approvalActionRemembers, normalizeApprovalMatch } from "../../shared/approval";
 import { commandAvailability, parseCommand } from "../../shared/commands";
+import { ROUTINE_COMMAND_HINT, ROUTINE_WRITE_TOOL_NAMES } from "../../shared/routine-schedule";
 import type {
   Agent,
   ApprovalAction,
@@ -31,12 +32,13 @@ import type {
   WorkspaceMapView,
 } from "../../shared/types";
 import { jiraToolsReady } from "../../tools/jira/jira-format";
-import { askTools, toolsForAgent } from "../../tools/registry";
+import { askTools, routineCreateTools, toolsForAgent } from "../../tools/registry";
 import { listSkillsTool, skillFileTool, useSkillTool } from "../../tools/skills/skills";
 import { summarizeTool } from "../../shared/summary";
 import type {
   AppTool,
   ApprovalToolRequest,
+  RoutinePort,
   SkillActivation,
   ToolContext,
 } from "../../tools/types";
@@ -50,6 +52,7 @@ import { runCodeExplore } from "../workspace/explore-session";
 import { runCodeReview } from "../workspace/review-session";
 import { architectureMapKey, buildArchitectureMap } from "../workspace/architecture-map";
 import { getSecret, hasSecret, secretKeys } from "../secrets";
+import { logInfo, logJiraStatus, logJiraToolFailure, logWarn } from "../log";
 import {
   listSkillFiles,
   loadSkillCatalog,
@@ -154,6 +157,10 @@ export class Runner {
   private readonly enhancing = new Set<string>();
   private readonly sessions = new Map<string, CachedSession>();
   private readonly activeTurns = new Map<string, string>();
+  private readonly turnSources = new Map<string, "chat" | "routine">();
+  private readonly turnCommands = new Map<string, "routine">();
+  private readonly jiraTokenWarned = new Set<string>();
+  private readonly turnNotifiers = new Map<string, (text: string) => void>();
   private readonly pendingApprovals = new Map<string, PendingApproval>();
   private readonly skillToolsUsed = new Set<string>();
   private readonly skillContexts = new Map<
@@ -161,6 +168,7 @@ export class Runner {
     { dir?: string; skills?: SkillActivation[] }
   >();
   private readonly mapping = new Map<string, Promise<WorkspaceMapView>>();
+  private routinePort: RoutinePort | null = null;
 
   constructor(
     private readonly db: AppDatabase,
@@ -170,6 +178,10 @@ export class Runner {
 
   setSink(sink: Sink): void {
     this.sink = sink;
+  }
+
+  setRoutinePort(port: RoutinePort): void {
+    this.routinePort = port;
   }
 
   isRunning(agentId: string): boolean {
@@ -309,7 +321,12 @@ export class Runner {
     }
   }
 
-  async runTurn(input: { agentId: string; text: string; source: "chat" | "routine" }): Promise<string> {
+  async runTurn(input: {
+    agentId: string;
+    text: string;
+    source: "chat" | "routine";
+    notify?: (text: string) => void;
+  }): Promise<string> {
     const text = input.text.trim();
     if (!text) throw new Error("Message is empty");
     const agent = this.db.getAgent(input.agentId);
@@ -322,6 +339,8 @@ export class Runner {
     }
 
     this.running.add(agent.id);
+    this.turnSources.set(agent.id, input.source);
+    if (input.notify) this.turnNotifiers.set(agent.id, input.notify);
     const turnId = this.db.createTurn(agent.id, input.source);
     this.activeTurns.set(agent.id, turnId);
     let streamed = "";
@@ -339,17 +358,23 @@ export class Runner {
         if (parsed.command.ui) {
           throw new Error(`${parsed.command.usage} is a composer command. Use it from the chat composer.`);
         }
+        const unavailable = commandAvailability(
+          parsed.command,
+          agent.toolProfile,
+          Boolean(agent.workspaceDir),
+          askMode(agent),
+        );
+        if (unavailable) throw new Error(unavailable);
         if (parsed.command.id === "review") {
-          const unavailable = commandAvailability(
-            parsed.command,
-            agent.toolProfile,
-            Boolean(agent.workspaceDir),
-          );
-          if (unavailable) throw new Error(unavailable);
           return await this.runReviewTurn(agent, parsed.args, turnId);
+        }
+        if (parsed.command.id === "routine") {
+          if (!parsed.args) throw new Error(`Add the task and time after ${parsed.command.usage.split(" ")[0]}.`);
+          this.turnCommands.set(agent.id, "routine");
         }
       }
       let latest = text;
+      if (parsed?.command.id === "routine") latest = parsed.args;
       let skillPrompt: string | null = null;
       let activeSkill: SkillActivation | null = null;
       let usedSkills = this.usedSkillsFor(agent);
@@ -371,6 +396,7 @@ export class Runner {
       const systemParts = [base];
       if (availableSkills.length > 0) systemParts.push(availableSkillsPrompt());
       if (usedSkills.length > 0) systemParts.push(usedSkillsPrompt(usedSkills));
+      if (parsed?.command.id === "routine") systemParts.push(ROUTINE_COMMAND_HINT);
       if (skillPrompt) systemParts.push(skillPrompt);
       const systemMessage = systemParts.join("\n\n");
       const opened = await this.sessionFor(agent, systemMessage, activeSkill, availableSkills);
@@ -416,6 +442,9 @@ export class Runner {
       deltaHolders.delete(agent.id);
       turnUsage.delete(agent.id);
       this.running.delete(agent.id);
+      this.turnSources.delete(agent.id);
+      this.turnCommands.delete(agent.id);
+      this.turnNotifiers.delete(agent.id);
       if (this.skillToolsUsed.delete(agent.id)) {
         await this.dropSession(agent.id).catch(() => undefined);
       }
@@ -493,6 +522,15 @@ export class Runner {
         if (ok && (toolName === "use_skill" || toolName === "skill_read")) {
           this.skillToolsUsed.add(agent.id);
         }
+        if (toolName.startsWith("jira_")) {
+          if (ok) logInfo(`Jira tool ${toolName} succeeded for "${agent.name}".`);
+          else {
+            logJiraToolFailure(agent.name, toolName, text, {
+              site: this.db.getSetting("jira_site_url"),
+              hasToken: hasSecret(secretKeys.jira),
+            });
+          }
+        }
         const live = text.length > 2000 ? `${text.slice(0, 2000)}…` : text;
         this.db.addMessage(agent.id, "tool", summarizeTool(toolName, ok, live), this.activeTurns.get(agent.id) ?? null);
         this.sink({ agentId: agent.id, type: "tool-end", toolName, ok, text: live });
@@ -569,7 +607,7 @@ export class Runner {
       turnId: turnId ?? undefined,
       browser: this.browser,
       githubPat: workspaceTools && hasSecret(secretKeys.githubPat) ? getSecret(secretKeys.githubPat) : null,
-      jiraToken: hasSecret(secretKeys.jira) ? getSecret(secretKeys.jira) : null,
+      jiraToken: this.jiraTokenFor(agentId),
       jiraSite: this.db.getSetting("jira_site_url"),
       explore:
         workspaceDir && (shell || readOnly)
@@ -587,7 +625,26 @@ export class Runner {
             },
       requestApproval: (request) => this.requestApproval(agentId, request),
       history: createHistoryPort(this.db, agentId),
+      routines: this.routinePort ?? undefined,
+      log: (message) => logWarn(message),
     };
+  }
+
+  private jiraTokenFor(agentId: string): string | null {
+    if (!hasSecret(secretKeys.jira)) return null;
+    try {
+      return getSecret(secretKeys.jira);
+    } catch (error) {
+      if (!this.jiraTokenWarned.has(agentId)) {
+        this.jiraTokenWarned.add(agentId);
+        const agent = this.db.getAgent(agentId);
+        logWarn(
+          `Jira token could not be decrypted for "${agent?.name ?? agentId}": ` +
+            `${error instanceof Error ? error.message : String(error)}. Save it again in Settings -> Jira.`,
+        );
+      }
+      return null;
+    }
   }
 
   requestApproval(agentId: string, input: ApprovalToolRequest): Promise<ApprovalOutcome> {
@@ -655,6 +712,7 @@ export class Runner {
       timer.unref?.();
       this.pendingApprovals.set(approvalId, { request, timer, resolve });
       this.sink({ agentId, type: "approval-request", approval: request });
+      this.turnNotifiers.get(agentId)?.(`Needs approval: ${input.reason}`);
     });
   }
 
@@ -797,14 +855,30 @@ export class Runner {
   }
 
   private toolsFor(agent: Agent, extra: readonly AppTool[] = []) {
+    if (this.turnCommands.get(agent.id) === "routine") return routineCreateTools();
+    let tools: AppTool[];
     if (askMode(agent)) {
-      const tools = [...askTools(agent.toolProfile), ...extra];
-      if (jiraToolsReady(this.db.getSetting("jira_site_url"), hasSecret(secretKeys.jira))) return tools;
-      return tools.filter((tool) => !tool.name.startsWith("jira_"));
+      tools = [...askTools(agent.toolProfile), ...extra];
+    } else {
+      tools = [...toolsForAgent(agent.toolProfile), ...extra];
     }
-    const tools = [...toolsForAgent(agent.toolProfile), ...extra];
-    if (jiraToolsReady(this.db.getSetting("jira_site_url"), hasSecret(secretKeys.jira))) return tools;
-    return tools.filter((tool) => !tool.name.startsWith("jira_"));
+    const jiraSite = this.db.getSetting("jira_site_url");
+    const hasJiraToken = hasSecret(secretKeys.jira);
+    if (agent.toolProfile !== "developer") {
+      logJiraStatus({
+        site: jiraSite,
+        hasToken: hasJiraToken,
+        agentName: agent.name,
+        askMode: askMode(agent),
+      });
+    }
+    if (!jiraToolsReady(jiraSite, hasJiraToken)) {
+      tools = tools.filter((tool) => !tool.name.startsWith("jira_"));
+    }
+    if (this.turnSources.get(agent.id) === "routine") {
+      tools = tools.filter((tool) => !ROUTINE_WRITE_TOOL_NAMES.has(tool.name));
+    }
+    return tools;
   }
 
   private finalizeCheckpoints(agentId: string, turnId: string): void {

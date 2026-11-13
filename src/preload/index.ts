@@ -33,6 +33,7 @@ const channels = {
   browserPreview: "browser:preview",
   browserFocus: "browser:focus",
   changesLatest: "changes:latest",
+  changesList: "changes:list",
   changesDiff: "changes:diff",
   changesRevert: "changes:revert",
   changesRevertTurn: "changes:revert-turn",
@@ -42,7 +43,9 @@ const channels = {
   workspaceOpenRule: "workspace:open-rule",
   workspaceMapGet: "workspace:map",
   workspaceMapBuild: "workspace:map-build",
+  workspaceList: "workspace:list",
   workspaceFileRead: "workspace:file-read",
+  workspaceImageRead: "workspace:image-read",
   routinesList: "routines:list",
   routinesCreate: "routines:create",
   routinesUpdate: "routines:update",
@@ -114,6 +117,8 @@ const api: FidApi = {
   },
   changes: {
     latest: (agentId: string) => ipcRenderer.invoke(channels.changesLatest, agentId),
+    list: (agentId: string, limit?: number) =>
+      ipcRenderer.invoke(channels.changesList, agentId, limit ?? 30),
     diff: (changeId: string) => ipcRenderer.invoke(channels.changesDiff, changeId),
     revert: (changeId: string) => ipcRenderer.invoke(channels.changesRevert, changeId),
     revertTurn: (turnId: string) => ipcRenderer.invoke(channels.changesRevertTurn, turnId),
@@ -127,8 +132,27 @@ const api: FidApi = {
     openRule: (agentId: string, path: string) => ipcRenderer.invoke(channels.workspaceOpenRule, agentId, path),
     map: (agentId: string) => ipcRenderer.invoke(channels.workspaceMapGet, agentId),
     buildMap: (agentId: string) => ipcRenderer.invoke(channels.workspaceMapBuild, agentId),
-    file: (agentId: string, path: string, line?: number | null, endLine?: number | null) =>
-      ipcRenderer.invoke(channels.workspaceFileRead, agentId, path, line ?? null, endLine ?? null),
+    list: (agentId: string, path?: string) =>
+      ipcRenderer.invoke(channels.workspaceList, agentId, path ?? ""),
+    file: (
+      agentId: string,
+      path: string,
+      line?: number | null,
+      endLine?: number | null,
+      startLine?: number | null,
+      limit?: number | null,
+    ) =>
+      ipcRenderer.invoke(
+        channels.workspaceFileRead,
+        agentId,
+        path,
+        line ?? null,
+        endLine ?? null,
+        startLine ?? null,
+        limit ?? null,
+      ),
+    image: (agentId: string, path: string) =>
+      ipcRenderer.invoke(channels.workspaceImageRead, agentId, path),
   },
   routines: {
     list: (agentId: string) => ipcRenderer.invoke(channels.routinesList, agentId),

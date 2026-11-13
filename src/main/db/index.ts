@@ -158,6 +158,8 @@ type RoutineRow = {
   name: string;
   prompt: string;
   cron: string;
+  once: number;
+  run_at: string | null;
   enabled: number;
   notify: number;
   last_run_at: string | null;
@@ -244,6 +246,8 @@ export class AppDatabase {
         name TEXT NOT NULL,
         prompt TEXT NOT NULL,
         cron TEXT NOT NULL,
+        once INTEGER NOT NULL DEFAULT 0,
+        run_at TEXT,
         enabled INTEGER NOT NULL DEFAULT 0,
         notify INTEGER NOT NULL DEFAULT 1,
         last_run_at TEXT,
@@ -347,6 +351,7 @@ export class AppDatabase {
     this.ensureMessageUsageColumn();
     const addedToolProfile = this.ensureAgentToolProfileColumn();
     this.ensureAgentReadOnlyColumn();
+    this.ensureRoutineOnceColumns();
     const now = new Date().toISOString();
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(JIRA_NAME, now, OLD_JIRA_NAME);
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(GIT_NAME, now, OLD_GIT_NAME);
@@ -400,6 +405,17 @@ export class AppDatabase {
     const columns = this.db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
     if (columns.some((column) => column.name === "read_only")) return;
     this.db.exec("ALTER TABLE agents ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0");
+  }
+
+  private ensureRoutineOnceColumns(): void {
+    const columns = this.db.prepare("PRAGMA table_info(routines)").all() as { name: string }[];
+    const names = new Set(columns.map((column) => column.name));
+    if (!names.has("once")) {
+      this.db.exec("ALTER TABLE routines ADD COLUMN once INTEGER NOT NULL DEFAULT 0");
+    }
+    if (!names.has("run_at")) {
+      this.db.exec("ALTER TABLE routines ADD COLUMN run_at TEXT");
+    }
   }
 
   private ensureMessageTurnColumn(): void {
@@ -769,6 +785,20 @@ export class AppDatabase {
     return { turn: mapTurn(row), files: this.listFileChanges(row.id) };
   }
 
+  listChangeSets(agentId: string, limit = 30): ChangeSetRecord[] {
+    const capped = Math.max(1, Math.min(50, Math.floor(limit)));
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM turns t
+         WHERE t.agent_id = ?
+           AND EXISTS (SELECT 1 FROM file_changes c WHERE c.turn_id = t.id)
+         ORDER BY t.started_at DESC
+         LIMIT ?`,
+      )
+      .all(agentId, capped) as TurnRow[];
+    return rows.map((row) => ({ turn: mapTurn(row), files: this.listFileChanges(row.id) }));
+  }
+
   deleteFileChange(id: string): void {
     this.db.prepare("DELETE FROM file_changes WHERE id = ?").run(id);
   }
@@ -928,8 +958,8 @@ export class AppDatabase {
     this.db
       .prepare(
         `INSERT INTO routines (
-          id, agent_id, name, prompt, cron, enabled, notify, last_run_at, next_run_at, last_status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL, ?, ?)`,
+          id, agent_id, name, prompt, cron, once, run_at, enabled, notify, last_run_at, next_run_at, last_status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL, ?, ?)`,
       )
       .run(
         id,
@@ -937,8 +967,10 @@ export class AppDatabase {
         input.name.trim(),
         input.prompt,
         input.cron.trim(),
-        input.enabled ? 1 : 0,
-        input.notify ? 1 : 0,
+        input.once ? 1 : 0,
+        input.runAt ?? null,
+        input.enabled !== false ? 1 : 0,
+        input.notify !== false ? 1 : 0,
         nextRunAt,
         now,
         now,
@@ -949,16 +981,20 @@ export class AppDatabase {
   updateRoutine(id: string, patch: RoutinePatch, nextRunAt: string | null): Routine {
     const current = this.requireRoutine(id);
     const now = new Date().toISOString();
+    const once = patch.once ?? current.once;
+    const runAt = once ? (patch.runAt !== undefined ? patch.runAt : current.runAt) : null;
     this.db
       .prepare(
         `UPDATE routines
-         SET name = ?, prompt = ?, cron = ?, enabled = ?, notify = ?, next_run_at = ?, updated_at = ?
+         SET name = ?, prompt = ?, cron = ?, once = ?, run_at = ?, enabled = ?, notify = ?, next_run_at = ?, updated_at = ?
          WHERE id = ?`,
       )
       .run(
         patch.name?.trim() || current.name,
         patch.prompt ?? current.prompt,
         patch.cron?.trim() || current.cron,
+        once ? 1 : 0,
+        runAt,
         (patch.enabled ?? current.enabled) ? 1 : 0,
         (patch.notify ?? current.notify) ? 1 : 0,
         nextRunAt,
@@ -1070,6 +1106,8 @@ function mapRoutine(row: RoutineRow): Routine {
     name: row.name,
     prompt: row.prompt,
     cron: row.cron,
+    once: row.once === 1,
+    runAt: row.run_at,
     enabled: row.enabled === 1,
     notify: row.notify === 1,
     lastRunAt: row.last_run_at,

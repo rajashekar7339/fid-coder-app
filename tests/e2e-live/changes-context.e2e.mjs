@@ -158,14 +158,6 @@ async function lastAssistantText(page) {
   return count === 0 ? "" : bodies.nth(count - 1).innerText();
 }
 
-async function waitForChangeCount(page, expected, timeout = 15_000) {
-  await page.waitForFunction(
-    (n) => document.querySelectorAll(".change-row").length === n,
-    expected,
-    { timeout, polling: 300 },
-  );
-}
-
 async function main() {
   prepare();
   try {
@@ -204,8 +196,9 @@ async function main() {
 
     check("new sections are present", agent.id.length > 0);
     check(
-      "disconnected workspace has an empty changes state",
-      (await page.locator(".change-row").count()) === 0,
+      "an empty workspace offers the browse button without a changes card",
+      (await page.locator(".edited-files-card").count()) === 0 &&
+        (await page.locator(".header-workspace").count()) === 1,
     );
 
     if (skipTurns) {
@@ -276,47 +269,58 @@ async function main() {
       fs.existsSync(notesPath) ? fs.readFileSync(notesPath, "utf8").trim() : "missing",
     );
 
-    if ((await page.locator(".agent-desk").count()) === 0) {
-      await page.locator('button[aria-label="Show agent desk"]').click();
-      await page.waitForSelector(".agent-desk", { timeout: 10_000 });
-    }
-    await page.waitForFunction(() => document.querySelectorAll(".change-row").length > 0, {
-      timeout: 20_000,
-      polling: 500,
-    });
-    await page.waitForFunction(
-      () => {
-        const row = [...document.querySelectorAll(".change-row")].find((item) =>
-          item.textContent?.includes("demo.ts"),
-        );
-        return Boolean(row && /\+1/.test(row.textContent ?? ""));
-      },
-      { timeout: 15_000, polling: 300 },
+    await page.waitForSelector(".edited-files-card", { timeout: 20_000 });
+    const cardText = await page.locator(".edited-files-card").last().innerText();
+    check(
+      "the thread card lists both files",
+      /Edited 2 files/.test(cardText) && /demo\.ts/.test(cardText) && /notes\.md/.test(cardText),
+      cardText.replace(/\s+/g, " ").slice(0, 200),
     );
-    const changeRows = await page.locator(".change-row").allInnerTexts();
-    check("changes section lists both files", changeRows.length === 2, JSON.stringify(changeRows));
+    await page.waitForSelector(".header-workspace", { timeout: 15_000 });
+    await page.locator(".header-workspace").click();
+    await page.waitForSelector(".changes-panel", { timeout: 15_000 });
+    check("opening changes closes the desk", (await page.locator(".agent-desk").count()) === 0);
+    await page.waitForFunction(
+      () => document.querySelectorAll(".changes-tree-file").length === 2,
+      null,
+      { timeout: 20_000 },
+    );
+    await page.waitForSelector(".changes-diff-scroll .diff-line", { timeout: 15_000 });
     await page.waitForTimeout(250);
     await shot(page, "03-changes");
 
-    await page.locator(".change-row").filter({ hasText: "demo.ts" }).first().click();
-    await page.waitForSelector(".diff-modal", { timeout: 10_000 });
-    const diffText = await page.locator(".diff-modal .diff-lines").innerText();
+    const treeText = await page.locator(".changes-tree-list").innerText();
     check(
-      "diff shows the old and new line",
+      "the changed-file tree lists both files",
+      /demo\.ts/.test(treeText) && /notes\.md/.test(treeText),
+      treeText.replace(/\s+/g, " ").slice(0, 160),
+    );
+    await page.locator(".changes-tree-file", { hasText: "demo.ts" }).click();
+    await page.waitForFunction(
+      () => /demo\.ts/.test(document.querySelector(".changes-diff-name")?.textContent ?? ""),
+      null,
+      { timeout: 10_000 },
+    );
+    const diffText = await page.locator(".changes-diff-scroll").innerText();
+    check(
+      "the diff shows the old and new line",
       /hello/.test(diffText) && /hi/.test(diffText),
       diffText.replace(/\s+/g, " ").slice(0, 160),
     );
     await page.waitForTimeout(250);
     await shot(page, "04-diff");
 
-    await page.locator('.diff-modal button:has-text("Revert file")').click();
+    await page.locator(".changes-diff-foot .btn-danger-outline").click();
     await page.waitForSelector(".confirm-modal", { timeout: 10_000 });
     await page.waitForTimeout(250);
     await shot(page, "05-revert-confirm");
     await page.locator(".confirm-modal .btn-destructive").click();
     await page.waitForSelector(".confirm-modal", { state: "detached", timeout: 20_000 });
-    await page.waitForSelector(".diff-modal", { state: "detached", timeout: 20_000 });
-    await waitForChangeCount(page, 1);
+    await page.waitForFunction(
+      () => document.querySelectorAll(".changes-tree-file").length === 1,
+      null,
+      { timeout: 20_000 },
+    );
     const demoRestored = fs.readFileSync(path.join(workspace, "demo.ts"), "utf8");
     check(
       "revert file restored demo.ts",
@@ -325,12 +329,18 @@ async function main() {
     );
     check("revert file left notes.md alone", fs.existsSync(notesPath));
 
-    await page.locator('.agent-desk button:has-text("Revert turn")').click();
+    await page.locator(".changes-undo").click();
     await page.waitForSelector(".confirm-modal", { timeout: 10_000 });
     await page.locator(".confirm-modal .btn-destructive").click();
-    await waitForChangeCount(page, 0, 20_000);
+    await page.waitForSelector(".changes-empty", { timeout: 20_000 });
     check("revert turn removed created notes.md", !fs.existsSync(notesPath));
+    await page.waitForTimeout(250);
     await shot(page, "06-changes-empty");
+
+    await page.locator('.changes-panel button[aria-label="Close changes"]').click();
+    await page.waitForSelector(".changes-panel", { state: "detached", timeout: 10_000 });
+    await page.locator('button[aria-label="Show agent desk"]').click();
+    await page.waitForSelector(".agent-desk", { timeout: 10_000 });
 
     // ---- Turn 2: workspace rules + context inspector ----
     fs.writeFileSync(

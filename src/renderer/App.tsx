@@ -1,8 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, ShieldAlert, X } from "lucide-react";
 import { COPILOT_USAGE_REFRESH_MS, type CopilotUsageView } from "../shared/copilot-usage";
-import type { Agent, ApprovalAction, ApprovalRequest, CopilotModel, Routine, SettingsView } from "../shared/types";
+import type {
+  Agent,
+  ApprovalAction,
+  ApprovalRequest,
+  ChangeSet,
+  ChangesOpenRequest,
+  CopilotModel,
+  Routine,
+  SettingsView,
+} from "../shared/types";
 import { AgentDesk } from "./components/desk/AgentDesk";
+import { ChangesPanel } from "./components/desk/ChangesPanel";
 import { AgentDialog } from "./components/agents/AgentDialog";
 import { BrandMark } from "./components/ui/BrandMark";
 import { ChatView } from "./components/chat/ChatView";
@@ -40,6 +50,12 @@ export function App() {
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Agent | null>(null);
   const [deskOpen, setDeskOpen] = useState(() => window.innerWidth >= 1181);
+  const [changesOpen, setChangesOpen] = useState(false);
+  const [chatCollapsed, setChatCollapsed] = useState(false);
+  const [changesRequest, setChangesRequest] = useState<ChangesOpenRequest | null>(null);
+  const [changeSets, setChangeSets] = useState<ChangeSet[]>([]);
+  const [changesLoading, setChangesLoading] = useState(false);
+  const [changesError, setChangesError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [checkingSignIn, setCheckingSignIn] = useState(false);
   const [signInNote, setSignInNote] = useState<SignInNote | null>(null);
@@ -52,6 +68,8 @@ export function App() {
   const modelsRequest = useRef(0);
   const routinesRequest = useRef(0);
   const usageRequest = useRef(0);
+  const changesRequestId = useRef(0);
+  const changesReturnFocus = useRef<HTMLElement | null>(null);
   const signInWatch = useRef(0);
   const signInTimer = useRef<number | null>(null);
 
@@ -110,6 +128,61 @@ export function App() {
     if (request === routinesRequest.current) setRoutines(list);
     return list;
   }, [agentId]);
+
+  const refreshChanges = useCallback(
+    async (id: string | null = agentId): Promise<void> => {
+      if (!id) {
+        changesRequestId.current += 1;
+        setChangeSets([]);
+        setChangesLoading(false);
+        setChangesError(null);
+        return;
+      }
+      const request = ++changesRequestId.current;
+      setChangesLoading(true);
+      try {
+        const list = await fid().changes.list(id, 30);
+        if (request !== changesRequestId.current) return;
+        setChangeSets(list);
+        setChangesError(null);
+      } catch (caught) {
+        if (request !== changesRequestId.current) return;
+        setChangesError(errorText(caught));
+      } finally {
+        if (request === changesRequestId.current) setChangesLoading(false);
+      }
+    },
+    [agentId],
+  );
+
+  const openChanges = useCallback(
+    (request: ChangesOpenRequest = {}) => {
+      changesReturnFocus.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setDeskOpen(false);
+      setChatCollapsed(false);
+      setChangesRequest(request);
+      setChangesOpen(true);
+      void refreshChanges().catch(() => undefined);
+    },
+    [refreshChanges],
+  );
+
+  const closeChanges = useCallback(() => {
+    setChangesOpen(false);
+    setChatCollapsed(false);
+    setChangesRequest(null);
+    const target = changesReturnFocus.current;
+    changesReturnFocus.current = null;
+    window.requestAnimationFrame(() => {
+      if (target?.isConnected) target.focus();
+    });
+  }, []);
+
+  const toggleDesk = useCallback(() => {
+    closeChanges();
+    setDeskOpen((open) => !open);
+  }, [closeChanges]);
 
   const stopSignInWatch = useCallback(() => {
     signInWatch.current += 1;
@@ -219,7 +292,8 @@ export function App() {
   const onActivity = useCallback(() => {
     void refreshAgents().catch(() => undefined);
     void refreshRoutines().catch(() => undefined);
-  }, [refreshAgents, refreshRoutines]);
+    void refreshChanges().catch(() => undefined);
+  }, [refreshAgents, refreshChanges, refreshRoutines]);
 
   const refreshRoutinesForDialog = useCallback(async (): Promise<Routine[]> => {
     const list = await refreshRoutines();
@@ -269,6 +343,15 @@ export function App() {
     setRoutines([]);
     void refreshRoutines().catch((error: unknown) => setLoadError(errorText(error)));
   }, [agentId, refreshRoutines]);
+
+  useEffect(() => {
+    setChangeSets([]);
+    setChangesError(null);
+    setChangesOpen(false);
+    setChatCollapsed(false);
+    setChangesRequest(null);
+    if (agentId) void refreshChanges(agentId);
+  }, [agentId, refreshChanges]);
 
   useEffect(() => {
     if (!settings?.signedIn) return;
@@ -398,7 +481,8 @@ export function App() {
       : settings === null
         ? "unknown"
         : "out";
-  const showDesk = Boolean(selected && deskOpen);
+  const showChanges = Boolean(selected && changesOpen);
+  const showDesk = Boolean(selected && deskOpen && !showChanges);
 
   if (loadError && agents.length === 0 && !hasFid()) {
     return <FullMessage title="Fid Coder" body={loadError} />;
@@ -406,7 +490,11 @@ export function App() {
 
   return (
     <>
-      <div className={`app-shell ${showDesk ? "has-desk" : ""}`}>
+      <div
+        className={`app-shell ${showDesk ? "has-desk" : ""} ${showChanges ? "has-changes" : ""} ${
+          showChanges && chatCollapsed ? "is-chat-collapsed" : ""
+        }`}
+      >
         <Sidebar
           agents={agents}
           selectedId={agentId}
@@ -455,14 +543,17 @@ export function App() {
               settingsReady={settings !== null}
               signedIn={settings?.signedIn ?? false}
               checkingSignIn={checkingSignIn}
-              deskOpen={deskOpen}
+              deskOpen={showDesk}
+              changeSets={changeSets}
+              onOpenChanges={openChanges}
+              onRefreshChanges={() => refreshChanges()}
               approval={approval}
               approvalBusy={decidingApproval}
               approvalError={approvalError}
               onApprovalDecision={(action) => void decideApproval(action)}
               onStartSignIn={startSignInFromChat}
               onRetryModels={() => void refreshModels()}
-              onToggleDesk={() => setDeskOpen((open) => !open)}
+              onToggleDesk={toggleDesk}
               onOpenSkills={openSkills}
               onOpenHelp={openHelp}
               skillSeed={skillSeed}
@@ -483,10 +574,37 @@ export function App() {
           <AgentDesk
             agent={selected}
             routines={routines}
+            latestChange={changeSets[0] ?? null}
+            changesLoading={changesLoading}
+            changesError={changesError}
+            onOpenChanges={openChanges}
             onClose={() => setDeskOpen(false)}
             onEdit={() => openEdit(selected)}
             onOpenRoutines={openRoutines}
             onToggleRoutine={toggleRoutine}
+          />
+        ) : null}
+
+        {showChanges ? (
+          <button
+            type="button"
+            className="changes-scrim"
+            tabIndex={-1}
+            aria-label="Close changes"
+            onClick={closeChanges}
+          />
+        ) : null}
+        {showChanges && selected ? (
+          <ChangesPanel
+            agent={selected}
+            changeSets={changeSets}
+            loading={changesLoading}
+            error={changesError}
+            request={changesRequest}
+            chatCollapsed={chatCollapsed}
+            onToggleChat={() => setChatCollapsed((collapsed) => !collapsed)}
+            onClose={closeChanges}
+            onRefresh={() => refreshChanges()}
           />
         ) : null}
       </div>

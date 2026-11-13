@@ -51,12 +51,12 @@ const SOURCES: GuideSource[] = [
     file: "understand-a-codebase.md",
   },
   {
-    id: "schedule-a-routine",
-    title: "Schedule a routine",
+    id: "create-a-routine",
+    title: "Create a routine",
     group: "Using Fid Coder",
-    summary: "Run a saved instruction on a schedule and get a Windows notification when it finishes.",
+    summary: "Create a routine that runs once or repeats, and get a Windows notification when it needs you.",
     readMinutes: 4,
-    file: "schedule-a-routine.md",
+    file: "create-a-routine.md",
   },
   {
     id: "work-in-a-workspace",

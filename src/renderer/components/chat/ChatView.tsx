@@ -4,6 +4,9 @@ import {
   ArrowUp,
   BookOpen,
   Bug,
+  CalendarClock,
+  CalendarPlus,
+  CalendarX,
   Check,
   ChevronDown,
   Clock3,
@@ -31,6 +34,7 @@ import {
 import type { Citation } from "../../../shared/citations";
 import { groupToolCalls, liveTurnSettled, projectThread, userTurnAccepted, type LiveTool, type LiveTurn } from "../../../shared/chat-thread";
 import { COMMANDS, commandAvailability, filterCommands, parseCommand, type CommandInfo } from "../../../shared/commands";
+import { changeTotals, findChangedFile } from "../../../shared/changes";
 import {
   filterSkills,
   matchSkillInvocation,
@@ -44,6 +48,8 @@ import type {
   Agent,
   ApprovalAction,
   ApprovalRequest,
+  ChangeSet,
+  ChangesOpenRequest,
   ChatEvent,
   CopilotModel,
   Message,
@@ -60,7 +66,7 @@ import {
 } from "../../lib/format";
 import { AgentAvatar } from "../agents/AgentAvatar";
 import { ApprovalCard } from "../approvals/ApprovalCard";
-import { FilePeekDialog, type FilePeekRequest } from "./FilePeekDialog";
+import { EditedFilesCard } from "./EditedFilesCard";
 import { MessageContent } from "./MessageContent";
 import { ProjectMapDialog } from "./ProjectMapDialog";
 import { ModelSelect } from "../ui/ModelSelect";
@@ -74,6 +80,9 @@ type Props = {
   signedIn: boolean;
   checkingSignIn: boolean;
   deskOpen: boolean;
+  changeSets: ChangeSet[];
+  onOpenChanges: (request: ChangesOpenRequest) => void;
+  onRefreshChanges: () => Promise<void> | void;
   approval: ApprovalRequest | null;
   approvalBusy: boolean;
   approvalError: string | null;
@@ -119,11 +128,16 @@ const TOOL_META: Record<string, ToolMeta> = {
   history_search: { label: "Searched history", active: "Searching history", Icon: ScanSearch },
   history_turn: { label: "Read an earlier turn", active: "Reading an earlier turn", Icon: FileText },
   history_context: { label: "Loaded history", active: "Loading history", Icon: FileText },
+  routine_list: { label: "Checked routines", active: "Checking routines", Icon: CalendarClock },
+  routine_create: { label: "Created a routine", active: "Creating a routine", Icon: CalendarPlus },
+  routine_delete: { label: "Removed a routine", active: "Removing a routine", Icon: CalendarX },
 };
 
 const COMMAND_ICONS: Record<string, LucideIcon> = {
   review: ScanSearch,
   skills: Wrench,
+  routine: CalendarPlus,
+  files: Folder,
   help: BookOpen,
 };
 
@@ -211,6 +225,9 @@ export function ChatView({
   signedIn,
   checkingSignIn,
   deskOpen,
+  changeSets,
+  onOpenChanges,
+  onRefreshChanges,
   approval,
   approvalBusy,
   approvalError,
@@ -235,7 +252,6 @@ export function ChatView({
   const [savingModel, setSavingModel] = useState(false);
   const [savingMode, setSavingMode] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
-  const [filePeek, setFilePeek] = useState<FilePeekRequest | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
   const [skillCatalog, setSkillCatalog] = useState<SkillInfo[]>([]);
@@ -249,6 +265,7 @@ export function ChatView({
   const [undoDraft, setUndoDraft] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
+  const mapButton = useRef<HTMLButtonElement>(null);
   const pinned = useRef(true);
   const generation = useRef(0);
   const messageLoad = useRef(0);
@@ -268,14 +285,17 @@ export function ChatView({
 
   const openFile = useCallback(
     (path: string, line: number, endLine: number | null, related: Citation[]) => {
-      setFilePeek({ path, line, endLine, related });
+      const change = findChangedFile(changeSets, path);
+      onOpenChanges({
+        path,
+        line,
+        endLine,
+        related,
+        ...(change ? { turnId: change.turnId, fileId: change.file.id } : {}),
+      });
     },
-    [],
+    [changeSets, onOpenChanges],
   );
-
-  useEffect(() => {
-    setFilePeek(null);
-  }, [agent.id]);
 
   const projected = projectThread(messages, live, agent.id);
   const draftCommand = parseCommand(draft);
@@ -288,7 +308,10 @@ export function ChatView({
       ? matchSkillInvocation(skillCatalog, draftCommand.args)
       : null;
   const commandQuery = draft.startsWith("/") ? draft.slice(1).split(/\s/)[0] : "";
-  const commandMatches = filterCommands(commandQuery);
+  const hasWorkspace = Boolean(agent.workspaceDir?.trim());
+  const commandMatches = filterCommands(commandQuery).filter(
+    (command) => !(command.hideWithoutWorkspace && !hasWorkspace),
+  );
   const activeCommand = commandMatches[commandIndex] ?? null;
   const commandDraft = draft.startsWith("/")
     ? COMMANDS.find(
@@ -366,11 +389,15 @@ export function ChatView({
 
   function commandUnavailable(command: CommandInfo): string | null {
     if (command.id === "review" && !signedIn) return "Sign in to Copilot first.";
-    return commandAvailability(command, agent.toolProfile, Boolean(agent.workspaceDir));
+    return commandAvailability(command, agent.toolProfile, hasWorkspace, agent.readOnly);
   }
 
   function chooseCommand(command: CommandInfo) {
-    if (commandUnavailable(command)) return;
+    const unavailable = commandUnavailable(command);
+    if (unavailable) {
+      setError(unavailable);
+      return;
+    }
     setCommandsOpen(false);
     setCommandIndex(0);
     // A dialog command should not throw away a normal draft the user typed.
@@ -378,6 +405,11 @@ export function ChatView({
     if (command.id === "skills") {
       if (commandDraft) setDraft("");
       onOpenSkills();
+      return;
+    }
+    if (command.id === "files") {
+      if (commandDraft) setDraft("");
+      onOpenChanges({});
       return;
     }
     if (command.ui) {
@@ -552,7 +584,7 @@ export function ChatView({
     const element = scroller.current;
     if (!element || !pinned.current) return;
     element.scrollTop = element.scrollHeight;
-  }, [projected.messages, projected.thinking, projected.pendingToolId, approval?.id, draft]);
+  }, [projected.messages, projected.thinking, projected.pendingToolId, approval?.id, draft, changeSets]);
 
   useEffect(() => {
     const element = scroller.current;
@@ -625,22 +657,24 @@ export function ChatView({
   function send() {
     if (enhancing) return;
     const text = draft.trim();
+    const parsed = parseCommand(text);
+    if (parsed?.command.id === "routine" && !parsed.args) {
+      setError("Add the task and time after /routine.");
+      return;
+    }
     if (text === "/skills") {
       onOpenSkills();
       return;
     }
-    if (skillCatalogState === "ready") {
-      const parsed = parseCommand(text);
-      if (parsed?.command.id === "skills") {
-        const matched = matchSkillInvocation(skillCatalog, parsed.args);
-        if ("error" in matched) {
-          setError(matched.error);
-          return;
-        }
-        if (!matched.task) {
-          setError("Add the task after the skill name.");
-          return;
-        }
+    if (skillCatalogState === "ready" && parsed?.command.id === "skills") {
+      const matched = matchSkillInvocation(skillCatalog, parsed.args);
+      if ("error" in matched) {
+        setError(matched.error);
+        return;
+      }
+      if (!matched.task) {
+        setError("Add the task after the skill name.");
+        return;
       }
     }
     sendText(text);
@@ -744,6 +778,28 @@ export function ChatView({
 
   const empty = projected.messages.length === 0 && !projected.thinking && !approval;
   const items = groupToolCalls(projected.messages);
+  const latestChange = changeSets[0] ?? null;
+  const latestTotals = changeTotals(latestChange);
+  const lastAssistantByTurn = new Map<string, string>();
+  for (const item of items) {
+    if (item.kind === "message" && item.message.role === "assistant" && item.message.turnId) {
+      lastAssistantByTurn.set(item.message.turnId, item.message.id);
+    }
+  }
+  const changeByTurn = new Map(changeSets.map((change) => [change.turnId, change]));
+  const changeCardFor = (message: Message) => {
+    if (message.role !== "assistant" || !message.turnId) return null;
+    if (lastAssistantByTurn.get(message.turnId) !== message.id) return null;
+    const change = changeByTurn.get(message.turnId);
+    return change ? (
+      <EditedFilesCard
+        key={`change-${change.turnId}`}
+        change={change}
+        onOpenChanges={onOpenChanges}
+        onRefresh={onRefreshChanges}
+      />
+    ) : null;
+  };
   const status = !settingsReady
     ? "Checking"
     : running
@@ -787,7 +843,34 @@ export function ChatView({
           </div>
         </div>
         <div className="chat-actions">
+          {hasWorkspace ? (
+            <button
+              type="button"
+              className="header-workspace"
+              title={
+                latestChange
+                  ? "Browse workspace and review the latest turn"
+                  : "Browse workspace files"
+              }
+              aria-label={
+                latestChange
+                  ? "Browse workspace and review the latest turn"
+                  : "Browse workspace files"
+              }
+              onClick={() => onOpenChanges(latestChange ? { turnId: latestChange.turnId } : {})}
+            >
+              <Folder size={14} aria-hidden="true" />
+              Workspace
+              {latestChange ? (
+                <span className="header-workspace-stats">
+                  <span className="diff-add">+{latestTotals.additions}</span>
+                  <span className="diff-remove">−{latestTotals.deletions}</span>
+                </span>
+              ) : null}
+            </button>
+          ) : null}
           <button
+            ref={mapButton}
             type="button"
             className="icon-button"
             aria-label="Open project map"
@@ -924,6 +1007,7 @@ export function ChatView({
                       onOpenFile={openFile}
                     />
                   )}
+                  {item.kind === "message" ? changeCardFor(item.message) : null}
                 </Fragment>
               );
             })}
@@ -1280,15 +1364,13 @@ export function ChatView({
           agent={agent}
           signedIn={signedIn}
           onClose={() => setMapOpen(false)}
-          onOpenFile={openFile}
+          onOpenFile={(path, line, endLine, related) => {
+            setMapOpen(false);
+            mapButton.current?.focus();
+            openFile(path, line, endLine, related);
+          }}
         />
       ) : null}
-      <FilePeekDialog
-        key={agent.id}
-        agentId={agent.id}
-        request={filePeek}
-        onClose={() => setFilePeek(null)}
-      />
     </main>
   );
 }

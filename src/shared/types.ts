@@ -1,3 +1,5 @@
+import type { Citation } from "./citations";
+
 export type AgentToolProfile = "all" | "browser" | "developer";
 
 export type Agent = {
@@ -56,6 +58,8 @@ export type Routine = {
   name: string;
   prompt: string;
   cron: string;
+  once: boolean;
+  runAt: string | null;
   enabled: boolean;
   notify: boolean;
   lastRunAt: string | null;
@@ -83,6 +87,20 @@ export type ChangeSet = {
   source: string;
   status: string | null;
   files: FileChangeSummary[];
+};
+
+export type FileChangeMatch = {
+  turnId: string;
+  file: FileChangeSummary;
+};
+
+export type ChangesOpenRequest = {
+  turnId?: string;
+  fileId?: string;
+  path?: string;
+  line?: number | null;
+  endLine?: number | null;
+  related?: Citation[];
 };
 
 export type FileDiff = {
@@ -272,6 +290,24 @@ export type WorkspaceFilePeek = {
   truncated: boolean;
 };
 
+export type WorkspaceImagePeek = {
+  path: string;
+  mime: string;
+  dataUrl: string;
+  bytes: number;
+};
+
+export type WorkspaceEntry = {
+  name: string;
+  path: string;
+  kind: "dir" | "file";
+};
+
+export type WorkspaceDirectory = {
+  entries: WorkspaceEntry[];
+  truncated: boolean;
+};
+
 export type BrowserPreview = {
   image: string;
   url: string;
@@ -283,6 +319,8 @@ export type RoutineInput = {
   name: string;
   prompt: string;
   cron: string;
+  once: boolean;
+  runAt: string | null;
   enabled: boolean;
   notify: boolean;
 };
@@ -291,6 +329,8 @@ export type RoutinePatch = {
   name?: string;
   prompt?: string;
   cron?: string;
+  once?: boolean;
+  runAt?: string | null;
   enabled?: boolean;
   notify?: boolean;
 };

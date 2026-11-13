@@ -23,6 +23,7 @@ The center column is the saved conversation for the selected agent.
 - The composer at the bottom sends with Enter. Use Shift+Enter for a new line.
 - **Ask mode** and **Agent mode** in the composer, before the model picker, switch between read-only questions and the agent's full tools. The choice is saved for the agent.
 - The map button in the chat header opens the cached project map. Choose **Build map** or **Refresh map** to spend one read-only exploration.
+- The **Workspace** button in the chat header, `/files`, or **Browse files** on the Agent Desk opens the workspace navigator: the answer's references, the selected turn's changed files, and the full file tree. The entries are hidden without a workspace folder. It opens even before a turn has changed a file. On a wide window, **Collapse chat** in the panel header slides the chat left; **Show chat** restores it. It replaces the Agent Desk while open; close it to return to the desk.
 - Choose **Enhance** to rewrite the draft; nothing is sent until you press Enter. It is manual and one-shot.
 - The model picker is in the composer. It is disabled while the agent is working.
 - Type `/` in the composer, or choose **Commands**, to open the command list. `/skills <skill> <task>` uses an installed skill for that message.
@@ -33,8 +34,9 @@ The center column is the saved conversation for the selected agent.
 The right column shows the selected agent's local work.
 
 - **Browser** shows a live preview when a browser agent opens a page. Choose Open browser to bring the real window to the front.
+- **Changes** is a one-line summary of the latest edited turn. Choose **Open changes** for the turn picker, diff, and file tree.
 - **Approvals** shows recent allow, deny, and timeout decisions. Choose History for the full audit.
-- **Routines** lists scheduled prompts. Use the switch to pause one, or the plus to manage them.
+- **Routines** lists saved routines. Use the switch to pause one, or the plus to manage them.
 - **Workspace** shows the folder a developer agent can read, search, and edit. Browser-only agents show no workspace.
 - The desk opens automatically at 1181 px and wider. Use the panel button in the chat header to hide or show it.
 

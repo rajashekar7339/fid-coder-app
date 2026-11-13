@@ -33,6 +33,7 @@ Type `/` in the composer, or choose **Commands** next to the model picker, to op
 - `/skills <skill-id> <task>` — load an installed skill for this message. Later messages keep a short used-skills list and can reload it.
 - `/skills` — open the Skills library.
 - `/review` — review uncommitted changes, staged changes, a branch, a PR number, or a path.
+- `/files` — open the workspace file browser. It is available only when the agent has a workspace folder.
 - `/help` — open this guide.
 
 Use ↑/↓ to move, Enter or Tab to select, and Escape to close. A command that needs a workspace or developer tools shows the reason in the list. The empty conversation also shows the available commands as chips.
@@ -73,7 +74,7 @@ Ask the agent what you worked on earlier, or name the issue. It can search the s
 
 ## Ask for a diagram
 
-Ask for a flow, process, or architecture picture. The agent answers with a Mermaid block, and the app draws it as a diagram with zoom, horizontal scroll, and a **Source** toggle. Flowcharts are the default for architecture, control flow, and data flows; sequence diagrams are used when the order between actors over time matters. Diagram labels stay clean: file references belong in the surrounding text and numbered steps, and the reader's **Code references** list shows every citation in the answer. A reply that already contains ASCII art still shows as text under a **Diagram** label.
+Ask for a flow, process, or architecture picture. The agent answers with a Mermaid block, and the app draws it as a diagram with zoom, horizontal scroll, and a **Source** toggle. Flowcharts are the default for architecture, control flow, and data flows; sequence diagrams are used when the order between actors over time matters. Diagram labels stay clean: file references belong in the surrounding text and numbered steps, and the **References** section in the Workspace panel shows every citation in the answer. A reply that already contains ASCII art still shows as text under a **Diagram** label.
 
 Use **Expand** above a rendered diagram for a full-screen view with zoom. Use **Copy image** to copy the whole diagram as a PNG, including its colors, at full size regardless of the current zoom or scroll. Paste it directly into Confluence or another document. **Copy** copies the Mermaid source instead.
 
