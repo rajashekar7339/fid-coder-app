@@ -1,10 +1,10 @@
 # Understand a codebase
 
-Most questions about a checked-out repository do not need an edit. Ask mode reads the workspace, follows the code, and answers with evidence. It cannot write files, run commands, use the browser, or change git.
+Most questions about a checked-out repository do not need an edit. Ask mode reads the workspace, follows the code, and answers with evidence. It cannot write files, run commands, click or type in the browser, or change git.
 
 ## Ask mode
 
-Choose **Ask mode** in the composer, before the model picker, to use the read-only tool set: file reads, search, a workspace explorer, git status/diff/log, and pull-request reads. Choose **Agent mode** when the agent should edit, run tests, or use its full tool profile. The switch is saved for the agent, and the conversation is kept when you switch.
+Choose **Ask mode** in the agent editor or in the composer, before the model picker, to use the read-only subset of the selected tools: file reads, search, a workspace explorer, git status/diff/log, and pull-request reads. Choose **Agent mode** when the agent should edit, run tests, or use its full tool profile. **Tools** chooses the domain and **Mode** chooses access; they are the only permission controls. The switch is saved for the agent, and the conversation is kept when you switch.
 
 The read-only guarantee is enforced by the tools the agent receives, not only by its instructions. A question that needs a command or a change ends with a suggestion to switch to Agent mode.
 
@@ -62,8 +62,8 @@ To ask about code you found yourself, open the file in the Workspace panel. The 
 
 Use **Troubleshoot an error** and paste the stack trace or log after the prompt. Ask mode reads the code and log and explains the likely cause with evidence. If the answer needs a build or test run, switch to **Agent mode**.
 
-## Start a codebase guide
+## Start an agent for codebase questions
 
-When you create an agent, **Codebase guide** is the default template. It sets Ask mode, a short read-only instruction, and the developer tool profile for command availability. Choose **General agent** for an agent that edits and runs commands.
+Create an agent, choose **Shell, search, git, and files** under **Tools**, and leave **Mode** on **Ask**. Give it role instructions if you want it to explain code and cite evidence. To let the same agent make changes later, switch **Mode** to **Agent**; the instructions do not need to change.
 
 > **Keep in mind:** Ask mode is a tool boundary, not a sandbox. It can read any text file inside the workspace, so keep secrets out of the repository. It never writes, runs shell commands, or changes git.

@@ -95,6 +95,6 @@ Ask for a flow, process, or architecture picture. The agent answers with a Merma
 
 Use **Expand** above a rendered diagram for a full-screen view with zoom. Use **Copy image** to copy the whole diagram as a PNG, including its colors, at full size regardless of the current zoom or scroll. Paste it directly into Confluence or another document. **Copy** copies the Mermaid source instead.
 
-For a read-only question about a checked-out repository, start with **Ask mode** in the composer, before the model picker. The starter prompts and project map are described in **Understand a codebase**.
+For a read-only question about a checked-out repository, choose **Ask mode** in the agent editor or in the composer, before the model picker. The starter prompts and project map are described in **Understand a codebase**.
 
 > **Tip:** Hover a reply and choose **Copy**, or use the copy button on a code block or diagram.

@@ -66,6 +66,47 @@ test("existing agents default to Auto and keep a chosen model", () => {
   }
 });
 
+test("the old guide permission sentence is removed from saved prompts", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-guide-prompt-"));
+  const file = path.join(dir, "app.sqlite");
+  const oldPrompt =
+    "You are a codebase guide. Answer questions about this repository. Read the code before you answer, cite evidence as path:line, and use Mermaid diagrams for flows. Do not edit files or run commands. If the user wants a change, tell them to switch to Code.";
+  const newPrompt =
+    "You are a codebase guide. Answer questions about this repository. Read the code before you answer, cite evidence as path:line, and use Mermaid diagrams for flows.";
+  const customPrompt = "You are a release assistant. Do not edit files without asking.";
+  let guideId;
+  let customId;
+  try {
+    const db = new AppDatabase(file);
+    try {
+      guideId = db.createAgent({
+        name: "Old guide",
+        systemPrompt: oldPrompt,
+        workspaceDir: null,
+        model: "auto",
+      }).id;
+      customId = db.createAgent({
+        name: "Custom guide",
+        systemPrompt: customPrompt,
+        workspaceDir: null,
+        model: "auto",
+      }).id;
+    } finally {
+      db.close();
+    }
+
+    const reopened = new AppDatabase(file);
+    try {
+      assert.equal(reopened.getAgent(guideId).systemPrompt, newPrompt);
+      assert.equal(reopened.getAgent(customId).systemPrompt, customPrompt);
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("tool profiles migrate once and keep later changes", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-profile-"));
   const file = path.join(dir, "app.sqlite");

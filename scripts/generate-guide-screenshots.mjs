@@ -103,7 +103,7 @@ try {
   });
   await page.waitForTimeout(600);
 
-  await page.getByRole("button", { name: /Codebase Guide/ }).first().click();
+  await page.getByRole("button", { name: /Code Assistant/ }).first().click();
   await page.waitForSelector(".chat-empty", { timeout: 15000 });
   await page.waitForTimeout(400);
   await save(page.locator(".chat-pane"), "ask-mode.png");
@@ -221,7 +221,6 @@ async function captureAgentEditor(page) {
   await page.getByRole("button", { name: "New agent" }).first().click();
   const modal = page.locator(".agent-modal");
   await modal.waitFor({ state: "visible" });
-  await modal.getByRole("button", { name: /General agent/ }).click();
   await modal.getByLabel("Name").fill("Release notes");
   await modal.getByLabel("Role").fill("Release assistant");
   await modal
@@ -230,6 +229,10 @@ async function captureAgentEditor(page) {
       "You are a release assistant. Read the changelog and open pull requests, then draft release notes with the main changes, risks, and testing gaps.",
     );
   await modal.getByLabel("Tools").selectOption("developer");
+  await modal
+    .locator(".agent-mode-switch")
+    .getByRole("button", { name: "Agent mode", exact: true })
+    .click();
   await modal.locator("#agent-workspace").fill("D:\\Projects\\my-app");
   await page.addStyleTag({
     content:
@@ -363,7 +366,7 @@ async function seedDemoData(page) {
     .prepare("UPDATE agents SET updated_at = ? WHERE id = ?")
     .run(new Date(now - 30 * 24 * 60 * 60_000).toISOString(), git.id);
 
-  const codebaseId = randomUUID();
+  const demoId = randomUUID();
   database
     .prepare(
       `INSERT INTO agents (
@@ -372,10 +375,10 @@ async function seedDemoData(page) {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
-      codebaseId,
-      "Codebase Guide",
+      demoId,
+      "Code Assistant",
       "Ask about this repository",
-      "You are a codebase guide. Answer from the code, cite path:line, and use Mermaid for flows.",
+      "You are a helpful local assistant. Answer questions about this repository.",
       demoWorkspace,
       "auto",
       "developer",
