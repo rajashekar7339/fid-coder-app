@@ -6,6 +6,7 @@ import {
   ancestorDirectories,
   buildPathTree,
   normalizeWorkspacePath,
+  workspacePathMatches,
 } from "../../src/shared/file-tree.ts";
 
 test("normalizes workspace paths", () => {
@@ -13,6 +14,16 @@ test("normalizes workspace paths", () => {
   assert.equal(normalizeWorkspacePath("src//main/a.ts"), "src/main/a.ts");
   assert.equal(normalizeWorkspacePath("/src/main/a.ts/"), "src/main/a.ts");
   assert.equal(normalizeWorkspacePath(""), "");
+});
+
+test("matches a full path against a bare or partial citation", () => {
+  assert.equal(workspacePathMatches("src/main/java/Test.java", "Test.java"), true);
+  assert.equal(workspacePathMatches("src/main/java/Test.java", "main/java/Test.java"), true);
+  assert.equal(workspacePathMatches("src/main/java/Test.java", "src/main/java/Test.java"), true);
+  assert.equal(workspacePathMatches("src/main/java/Test.java", "test/java/Test.java"), false);
+  assert.equal(workspacePathMatches("src/main/java/Test.java", "Other.java"), false);
+  assert.equal(workspacePathMatches("src/Main/Test.java", "main/test.java"), true);
+  assert.equal(workspacePathMatches("", "Test.java"), false);
 });
 
 test("groups paths into folders and sorts folders before files", () => {

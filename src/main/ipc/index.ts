@@ -9,6 +9,8 @@ import { normalizeToolProfile } from "../../shared/tool-profile";
 import type {
   AgentInput,
   ApprovalAction,
+  AttachmentPick,
+  MessageAttachment,
   RoutineInput,
   RoutinePatch,
   SkillInstallResult,
@@ -38,6 +40,7 @@ import { createAgentsFile, ruleFilePath, workspaceRules } from "../workspace/wor
 import { listWorkspaceDirectory } from "../workspace/file-tree";
 import { readWorkspaceFile } from "../workspace/file-peek";
 import { readWorkspaceImage } from "../workspace/image-peek";
+import { describeAttachmentFiles } from "../workspace/attachments";
 
 type AppServices = {
   db: AppDatabase;
@@ -79,9 +82,17 @@ export function registerIpc(services: AppServices): void {
   });
 
   ipcMain.handle(channels.messagesList, (_event, agentId: string) => db.listMessages(agentId));
-  ipcMain.handle(channels.chatSend, async (_event, agentId: string, text: string) => {
-    await runner.runTurn({ agentId, text: String(text ?? ""), source: "chat" });
-  });
+  ipcMain.handle(
+    channels.chatSend,
+    async (_event, agentId: string, text: string, attachments?: MessageAttachment[]) => {
+      await runner.runTurn({
+        agentId,
+        text: String(text ?? ""),
+        source: "chat",
+        attachments: Array.isArray(attachments) ? attachments : [],
+      });
+    },
+  );
   ipcMain.handle(channels.chatRunning, (_event, agentId: string) => runner.isRunning(String(agentId ?? "")));
   ipcMain.handle(channels.chatAbort, async (_event, agentId: string) => {
     await runner.abort(agentId);
@@ -291,6 +302,27 @@ export function registerIpc(services: AppServices): void {
       : await dialog.showOpenDialog({ properties: ["openDirectory"] });
     if (result.canceled) return null;
     return result.filePaths[0] ?? null;
+  });
+
+  ipcMain.handle(channels.dialogPickFiles, async (): Promise<AttachmentPick> => {
+    const override = process.env.FID_CODER_ATTACH_IMPORT_FILES?.trim();
+    if (override) {
+      const paths = override
+        .split(path.delimiter)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      return describeAttachmentFiles(paths);
+    }
+    const parent = services.getWindow();
+    const options = {
+      title: "Attach files",
+      properties: ["openFile", "multiSelections"] as ("openFile" | "multiSelections")[],
+    };
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
+      : await dialog.showOpenDialog(options);
+    if (result.canceled) return { attachments: [], errors: [] };
+    return describeAttachmentFiles(result.filePaths);
   });
 }
 

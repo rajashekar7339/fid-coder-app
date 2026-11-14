@@ -24,6 +24,8 @@ test("parses a command and its target", () => {
   assert.equal(parseCommand("/skills write-lean tighten the parser")?.args, "write-lean tighten the parser");
   assert.equal(parseCommand("/routine run the tests tomorrow at 9")?.command.id, "routine");
   assert.equal(parseCommand("/routine run the tests tomorrow at 9")?.args, "run the tests tomorrow at 9");
+  assert.equal(parseCommand("/compact")?.command.id, "compact");
+  assert.equal(parseCommand("/compact")?.args, "");
   assert.equal(parseCommand("/files")?.command.id, "files");
   assert.equal(parseCommand("/schedule run the tests tomorrow at 9"), null);
   assert.equal(command("skills").ui, undefined);
@@ -36,11 +38,13 @@ test("filters commands by id, label, and description", () => {
   assert.equal(filterCommands("guide").some((item) => item.id === "help"), true);
   assert.equal(filterCommands("routine").some((item) => item.id === "routine"), true);
   assert.equal(filterCommands("files").some((item) => item.id === "files"), true);
+  assert.equal(filterCommands("compact").some((item) => item.id === "compact"), true);
   assert.equal(filterCommands("zzz").length, 0);
   assert.deepEqual(filterCommands("").map((item) => item.id), [
     "review",
     "skills",
     "routine",
+    "compact",
     "files",
     "help",
   ]);
@@ -63,4 +67,6 @@ test("marks workspace, profile, and agent-mode requirements", () => {
   );
   assert.equal(commandAvailability(command("routine"), "developer", false, false), null);
   assert.equal(commandAvailability(command("routine"), "browser", false, false), null);
+  assert.equal(commandAvailability(command("compact"), "browser", false, true), null);
+  assert.equal(commandAvailability(command("compact"), "developer", false, false), null);
 });

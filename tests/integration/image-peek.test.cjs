@@ -21,6 +21,12 @@ test("reads a supported image as a data URL", () => {
     assert.equal(image.mime, "image/png");
     assert.equal(image.bytes, PNG.length);
     assert.ok(image.dataUrl.startsWith("data:image/png;base64,"));
+
+    fs.mkdirSync(path.join(root, "deep", "brand"), { recursive: true });
+    fs.writeFileSync(path.join(root, "deep", "brand", "mark.png"), PNG);
+    const bare = readWorkspaceImage(root, "mark.png");
+    assert.equal(bare.path, "deep/brand/mark.png");
+    assert.equal(bare.mime, "image/png");
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

@@ -307,8 +307,8 @@ export function AgentDialog({
               </div>
               <span className="field-note">
                 {memoryEnabled
-                  ? "Updates at most once every ten turns with Auto. Turn off to save Copilot usage."
-                  : "Automatic updates are off. Turn on to keep memory current."}
+                  ? "Updates at most once every ten turns after 30 messages, using Auto. Send /compact to summarize now."
+                  : "Automatic updates are off. Send /compact to summarize now, or turn this on to keep memory current."}
               </span>
               {memorySummary.trim() ? (
                 <>
@@ -337,7 +337,7 @@ export function AgentDialog({
                   </div>
                 </>
               ) : (
-                <span className="field-note">Nothing saved yet. A summary appears after 30 messages and ten turns.</span>
+                <span className="field-note">Nothing saved yet. Send /compact, or wait until the thread passes 30 messages and ten turns.</span>
               )}
             </div>
           ) : null}

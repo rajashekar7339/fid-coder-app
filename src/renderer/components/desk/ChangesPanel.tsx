@@ -9,7 +9,7 @@ import {
   RotateCcw,
   X,
 } from "lucide-react";
-import { ancestorDirectories, normalizeWorkspacePath } from "../../../shared/file-tree";
+import { ancestorDirectories, workspacePathMatches } from "../../../shared/file-tree";
 import { imageMimeForPath } from "../../../shared/image";
 import { changeTotals, findChangedFile } from "../../../shared/changes";
 import type { Citation } from "../../../shared/citations";
@@ -19,6 +19,7 @@ import type {
   ChangesOpenRequest,
   FileChangeSummary,
   FileDiff,
+  MessageAttachment,
   WorkspaceDirectory,
 } from "../../../shared/types";
 import { errorText, fid } from "../../lib/fid";
@@ -27,7 +28,7 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { DiffView } from "./DiffView";
 import { WorkspaceCodePane } from "./WorkspaceCodePane";
 import { WorkspaceNavigator } from "./WorkspaceNavigator";
-import { rangeLabel, type CitationView } from "./workspace-labels";
+import { fileName, rangeLabel, type CitationView } from "./workspace-labels";
 
 type Props = {
   agent: Agent;
@@ -37,6 +38,7 @@ type Props = {
   request: ChangesOpenRequest | null;
   chatCollapsed: boolean;
   onToggleChat: () => void;
+  onActiveContext: (attachment: MessageAttachment | null) => void;
   onClose: () => void;
   onRefresh: () => Promise<void> | void;
 };
@@ -51,6 +53,7 @@ export function ChangesPanel({
   request,
   chatCollapsed,
   onToggleChat,
+  onActiveContext,
   onClose,
   onRefresh,
 }: Props) {
@@ -62,6 +65,10 @@ export function ChangesPanel({
   );
   const [citation, setCitation] = useState<CitationView | null>(null);
   const [codePath, setCodePath] = useState<string | null>(request?.path ?? null);
+  const [codeSelection, setCodeSelection] = useState<{
+    startLine: number;
+    endLine: number;
+  } | null>(null);
   const [view, setView] = useState<"diff" | "code">("diff");
   const [filter, setFilter] = useState("");
   const [changedOnly, setChangedOnly] = useState(false);
@@ -189,13 +196,14 @@ export function ChangesPanel({
         };
         const match = findChangedFile(changeSets, request.path);
         if (!match && changeSets.length === 0 && loading) return;
+        const readPath = match?.file.path ?? request.path;
         appliedRequest.current = request;
         setCitation(next);
-        setCodePath(request.path);
+        setCodePath(readPath);
         setFilter("");
         setChangedOnly(false);
         setRefsOpen(Boolean(request.related && request.related.length > 0));
-        void expandTo(request.path);
+        void expandTo(readPath);
         if (match) {
           setSelectedTurnId(match.turnId);
           setSelectedFileId(match.file.id);
@@ -305,13 +313,39 @@ export function ChangesPanel({
       : null;
   const totals = changeTotals(selectedTurn);
   const related = request?.related ?? [];
+  useEffect(() => {
+    if (view === "code" && codePath) {
+      const name = fileName(codePath);
+      if (codeSelection) {
+        onActiveContext({
+          kind: "selection",
+          path: codePath,
+          name,
+          startLine: codeSelection.startLine,
+          endLine: codeSelection.endLine,
+        });
+      } else {
+        onActiveContext({ kind: "workspace", path: codePath, name });
+      }
+      return;
+    }
+    if (view === "diff" && selectedFile) {
+      onActiveContext({
+        kind: "workspace",
+        path: selectedFile.path,
+        name: fileName(selectedFile.path),
+      });
+      return;
+    }
+    onActiveContext(null);
+  }, [codePath, codeSelection, onActiveContext, selectedFile, view]);
+
   const activePath = view === "diff" ? selectedFile?.path ?? null : codePath;
-  const activeKey = activePath ? normalizeWorkspacePath(activePath) : null;
   const activeIsImage = activePath ? imageMimeForPath(activePath) !== null : false;
   const showCitation = Boolean(
     citation &&
-      activeKey &&
-      normalizeWorkspacePath(citation.path) === activeKey &&
+      activePath &&
+      workspacePathMatches(activePath, citation.path) &&
       !activeIsImage,
   );
   const codeChange = codePath ? findChangedFile(changeSets, codePath) : null;
@@ -320,7 +354,7 @@ export function ChangesPanel({
     view === "diff" &&
     citation &&
     selectedFile &&
-    normalizeWorkspacePath(citation.path) === normalizeWorkspacePath(selectedFile.path)
+    workspacePathMatches(selectedFile.path, citation.path)
       ? citation.line
       : null;
   const citedEnd = citedStart === null ? null : (citation?.endLine ?? citedStart);
@@ -389,13 +423,14 @@ export function ChangesPanel({
       line: reference.line,
       endLine: reference.endLine,
     };
+    const match = findChangedFile(changeSets, reference.path);
+    const readPath = match?.file.path ?? reference.path;
     setCitation(next);
-    setCodePath(reference.path);
+    setCodePath(readPath);
     setFilter("");
     setChangedOnly(false);
     setRefsOpen(true);
-    void expandTo(reference.path);
-    const match = findChangedFile(changeSets, reference.path);
+    void expandTo(readPath);
     if (match) {
       setSelectedTurnId(match.turnId);
       setSelectedFileId(match.file.id);
@@ -421,10 +456,10 @@ export function ChangesPanel({
     setCitation(null);
     setSelectedTurnId(match.turnId);
     setSelectedFileId(match.file.id);
-    setCodePath(path);
+    setCodePath(match.file.path);
     setView("diff");
     setChangedOpen(true);
-    void expandTo(path);
+    void expandTo(match.file.path);
   }
 
   function toggleDir(path: string) {
@@ -633,6 +668,7 @@ export function ChangesPanel({
               endLine={codeCitation?.endLine ?? null}
               changed={codeChange?.file ?? null}
               onViewDiff={() => viewDiffForPath(codePath)}
+              onSelectionChange={setCodeSelection}
             />
           ) : (
             <ViewerPlaceholder hasWorkspace={Boolean(agent.workspaceDir)} loading={loading} />

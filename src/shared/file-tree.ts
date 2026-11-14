@@ -29,6 +29,18 @@ export function normalizeWorkspacePath(path: string): string {
     .replace(/^\/+|\/+$/g, "");
 }
 
+/**
+ * True when a full workspace path names the requested file. A citation may
+ * carry only a file name or a partial path, so a path suffix counts. The
+ * match is case-insensitive on Windows paths.
+ */
+export function workspacePathMatches(actual: string, requested: string): boolean {
+  const left = normalizeWorkspacePath(actual).toLowerCase();
+  const right = normalizeWorkspacePath(requested).toLowerCase();
+  if (!left || !right) return false;
+  return left === right || left.endsWith(`/${right}`);
+}
+
 function baseName(path: string): string {
   return path.split("/").pop() || path;
 }

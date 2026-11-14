@@ -25,6 +25,7 @@ const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "fid-coder-features-"));
 const userData = path.join(root, "userdata");
 const workspace = path.join(root, "workspace");
+const uploadFile = path.join(root, "brief.txt");
 const shots = path.join(root, "shots");
 const agentName = "Live Test Agent";
 const skipTurns = process.env.FID_SKIP_TURNS === "1";
@@ -60,6 +61,7 @@ function prepare() {
   fs.mkdirSync(workspace, { recursive: true });
   fs.mkdirSync(shots, { recursive: true });
   fs.writeFileSync(path.join(workspace, "demo.ts"), "export const greeting = 'hello';\n", "utf8");
+  fs.writeFileSync(uploadFile, "PINEAPPLE_MARKER\n", "utf8");
   git(["init"]);
   git(["add", "demo.ts"]);
   git(["commit", "-m", "baseline"]);
@@ -358,6 +360,51 @@ async function main() {
     await sendAndWait(page, "What is 2 + 2? Answer in one short sentence.");
     const reply2 = await lastAssistantText(page);
     check("rules were applied to the turn", /banana/i.test(reply2), reply2.replace(/\s+/g, " ").slice(0, 160));
+
+    console.log("watch: sending a line selection (demo.ts:1) and an upload (brief.txt) to Copilot");
+    await page.waitForTimeout(1500);
+    const attachmentSmoke = await page.evaluate(
+      async ({ name, upload }) => {
+        const agents = await window.fid.agents.list();
+        const target = agents.find((item) => item.name === name);
+        if (!target) return { error: "agent missing", attachments: 0, assistant: "" };
+        try {
+          await window.fid.chat.send(
+            target.id,
+            "Reply with the exact code on the attached selection and the exact word in the attached file. Keep it to one line.",
+            [
+              { kind: "selection", path: "demo.ts", name: "demo.ts", startLine: 1, endLine: 1 },
+              { kind: "upload", path: upload, name: "brief.txt" },
+            ],
+          );
+        } catch (error) {
+          return {
+            error: error instanceof Error ? error.message : String(error),
+            attachments: 0,
+            assistant: "",
+          };
+        }
+        const messages = await window.fid.messages.list(target.id);
+        const user = [...messages].reverse().find((item) => item.role === "user");
+        const assistant = [...messages].reverse().find((item) => item.role === "assistant");
+        return {
+          error: "",
+          attachments: user?.attachments?.length ?? 0,
+          assistant: assistant?.content ?? "",
+        };
+      },
+      { name: agentName, upload: uploadFile },
+    );
+    check(
+      "selection and upload attachments reach the live turn",
+      !attachmentSmoke.error &&
+        attachmentSmoke.attachments === 2 &&
+        /hello/i.test(attachmentSmoke.assistant) &&
+        /PINEAPPLE_MARKER/.test(attachmentSmoke.assistant),
+      attachmentSmoke.error || attachmentSmoke.assistant.replace(/\s+/g, " ").slice(0, 160),
+    );
+    await page.waitForTimeout(2500);
+    await shot(page, "08-attachments");
 
     await page.locator('.agent-desk button:has-text("Context")').click();
     await page.waitForSelector(".context-modal", { timeout: 15_000 });

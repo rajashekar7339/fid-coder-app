@@ -1,5 +1,16 @@
 import type { ChangeSet, FileChangeMatch } from "./types";
 
+/** Matches findChangedFile with citation paths, which may be bare names. */
+function comparePath(value: string): string {
+  return value
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^(\.\/)+/, "")
+    .replace(/\/+/g, "/")
+    .replace(/^\/+|\/+$/g, "")
+    .toLowerCase();
+}
+
 export function changeTotals(change: ChangeSet | null): { additions: number; deletions: number } {
   if (!change) return { additions: 0, deletions: 0 };
   return change.files.reduce(
@@ -16,12 +27,21 @@ export function changeFileCount(change: ChangeSet | null): number {
 }
 
 export function findChangedFile(changeSets: ChangeSet[], path: string): FileChangeMatch | null {
-  const normalized = path.replace(/\\/g, "/").replace(/^\.\//, "");
+  const requested = comparePath(path);
+  if (!requested) return null;
+  let exact: FileChangeMatch | null = null;
+  const suffix = new Map<string, FileChangeMatch>();
   for (const change of changeSets) {
-    const file = change.files.find(
-      (item) => item.path.replace(/\\/g, "/").replace(/^\.\//, "") === normalized,
-    );
-    if (file) return { turnId: change.turnId, file };
+    for (const file of change.files) {
+      const actual = comparePath(file.path);
+      if (actual === requested) {
+        if (!exact) exact = { turnId: change.turnId, file };
+        continue;
+      }
+      if (!actual.endsWith(`/${requested}`)) continue;
+      if (!suffix.has(actual)) suffix.set(actual, { turnId: change.turnId, file });
+    }
   }
-  return null;
+  if (exact) return exact;
+  return suffix.size === 1 ? [...suffix.values()][0]! : null;
 }

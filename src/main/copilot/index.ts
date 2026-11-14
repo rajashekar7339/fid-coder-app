@@ -40,7 +40,7 @@ type SessionLike = {
     };
   };
   on(handler: (event: SdkEvent) => void): (() => void) | { unsubscribe?: () => void };
-  sendAndWait(input: { prompt: string }, timeoutMs?: number): Promise<unknown>;
+  sendAndWait(input: { prompt: string; attachments?: unknown[] }, timeoutMs?: number): Promise<unknown>;
   abort?(): Promise<void> | void;
   disconnect?(): Promise<void> | void;
 };

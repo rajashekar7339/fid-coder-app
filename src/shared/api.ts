@@ -5,6 +5,7 @@ import type {
   ApprovalRecord,
   ApprovalRequest,
   ApprovalRule,
+  AttachmentPick,
   BrowserPreview,
   ChangeSet,
   ChatEvent,
@@ -12,6 +13,7 @@ import type {
   CopilotModel,
   FileDiff,
   Message,
+  MessageAttachment,
   Routine,
   RoutineInput,
   RoutinePatch,
@@ -41,7 +43,7 @@ export interface FidApi {
     list: (agentId: string) => Promise<Message[]>;
   };
   chat: {
-    send: (agentId: string, text: string) => Promise<void>;
+    send: (agentId: string, text: string, attachments?: MessageAttachment[]) => Promise<void>;
     running: (agentId: string) => Promise<boolean>;
     abort: (agentId: string) => Promise<void>;
     enhance: (agentId: string, text: string) => Promise<EnhanceResult>;
@@ -106,6 +108,7 @@ export interface FidApi {
   };
   dialog: {
     pickFolder: () => Promise<string | null>;
+    pickFiles: () => Promise<AttachmentPick>;
   };
   models: {
     list: () => Promise<CopilotModel[]>;

@@ -50,3 +50,30 @@ test("finds the newest file match through path normalization", () => {
   });
   assert.equal(findChangedFile([newer, older], "missing.ts"), null);
 });
+
+test("finds a changed file from a bare or partial name when it is unique", () => {
+  const change: ChangeSet = {
+    turnId: "turn",
+    startedAt: "2026-11-10T11:00:00.000Z",
+    source: "chat",
+    status: "success",
+    files: [file("src/main/java/Test.java"), file("README.md")],
+  };
+  assert.equal(findChangedFile([change], "Test.java")?.file.path, "src/main/java/Test.java");
+  assert.equal(
+    findChangedFile([change], "main/java/Test.java")?.file.path,
+    "src/main/java/Test.java",
+  );
+  assert.equal(findChangedFile([change], "Other.java"), null);
+});
+
+test("refuses an ambiguous bare changed-file name", () => {
+  const change: ChangeSet = {
+    turnId: "turn",
+    startedAt: "2026-11-10T11:00:00.000Z",
+    source: "chat",
+    status: "success",
+    files: [file("src/main/java/Test.java"), file("src/test/java/Test.java")],
+  };
+  assert.equal(findChangedFile([change], "Test.java"), null);
+});

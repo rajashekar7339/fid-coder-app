@@ -39,6 +39,13 @@ export const COMMANDS: CommandInfo[] = [
     requiresAgentMode: true,
   },
   {
+    id: "compact",
+    label: "Compact the conversation",
+    description: "Summarize this conversation now. The next message keeps the summary and the latest messages.",
+    usage: "/compact",
+    category: "agent",
+  },
+  {
     id: "files",
     label: "Browse files",
     description: "Open the workspace file browser.",

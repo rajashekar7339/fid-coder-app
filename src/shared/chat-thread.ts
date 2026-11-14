@@ -1,4 +1,4 @@
-import type { Message, TokenUsage } from "./types";
+import type { Message, MessageAttachment, TokenUsage } from "./types";
 
 export type LiveTool = {
   id: string;
@@ -13,6 +13,7 @@ export type LiveTurn = {
   tools: LiveTool[];
   startedAt: number;
   usage?: TokenUsage | null;
+  userAttachments?: MessageAttachment[];
 };
 
 export type ProjectedThread = {
@@ -93,6 +94,7 @@ export function projectThread(saved: Message[], live: LiveTurn | null, agentId: 
       role: "user",
       content: live.userText,
       createdAt: new Date(live.startedAt).toISOString(),
+      attachments: live.userAttachments ?? null,
     });
   }
 
