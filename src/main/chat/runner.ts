@@ -34,6 +34,7 @@ import type {
   ApprovalSource,
   ChatEvent,
   ContextView,
+  MessageAttachment,
   TokenUsage,
   WorkspaceMapView,
 } from "../../shared/types";
@@ -66,9 +67,11 @@ import {
   skillRoots,
   type LoadedSkill,
 } from "../skills";
+import { ATTACHMENT_ONLY_MESSAGE } from "../../shared/attachments";
 import { availableSkillsPrompt, skillTurnPrompt, usedSkillsPrompt } from "../../shared/skills";
 import { workspaceBrief } from "../workspace/workspace-brief";
 import { workspaceRules, type WorkspaceRules } from "../workspace/workspace-rules";
+import { buildCopilotAttachments } from "../workspace/attachments";
 
 const WORKSPACE_HINT =
   "A workspace brief is included below. Use it before searching. Explore with list_dir, glob_files, search_text, file_read, and read_many. For an unfamiliar area, call explore_code with a specific question. It returns a short brief and does not edit. Edit an existing file with apply_patch. Use file_write only to create a file. Use git_status, git_diff, and git_log for git. Use gh_pr_view and gh_pr_diff for a pull request. Use shell_run for builds, tests, and other commands. Do not use shell_run to list folders, search files, or read files.";
@@ -331,9 +334,11 @@ export class Runner {
     agentId: string;
     text: string;
     source: "chat" | "routine";
+    attachments?: MessageAttachment[];
     notify?: (text: string) => void;
   }): Promise<string> {
-    const text = input.text.trim();
+    const text =
+      input.text.trim() || (input.attachments?.length ? ATTACHMENT_ONLY_MESSAGE : "");
     if (!text) throw new Error("Message is empty");
     const agent = this.db.getAgent(input.agentId);
     if (!agent) throw new Error("Agent not found");
@@ -343,6 +348,11 @@ export class Runner {
     if (!auth.signedIn) {
       throw new Error("Copilot is not signed in. Open Settings, sign in, then try again.");
     }
+    const parsed = parseCommand(text);
+    const attachments =
+      parsed && parsed.command.id !== "skills"
+        ? { sdk: [], stored: [], prompt: "" }
+        : buildCopilotAttachments(agent, input.attachments ?? null);
 
     this.running.add(agent.id);
     this.turnSources.set(agent.id, input.source);
@@ -355,11 +365,17 @@ export class Runner {
     });
     turnUsage.set(agent.id, emptyUsage());
     const visible = input.source === "routine" ? `[Routine] ${text}` : text;
-    const userMessage = this.db.addMessage(agent.id, "user", visible, turnId);
+    const userMessage = this.db.addMessage(
+      agent.id,
+      "user",
+      visible,
+      turnId,
+      null,
+      attachments.stored.length > 0 ? attachments.stored : null,
+    );
     this.sink({ agentId: agent.id, type: "user", text: visible });
 
     try {
-      const parsed = parseCommand(text);
       if (parsed) {
         if (parsed.command.ui) {
           throw new Error(`${parsed.command.usage} is a composer command. Use it from the chat composer.`);
@@ -422,12 +438,18 @@ export class Runner {
       const prompt = buildSessionPrompt({
         summary: agent.memorySummary,
         prior,
-        latest,
+        latest: attachments.prompt ? `${attachments.prompt}\n\n${latest}` : latest,
         routine: input.source === "routine",
         freshSession: opened.fresh,
         now: localIso(new Date()),
       });
-      const response = await opened.live.session.sendAndWait({ prompt }, TURN_TIMEOUT_MS);
+      const response = await opened.live.session.sendAndWait(
+        {
+          prompt,
+          ...(attachments.sdk.length > 0 ? { attachments: attachments.sdk } : {}),
+        },
+        TURN_TIMEOUT_MS,
+      );
       const finalText = readAssistantText(response, streamed).trim() || streamed.trim() || "No response.";
       this.db.addMessage(agent.id, "assistant", finalText, turnId, usageOrNull(agent.id));
       this.db.finishTurn(turnId, "ok");
@@ -491,17 +513,31 @@ export class Runner {
   private async runCompactTurn(agent: Agent, userMessageId: string, turnId: string): Promise<string> {
     const prior = this.db.listMessages(agent.id).filter((message) => message.id !== userMessageId);
     const turns = memoryTurns(prior);
-    const plan = compactPlan(turns, this.db.getMemoryTurnCount(agent.id), agent.memorySummary);
-    let reply = COMPACT_EMPTY;
-    if (plan.action === "update") {
-      const wrote = await this.writeMemory(agent, plan.pending, turns.length);
-      if (!wrote) throw new Error("Copilot could not compact this conversation.");
-      await this.dropSession(agent.id).catch(() => undefined);
-      reply = COMPACT_DONE;
-    } else if (plan.action === "current") {
-      await this.dropSession(agent.id).catch(() => undefined);
-      reply = COMPACT_CURRENT;
+    let current = agent;
+    let reply: string | null = null;
+    for (let attempt = 0; attempt < 2 && reply === null; attempt += 1) {
+      const plan = compactPlan(turns, this.db.getMemoryTurnCount(agent.id), current.memorySummary);
+      if (plan.action === "empty") {
+        reply = COMPACT_EMPTY;
+        break;
+      }
+      if (plan.action === "current") {
+        await this.dropSession(agent.id).catch(() => undefined);
+        reply = COMPACT_CURRENT;
+        break;
+      }
+      if (await this.writeMemory(current, plan.pending, turns.length)) {
+        await this.dropSession(agent.id).catch(() => undefined);
+        reply = COMPACT_DONE;
+        break;
+      }
+      const latest = this.db.getAgent(agent.id);
+      if (!latest || latest.memorySummary === current.memorySummary) {
+        throw new Error("Copilot could not compact this conversation.");
+      }
+      current = latest;
     }
+    if (reply === null) throw new Error("Copilot could not compact this conversation.");
     this.db.addMessage(agent.id, "assistant", reply, turnId);
     this.db.finishTurn(turnId, "ok");
     this.sink({ agentId: agent.id, type: "done", text: reply });

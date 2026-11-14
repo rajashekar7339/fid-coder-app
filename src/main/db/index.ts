@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { AUTO_MODEL_ID, normalizeModelId } from "../../shared/model";
 import { normalizeToolProfile } from "../../shared/tool-profile";
 import { normalizeApprovalMatch } from "../../shared/approval";
+import { parseMessageAttachments } from "../../shared/attachments";
 import type {
   Agent,
   AgentInput,
@@ -15,6 +16,7 @@ import type {
   ApprovalSource,
   FileChangeKind,
   Message,
+  MessageAttachment,
   MessageRole,
   Routine,
   RoutineInput,
@@ -57,6 +59,7 @@ type MessageRow = {
   created_at: string;
   turn_id: string | null;
   usage: string | null;
+  attachments: string | null;
 };
 
 type TurnRow = {
@@ -349,6 +352,7 @@ export class AppDatabase {
     this.ensureAgentMemoryColumns();
     this.ensureMessageTurnColumn();
     this.ensureMessageUsageColumn();
+    this.ensureMessageAttachmentsColumn();
     const addedToolProfile = this.ensureAgentToolProfileColumn();
     this.ensureAgentReadOnlyColumn();
     this.ensureRoutineOnceColumns();
@@ -428,6 +432,12 @@ export class AppDatabase {
     const columns = this.db.prepare("PRAGMA table_info(messages)").all() as { name: string }[];
     if (columns.some((column) => column.name === "usage")) return;
     this.db.exec("ALTER TABLE messages ADD COLUMN usage TEXT");
+  }
+
+  private ensureMessageAttachmentsColumn(): void {
+    const columns = this.db.prepare("PRAGMA table_info(messages)").all() as { name: string }[];
+    if (columns.some((column) => column.name === "attachments")) return;
+    this.db.exec("ALTER TABLE messages ADD COLUMN attachments TEXT");
   }
 
   private removeSeededTodo(): void {
@@ -685,13 +695,25 @@ export class AppDatabase {
     content: string,
     turnId: string | null = null,
     usage: TokenUsage | null = null,
+    attachments: MessageAttachment[] | null = null,
   ): Message {
     const id = crypto.randomUUID();
     const createdAt = new Date().toISOString();
     this.db
-      .prepare("INSERT INTO messages (id, agent_id, role, content, created_at, turn_id, usage) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(id, agentId, role, content, createdAt, turnId, usage ? JSON.stringify(usage) : null);
-    return { id, agentId, role, content, createdAt, turnId, usage };
+      .prepare(
+        "INSERT INTO messages (id, agent_id, role, content, created_at, turn_id, usage, attachments) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        id,
+        agentId,
+        role,
+        content,
+        createdAt,
+        turnId,
+        usage ? JSON.stringify(usage) : null,
+        attachments && attachments.length > 0 ? JSON.stringify(attachments) : null,
+      );
+    return { id, agentId, role, content, createdAt, turnId, usage, attachments };
   }
 
   createTurn(agentId: string, source: string): string {
@@ -1068,6 +1090,7 @@ function mapMessage(row: MessageRow): Message {
     createdAt: row.created_at,
     turnId: row.turn_id ?? null,
     usage: parseUsage(row.usage),
+    attachments: parseMessageAttachments(row.attachments),
   };
 }
 

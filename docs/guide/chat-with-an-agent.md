@@ -10,6 +10,16 @@ Type in the composer and press **Enter**. Use **Shift+Enter** for a new line. Th
 
 The agent can only answer after Copilot is connected. If the composer says "Sign in to Copilot to chat", open **Settings → Copilot** and sign in.
 
+## Attach files and code
+
+Use the paperclip button in the composer to attach local files. A text or code file is copied to `.fid/uploads/` in the workspace and the agent is given its path; it reads the file with its normal file tools. A text or code attachment needs an agent with file tools; a Browser & Jira agent can still receive a supported image up to 10 MB. PNG, JPEG, WebP, and GIF images are sent to the model as images, capped at 10 MB. Other images, and text or code files of any size, are passed by path. Remove a chip with its **×** before sending. If the draft is empty, the message is sent as "Review the attached content."
+
+To point at code, open the Workspace panel. The file you are viewing is automatically the active context for your next message, and the last file you visit wins. Click a line number and shift-click or drag down the gutter to narrow it to a range; the composer shows an active chip such as `runner.ts:420–440`. Press **Ctrl+Shift+L** or use the chip's pin action to keep that file or range, then move to another file and pin it too. Pinned chips are sent together; the agent decides which context to use. Escape clears a selection, and the chip's **×** clears the active file.
+
+Attachments use the model's attachment support. An image needs a model that accepts images. The chips stay under the user message after the turn is saved.
+
+Text and code attachments are not sent as binary context. The app copies the file into the workspace and puts its path at the top of the message, so the agent can read it with the same tools it uses for the repository. This follows Code Puppy's approach: the app passes the file, and the agent decides what to do with it.
+
 ## Improve a draft
 
 Choose **Enhance** next to **Commands** to rewrite the current draft. It makes the wording shorter and more specific, keeps paths, quotes, and slash commands, and uses the last few messages for context. Nothing is sent: the rewrite stays in the composer so you can edit it and send when ready. Choose **Undo** to restore the draft you had before the rewrite.

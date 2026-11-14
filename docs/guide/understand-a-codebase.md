@@ -56,6 +56,8 @@ Architecture answers cite files as `path:line`, for example `src/main/chat/runne
 
 The **References** section lists every citation in the answer. Choose one to open that file and range in place. Files with a recorded change are marked **changed** and open as a diff; the rest open as a read-only file. Use the **Changed** section to browse the turn's files, or **All files** to explore the rest of the workspace. **All files** loads one folder at a time, marks files changed in the selected turn, and opens files read-only; **View diff** returns to the recorded change. Markdown files open as a rendered document and HTML files open in a sandboxed preview; use **Preview / Source** to switch. The panel reads a window around the citation and never modifies the file.
 
+To ask about code you found yourself, open the file in the Workspace panel. The file is already the active context for your next message, and the last file you visit wins. Click a line number and drag or shift-click to narrow it to a range; the active chip in the composer shows the file or range. Press **Ctrl+Shift+L** or use the chip's pin action to keep it, then move to another file and pin that too. Pinned chips are sent together; the agent decides what to use. You can also use the paperclip in the composer to attach a local file; a text or code upload is copied into `.fid/uploads/` so the agent can read it, and an image is sent as an image.
+
 ## Troubleshooting
 
 Use **Troubleshoot an error** and paste the stack trace or log after the prompt. Ask mode reads the code and log and explains the likely cause with evidence. If the answer needs a build or test run, switch to **Agent mode**.

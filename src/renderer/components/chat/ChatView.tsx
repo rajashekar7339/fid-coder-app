@@ -22,17 +22,28 @@ import {
   MousePointerClick,
   Network,
   PanelRight,
+  Paperclip,
+  Pin,
   ScanSearch,
   ShieldCheck,
   Slash,
   Sparkles,
   Square,
+  Tag,
   Terminal,
   Undo2,
   Wrench,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import type { Citation } from "../../../shared/citations";
+import {
+  ATTACHMENT_ONLY_MESSAGE,
+  addAttachments,
+  attachmentKey,
+  attachmentLabel,
+  attachmentsForSend,
+} from "../../../shared/attachments";
 import { groupToolCalls, liveTurnSettled, projectThread, userTurnAccepted, type LiveTool, type LiveTurn } from "../../../shared/chat-thread";
 import { COMMANDS, commandAvailability, filterCommands, parseCommand, type CommandInfo } from "../../../shared/commands";
 import { changeTotals, findChangedFile } from "../../../shared/changes";
@@ -54,6 +65,7 @@ import type {
   ChatEvent,
   CopilotModel,
   Message,
+  MessageAttachment,
   SkillInfo,
 } from "../../../shared/types";
 import { agentSubtitle } from "../../lib/agent-display";
@@ -82,6 +94,11 @@ type Props = {
   checkingSignIn: boolean;
   deskOpen: boolean;
   changeSets: ChangeSet[];
+  attachments: MessageAttachment[];
+  activeAttachment: MessageAttachment | null;
+  onAttachmentsChange: (next: MessageAttachment[]) => void;
+  onPinActive: () => void;
+  onClearActive: () => void;
   onOpenChanges: (request: ChangesOpenRequest) => void;
   onRefreshChanges: () => Promise<void> | void;
   approval: ApprovalRequest | null;
@@ -228,6 +245,11 @@ export function ChatView({
   checkingSignIn,
   deskOpen,
   changeSets,
+  attachments,
+  activeAttachment,
+  onAttachmentsChange,
+  onPinActive,
+  onClearActive,
   onOpenChanges,
   onRefreshChanges,
   approval,
@@ -263,6 +285,7 @@ export function ChatView({
   const [skillPickerIndex, setSkillPickerIndex] = useState(0);
   const [skillPickerClosed, setSkillPickerClosed] = useState(false);
   const [enhancing, setEnhancing] = useState(false);
+  const [attaching, setAttaching] = useState(false);
   const [enhanceStatus, setEnhanceStatus] = useState<string | null>(null);
   const [undoDraft, setUndoDraft] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -328,6 +351,12 @@ export function ChatView({
   const hint = !commandsOpen && !skillPickerOpen ? (skillHint ?? commandHint) : null;
   const canEnhance =
     settingsReady && signedIn && !running && !enhancing && draft.trim().length > 0;
+  const activeKey = activeAttachment ? attachmentKey(activeAttachment) : null;
+  const activePinned =
+    activeKey !== null && attachments.some((attachment) => attachmentKey(attachment) === activeKey);
+  const showingActive = activePinned ? null : activeAttachment;
+  const allAttachments = attachmentsForSend(attachments, activeAttachment);
+  const hasContent = draft.trim().length > 0 || allAttachments.length > 0;
   const enhanceHint = enhancing ? "Enhancing your draft…" : enhanceStatus;
 
   useEffect(() => {
@@ -505,6 +534,7 @@ export function ChatView({
           if (current?.userText === event.text) return current;
           return blankLive(current?.startedAt ?? Date.now(), {
             userText: event.text,
+            userAttachments: current?.userAttachments,
             assistant: current?.assistant ?? "",
             tools: current?.tools ?? [],
           });
@@ -616,6 +646,27 @@ export function ChatView({
     setShowJump((current) => (current === !atBottom ? current : !atBottom));
   }
 
+  async function attachFiles() {
+    if (attaching || running || enhancing) return;
+    setAttaching(true);
+    setError(null);
+    try {
+      const result = await fid().dialog.pickFiles();
+      if (result.attachments.length > 0) {
+        onAttachmentsChange(addAttachments(attachments, result.attachments));
+      }
+      if (result.errors.length > 0) setError(result.errors.join(" "));
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      setAttaching(false);
+    }
+  }
+
+  function removeAttachment(key: string) {
+    onAttachmentsChange(attachments.filter((attachment) => attachmentKey(attachment) !== key));
+  }
+
   async function enhancePrompt() {
     if (!canEnhance || enhanceLock.current) return;
     const original = draft;
@@ -685,13 +736,18 @@ export function ChatView({
   }
 
   function sendText(raw: string) {
-    const text = raw.trim();
+    const text =
+      raw.trim() || (allAttachments.length > 0 ? ATTACHMENT_ONLY_MESSAGE : "");
     if (!text || running || enhancing || sendLock.current) return;
     const uiCommand = COMMANDS.find((command) => command.ui && text === `/${command.id}`);
     if (uiCommand) {
       chooseCommand(uiCommand);
       return;
     }
+    const command = parseCommand(text);
+    const usesAttachments = command === null || command.command.id === "skills";
+    const sentAttachments = usesAttachments ? allAttachments : [];
+    const sentPinned = attachments;
     setCommandsOpen(false);
     sendLock.current = true;
     queueMicrotask(() => {
@@ -702,13 +758,16 @@ export function ChatView({
     pinned.current = true;
     setShowJump(false);
     setDraft("");
+    if (usesAttachments) onAttachmentsChange([]);
     setError(null);
     setUndoDraft(null);
     setEnhanceStatus(null);
     setRunning(true);
-    updateLive(() => blankLive(startedAt, { userText: text }));
+    updateLive(() =>
+      blankLive(startedAt, { userText: text, userAttachments: sentAttachments }),
+    );
     void fid()
-      .chat.send(agent.id, text)
+      .chat.send(agent.id, text, sentAttachments)
       .catch(async (caught: unknown) => {
         if (generation.current !== gen) return;
         const loadId = ++messageLoad.current;
@@ -727,6 +786,7 @@ export function ChatView({
           setLiveState(null);
           setRunning(false);
           setDraft((current) => (current.trim() ? current : text));
+          if (usesAttachments && sentPinned.length > 0) onAttachmentsChange(sentPinned);
         }
         const message = errorText(caught);
         setError(message);
@@ -1144,6 +1204,70 @@ export function ChatView({
               </div>
             </div>
           ) : null}
+          {attachments.length > 0 || showingActive ? (
+            <div className="composer-attachments" aria-label="Attached context">
+              {attachments.map((attachment) => {
+                const label = attachmentLabel(attachment);
+                return (
+                  <span
+                    className="composer-attachment"
+                    key={attachmentKey(attachment)}
+                    title={`${attachment.path} · pinned`}
+                  >
+                    {attachment.kind === "upload" ? (
+                      <Paperclip size={10} aria-hidden="true" />
+                    ) : (
+                      <FileText size={10} aria-hidden="true" />
+                    )}
+                    <span className="composer-attachment-label">{label}</span>
+                    <Pin
+                      size={8}
+                      className="composer-attachment-pinned"
+                      aria-hidden="true"
+                    />
+                    <button
+                      type="button"
+                      className="composer-attachment-remove"
+                      aria-label={`Remove ${label}`}
+                      onClick={() => removeAttachment(attachmentKey(attachment))}
+                    >
+                      <X size={9} />
+                    </button>
+                  </span>
+                );
+              })}
+              {showingActive ? (
+                <span
+                  className="composer-attachment is-active-context"
+                  title="Active in the workspace panel. Included with your next message. Ctrl+Shift+L to pin."
+                >
+                  <Tag size={10} aria-hidden="true" />
+                  <span className="composer-attachment-label">
+                    {attachmentLabel(showingActive)}
+                  </span>
+                  <span className="composer-attachment-active">active</span>
+                  <button
+                    type="button"
+                    className="composer-attachment-pin"
+                    aria-label={`Pin ${attachmentLabel(showingActive)} to this message`}
+                    title="Pin to this message (Ctrl+Shift+L)"
+                    onClick={onPinActive}
+                  >
+                    <Pin size={9} />
+                  </button>
+                  <button
+                    type="button"
+                    className="composer-attachment-remove"
+                    aria-label={`Clear active ${attachmentLabel(showingActive)}`}
+                    title="Clear the active file"
+                    onClick={onClearActive}
+                  >
+                    <X size={9} />
+                  </button>
+                </span>
+              ) : null}
+            </div>
+          ) : null}
           <textarea
             ref={composer}
             rows={1}
@@ -1270,6 +1394,23 @@ export function ChatView({
                 Agent mode
               </button>
             </div>
+            <button
+              type="button"
+              className="composer-command composer-attach"
+              aria-label="Attach files"
+              title="Attach files from this PC"
+              disabled={!settingsReady || !signedIn || running || enhancing || attaching}
+              onClick={() => void attachFiles()}
+            >
+              {attaching ? (
+                <Loader2 size={11} className="spin" aria-hidden="true" />
+              ) : (
+                <Paperclip size={11} aria-hidden="true" />
+              )}
+              <span className="composer-attach-label">
+                {attaching ? "Attaching" : "Attach"}
+              </span>
+            </button>
             <ModelSelect
               value={agent.model}
               models={models}
@@ -1341,7 +1482,7 @@ export function ChatView({
                 type="submit"
                 className="send-button"
                 aria-label="Send message"
-                disabled={!settingsReady || !signedIn || !draft.trim() || enhancing}
+                disabled={!settingsReady || !signedIn || !hasContent || enhancing}
               >
                 <ArrowUp size={15} />
               </button>
@@ -1414,6 +1555,24 @@ function MessageRow({
   if (message.role === "user") {
     return (
       <div className="user-message">
+        {message.attachments && message.attachments.length > 0 ? (
+          <div className="user-attachments" aria-label="Attached context">
+            {message.attachments.map((attachment) => (
+              <span
+                className="user-attachment"
+                key={attachmentKey(attachment)}
+                title={attachment.path}
+              >
+                {attachment.kind === "upload" ? (
+                  <Paperclip size={9} aria-hidden="true" />
+                ) : (
+                  <FileText size={9} aria-hidden="true" />
+                )}
+                {attachmentLabel(attachment)}
+              </span>
+            ))}
+          </div>
+        ) : null}
         <div className="user-bubble">{message.content}</div>
         <time
           className="user-time"

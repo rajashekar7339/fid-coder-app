@@ -2,6 +2,7 @@
 //
 // Usage:
 //   npm run test:changes
+//   FID_WATCH_MS=900 npm run test:changes   # pause after each click to watch
 //
 // No Copilot turn is needed. The test seeds a temporary database, checkpoint
 // blobs, and a workspace, then launches the app against them.
@@ -19,9 +20,12 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), "fid-coder-changes-"));
 const userData = path.join(root, "userdata");
 const workspace = path.join(root, "workspace");
 const shots = path.join(root, "shots");
+const uploadDir = path.join(root, "upload");
+const uploadFile = path.join(uploadDir, "brief.txt");
 const agentName = "Changes E2E";
 const emptyAgentName = "Empty Workspace E2E";
 const noWorkspaceAgentName = "No Workspace E2E";
+const watchMs = Number(process.env.FID_WATCH_MS ?? 0);
 const require = createRequire(import.meta.url);
 const { AppDatabase } = require("../../dist/main/db/index.js");
 const { CheckpointStore } = require("../../dist/main/workspace/checkpoints.js");
@@ -45,10 +49,16 @@ async function pause(ms = 8) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function watch(ms = watchMs) {
+  if (watchMs > 0) await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function seed() {
   fs.mkdirSync(userData, { recursive: true });
   fs.mkdirSync(workspace, { recursive: true });
   fs.mkdirSync(shots, { recursive: true });
+  fs.mkdirSync(uploadDir, { recursive: true });
+  fs.writeFileSync(uploadFile, "Attached brief from the local disk.\n", "utf8");
   write("src/demo.ts", "export const value = 1;\n");
   write("src/other.ts", "export const other = 1;\n");
   write("lib/Helper.java", "public class Helper {\n  static int value() { return 42; }\n}\n");
@@ -177,6 +187,7 @@ async function ensureAgent(page) {
   const title = await page.locator(".chat-title h1").first().innerText().catch(() => "");
   if (title.trim() === agentName) return;
   await page.locator(".agent-row").filter({ hasText: agentName }).first().click();
+  await watch();
   await page.waitForFunction(
     (name) => document.querySelector(".chat-title h1")?.textContent?.trim() === name,
     agentName,
@@ -192,7 +203,11 @@ async function main() {
       executablePath: path.join(appDir, "node_modules", "electron", "dist", "electron.exe"),
       args: ["."],
       cwd: appDir,
-      env: { ...process.env, FID_CODER_USER_DATA: userData },
+      env: {
+        ...process.env,
+        FID_CODER_USER_DATA: userData,
+        FID_CODER_ATTACH_IMPORT_FILES: uploadFile,
+      },
       timeout: 60_000,
     });
     const page = await app.firstWindow({ timeout: 60_000 });
@@ -213,6 +228,7 @@ async function main() {
     await shot(page, "01-card");
 
     await page.locator(".header-workspace").click();
+    await watch();
     await page.waitForSelector(".changes-panel", { timeout: 15_000 });
     check("the changes panel opens and the desk closes", (await page.locator(".agent-desk").count()) === 0);
     await page.waitForFunction(
@@ -233,6 +249,7 @@ async function main() {
     const panel = page.locator(".changes-panel");
     const splitWidth = await panel.evaluate((element) => element.getBoundingClientRect().width);
     await page.getByRole("button", { name: "Collapse chat" }).click();
+    await watch();
     await page.waitForFunction(
       () => document.querySelector(".app-shell")?.classList.contains("is-chat-collapsed"),
       null,
@@ -251,6 +268,7 @@ async function main() {
     );
     await shot(page, "02b-workspace-wide");
     await page.getByRole("button", { name: "Show chat" }).click();
+    await watch();
     await page.waitForFunction(
       () => !document.querySelector(".app-shell")?.classList.contains("is-chat-collapsed"),
       null,
@@ -280,8 +298,10 @@ async function main() {
     check("the filter narrows the loaded tree", true);
     await filter.fill("");
 
+    console.log("watch: full-path citation -> src/demo.ts:1-2");
     const firstCitation = page.locator("article.message .md-citation", { hasText: "src/demo.ts:1-2" }).last();
     await firstCitation.click();
+    await watch();
     await page.waitForFunction(
       () => /src\/demo\.ts:1[–-]2/.test(document.querySelector(".changes-cite-context")?.textContent ?? ""),
       null,
@@ -299,8 +319,10 @@ async function main() {
     check("the panel lists every citation in the answer", references === 4, String(references));
     await shot(page, "03-cited-diff");
 
+    console.log("watch: full-path citation to an unchanged file -> README.md:1-1");
     const readmeCitation = page.locator("article.message .md-citation", { hasText: "README.md:1-1" }).last();
     await readmeCitation.click();
+    await watch();
     await page.waitForFunction(
       () => /README\.md/.test(document.querySelector(".changes-diff-name")?.textContent ?? ""),
       null,
@@ -320,6 +342,15 @@ async function main() {
     const readmeRow = page.locator(".workspace-tree-file", { hasText: "README.md" }).first();
     await readmeRow.waitFor({ timeout: 15_000 });
     await readmeRow.click();
+    await watch();
+    const sourceToggle = page
+      .locator(".changes-view-toggle")
+      .getByRole("button", { name: "Source" });
+    if ((await sourceToggle.count()) > 0) {
+      console.log("watch: switch README.md to Source");
+      await sourceToggle.click();
+      await watch();
+    }
     await page.waitForFunction(
       () =>
         /README\.md/.test(document.querySelector(".changes-diff-name")?.textContent ?? "") &&
@@ -336,10 +367,12 @@ async function main() {
     );
     await shot(page, "04b-explorer");
 
+    console.log("watch: bare-name citation -> Helper.java:2-2 (should open lib/Helper.java)");
     const helperCitation = page
       .locator("article.message .md-citation", { hasText: "Helper.java:2-2" })
       .last();
     await helperCitation.click();
+    await watch();
     await page.waitForFunction(
       () => /lib\/Helper\.java/.test(document.querySelector(".changes-diff-name")?.textContent ?? ""),
       null,
@@ -357,10 +390,12 @@ async function main() {
       await page.locator(".changes-diff-name").innerText(),
     );
     await shot(page, "04a-bare-name-citation");
+    await watch(3000);
 
     const imageRow = page.locator(".workspace-tree-file", { hasText: "preview.png" }).first();
     await imageRow.waitFor({ timeout: 15_000 });
     await imageRow.click();
+    await watch();
     await page.waitForSelector(".changes-image-preview img", { timeout: 15_000 });
     const imageSrc = await page.locator(".changes-image-preview img").getAttribute("src");
     check(
@@ -372,6 +407,7 @@ async function main() {
 
     const demoRow = page.locator(".workspace-tree-file", { hasText: "demo.ts" }).first();
     await demoRow.click();
+    await watch();
     await page.waitForFunction(
       () =>
         /src\/demo\.ts/.test(document.querySelector(".changes-diff-name")?.textContent ?? "") &&
@@ -383,7 +419,150 @@ async function main() {
       "a changed file opens read-only from All files",
       /recorded change/.test(await page.locator(".changes-diff-foot").innerText()),
     );
+
+    console.log("watch: select line numbers 1-2 in demo.ts -> active context chip");
+    await page.locator(".citation-line-number").nth(0).click();
+    await watch();
+    await page.locator(".citation-line-number").nth(1).click({ modifiers: ["Shift"] });
+    await watch();
+    check(
+      "dragging line numbers marks a range",
+      (await page.locator(".citation-line.is-selected").count()) === 2,
+    );
+    await page.waitForFunction(
+      () =>
+        /demo\.ts:1–2/.test(
+          document.querySelector(".composer-attachment.is-active-context")?.textContent ?? "",
+        ),
+      null,
+      { timeout: 10_000 },
+    );
+    check(
+      "a line selection is included automatically",
+      /demo\.ts:1–2/.test(await page.locator(".composer-attachments").innerText()),
+      await page.locator(".composer-attachments").innerText(),
+    );
+    await shot(page, "04b2-composer-active");
+    await watch(1500);
+
+    console.log("watch: Ctrl+Shift+L pins the active selection");
+    await page.keyboard.press("Control+Shift+L");
+    await watch();
+    await page.waitForSelector(".composer-attachment:not(.is-active-context)", {
+      timeout: 10_000,
+    });
+    check(
+      "pinning keeps the selection in the message",
+      /demo\.ts:1–2/.test(await page.locator(".composer-attachments").innerText()),
+      await page.locator(".composer-attachments").innerText(),
+    );
+    await shot(page, "04b2b-composer-pinned");
+    await watch(1500);
+
+    console.log("watch: open README.md -> last file becomes active, pinned demo stays");
+    await readmeRow.click();
+    await watch();
+    await page.waitForFunction(
+      () => /README\.md/.test(document.querySelector(".changes-diff-name")?.textContent ?? ""),
+      null,
+      { timeout: 10_000 },
+    );
+    await page.waitForFunction(
+      () =>
+        /README\.md/.test(
+          document.querySelector(".composer-attachment.is-active-context")?.textContent ?? "",
+        ),
+      null,
+      { timeout: 10_000 },
+    );
+    check(
+      "the last file visited becomes the active context",
+      /README\.md/.test(await page.locator(".composer-attachments").innerText()) &&
+        /demo\.ts:1–2/.test(await page.locator(".composer-attachments").innerText()),
+      await page.locator(".composer-attachments").innerText(),
+    );
+    await shot(page, "04b2c-composer-last-file");
+
+    console.log("watch: Ctrl+Shift+L pins README.md too -> two pinned files");
+    await page.keyboard.press("Control+Shift+L");
+    await watch();
+    await page.waitForFunction(
+      () => document.querySelectorAll(".composer-attachment:not(.is-active-context)").length === 2,
+      null,
+      { timeout: 10_000 },
+    );
+    check(
+      "multiple files can be pinned before sending",
+      /demo\.ts:1–2/.test(await page.locator(".composer-attachments").innerText()) &&
+        /README\.md/.test(await page.locator(".composer-attachments").innerText()),
+      await page.locator(".composer-attachments").innerText(),
+    );
+    await shot(page, "04b2d-composer-multi");
+    await watch(1500);
+
+    await page.getByRole("button", { name: "Remove demo.ts:1–2" }).click();
+    await watch();
+    await page.getByRole("button", { name: "Remove README.md" }).click();
+    await watch();
+    await page.waitForSelector(".composer-attachment.is-active-context", { timeout: 10_000 });
+    await page.getByRole("button", { name: "Clear active README.md" }).click();
+    await watch();
+    await demoRow.click();
+    await watch();
+    await page.waitForSelector(".composer-attachment.is-active-context", { timeout: 10_000 });
+    await page.getByRole("button", { name: "Clear active demo.ts" }).click();
+    await watch();
+    await page.waitForSelector(".composer-attachments", { state: "detached", timeout: 10_000 });
+
+    console.log("watch: drag across code text -> selected lines become active");
+    const lineOne = page.locator('.citation-line[data-line="1"] .citation-line-text');
+    const lineTwo = page.locator('.citation-line[data-line="2"] .citation-line-text');
+    const boxOne = await lineOne.boundingBox();
+    const boxTwo = await lineTwo.boundingBox();
+    if (!boxOne || !boxTwo) throw new Error("demo.ts text is not visible for the drag");
+    await page.mouse.move(boxOne.x + 2, boxOne.y + boxOne.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(boxTwo.x + Math.min(boxTwo.width - 2, 80), boxTwo.y + boxTwo.height / 2, {
+      steps: 6,
+    });
+    await page.mouse.up();
+    await watch();
+    await page.waitForFunction(
+      () =>
+        /demo\.ts:1–2/.test(
+          document.querySelector(".composer-attachment.is-active-context")?.textContent ?? "",
+        ),
+      null,
+      { timeout: 10_000 },
+    );
+    check(
+      "dragging code text selects its lines automatically",
+      (await page.locator(".citation-line.is-selected").count()) === 2,
+      await page.locator(".composer-attachments").innerText(),
+    );
+    await shot(page, "04b2e-text-selection");
+    await watch(1500);
+    await page.getByRole("button", { name: "Clear active demo.ts:1–2" }).click();
+    await watch();
+    await page.waitForSelector(".composer-attachments", { state: "detached", timeout: 10_000 });
+
+    console.log("watch: paperclip -> attach brief.txt -> composer chip");
+    await page.getByRole("button", { name: "Attach files" }).click();
+    await watch();
+    await page.waitForSelector(".composer-attachment", { timeout: 10_000 });
+    check(
+      "the composer attaches a local file",
+      /brief\.txt/.test(await page.locator(".composer-attachments").innerText()),
+      await page.locator(".composer-attachments").innerText(),
+    );
+    await shot(page, "04b3-composer-upload");
+    await watch(1500);
+    await page.getByRole("button", { name: "Remove brief.txt" }).click();
+    await watch();
+    await page.waitForSelector(".composer-attachment", { state: "detached", timeout: 10_000 });
+
     await page.getByRole("button", { name: "View diff" }).click();
+    await watch();
     await page.waitForFunction(
       () =>
         /src\/demo\.ts/.test(document.querySelector(".changes-diff-name")?.textContent ?? "") &&
@@ -394,6 +573,7 @@ async function main() {
     check("View diff returns to the turn diff", true);
 
     await page.locator(".workspace-tree-folder", { hasText: "docs" }).click();
+    await watch();
     await page.waitForFunction(
       () =>
         [...document.querySelectorAll(".workspace-tree-file")].some((row) =>
@@ -407,6 +587,7 @@ async function main() {
     const markdownRow = page.locator(".workspace-tree-file", { hasText: "guide.md" }).first();
     await markdownRow.waitFor({ timeout: 15_000 });
     await markdownRow.click();
+    await watch();
     await page.waitForSelector(".changes-markdown-preview .md-heading", { timeout: 15_000 });
     const markdownText = await page.locator(".changes-markdown-preview").innerText();
     check(
@@ -416,6 +597,7 @@ async function main() {
     );
     await shot(page, "04d-markdown");
     await page.locator(".changes-view-toggle").getByRole("button", { name: "Source" }).click();
+    await watch();
     await page.waitForSelector(".changes-diff-scroll .citation-code", { timeout: 15_000 });
     check(
       "Markdown has a source view",
@@ -424,6 +606,7 @@ async function main() {
 
     const htmlRow = page.locator(".workspace-tree-file", { hasText: "preview.html" }).first();
     await htmlRow.click();
+    await watch();
     await page.waitForSelector(".changes-html-preview iframe", { timeout: 15_000 });
     const frame = page.frameLocator(".changes-html-preview iframe");
     await frame.locator("h1").waitFor({ timeout: 15_000 });
@@ -437,6 +620,7 @@ async function main() {
     await shot(page, "04e-html");
 
     await firstCitation.click();
+    await watch();
     await page.waitForFunction(
       () => /src\/demo\.ts:1[–-]2/.test(document.querySelector(".changes-cite-context")?.textContent ?? ""),
       null,
@@ -449,8 +633,10 @@ async function main() {
     );
 
     await page.locator(".changes-diff-foot .btn-danger-outline").click();
+    await watch();
     await page.waitForSelector(".confirm-modal", { timeout: 10_000 });
     await page.locator(".confirm-modal .btn-destructive").click();
+    await watch();
     await page.waitForSelector(".confirm-modal", { state: "detached", timeout: 20_000 });
     await page.waitForFunction(
       () => document.querySelectorAll(".changes-tree-file").length === 1,
@@ -460,8 +646,10 @@ async function main() {
     check("revert file restores the old content", fs.readFileSync(path.join(workspace, "src/demo.ts"), "utf8") === before);
 
     await page.locator(".changes-undo").click();
+    await watch();
     await page.waitForSelector(".confirm-modal", { timeout: 10_000 });
     await page.locator(".confirm-modal .btn-destructive").click();
+    await watch();
     await page.waitForSelector(".confirm-modal", { state: "detached", timeout: 20_000 });
     await page.waitForFunction(
       () => !document.querySelector(".changes-cite-context") && Boolean(document.querySelector(".changes-tree-file")),
@@ -487,8 +675,10 @@ async function main() {
     await shot(page, "05-after-revert");
 
     await page.getByRole("button", { name: "Close changes" }).click();
+    await watch();
     await page.waitForSelector(".changes-panel", { state: "detached", timeout: 10_000 });
     await page.locator('button[aria-label="Show agent desk"]').click();
+    await watch();
     await page.waitForSelector(".agent-desk", { timeout: 10_000 });
     check("the desk keeps a one-line changes summary", /src\/other\.ts|1 file/.test(await page.locator(".desk-change-summary").innerText()));
 
@@ -496,12 +686,15 @@ async function main() {
     await deskBrowse.scrollIntoViewIfNeeded();
     await shot(page, "05b-desk-browse");
     await deskBrowse.click();
+    await watch();
     await page.waitForSelector(".changes-panel", { timeout: 15_000 });
     check("the desk opens the workspace browser", true);
     await page.getByRole("button", { name: "Close changes" }).click();
+    await watch();
     await page.waitForSelector(".changes-panel", { state: "detached", timeout: 10_000 });
 
     await page.locator(".agent-row").filter({ hasText: emptyAgentName }).first().click();
+    await watch();
     await page.waitForFunction(
       (name) => document.querySelector(".chat-title h1")?.textContent?.trim() === name,
       emptyAgentName,
@@ -516,6 +709,7 @@ async function main() {
       browseLabel.replace(/\s+/g, " ").trim(),
     );
     await browse.click();
+    await watch();
     await page.waitForSelector(".changes-panel", { timeout: 15_000 });
     await page.waitForFunction(
       () => /No recorded changes/.test(document.querySelector(".changes-panel")?.textContent ?? ""),
@@ -536,15 +730,19 @@ async function main() {
     await shot(page, "06-browse-empty");
 
     await page.getByRole("button", { name: "Close changes" }).click();
+    await watch();
     await page.waitForSelector(".changes-panel", { state: "detached", timeout: 10_000 });
     await page.locator(".composer-input").fill("/files");
     await page.locator(".command-menu").getByRole("option", { name: /\/files/ }).click();
+    await watch();
     await page.waitForSelector(".changes-panel", { timeout: 15_000 });
     check("/files opens the workspace browser", true);
     await page.getByRole("button", { name: "Close changes" }).click();
+    await watch();
     await page.waitForSelector(".changes-panel", { state: "detached", timeout: 10_000 });
 
     await page.locator(".agent-row").filter({ hasText: noWorkspaceAgentName }).first().click();
+    await watch();
     await page.waitForFunction(
       (name) => document.querySelector(".chat-title h1")?.textContent?.trim() === name,
       noWorkspaceAgentName,

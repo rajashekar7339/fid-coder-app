@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, ShieldAlert, X } from "lucide-react";
 import { COPILOT_USAGE_REFRESH_MS, type CopilotUsageView } from "../shared/copilot-usage";
+import { addAttachments } from "../shared/attachments";
 import type {
   Agent,
   ApprovalAction,
@@ -8,6 +9,7 @@ import type {
   ChangeSet,
   ChangesOpenRequest,
   CopilotModel,
+  MessageAttachment,
   Routine,
   SettingsView,
 } from "../shared/types";
@@ -64,6 +66,8 @@ export function App() {
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [skillSeed, setSkillSeed] = useState<string | null>(null);
   const [skillsRevision, setSkillsRevision] = useState(0);
+  const [pendingAttachments, setPendingAttachments] = useState<MessageAttachment[]>([]);
+  const [activeAttachment, setActiveAttachment] = useState<MessageAttachment | null>(null);
 
   const modelsRequest = useRef(0);
   const routinesRequest = useRef(0);
@@ -183,6 +187,24 @@ export function App() {
     closeChanges();
     setDeskOpen((open) => !open);
   }, [closeChanges]);
+
+  const clearActiveAttachment = useCallback(() => setActiveAttachment(null), []);
+
+  const pinActive = useCallback(() => {
+    if (!activeAttachment) return;
+    setPendingAttachments(addAttachments(pendingAttachments, [activeAttachment]));
+  }, [activeAttachment, pendingAttachments]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || !event.shiftKey) return;
+      if (event.key.toLowerCase() !== "l" || !activeAttachment) return;
+      event.preventDefault();
+      pinActive();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [activeAttachment, pinActive]);
 
   const stopSignInWatch = useCallback(() => {
     signInWatch.current += 1;
@@ -350,6 +372,8 @@ export function App() {
     setChangesOpen(false);
     setChatCollapsed(false);
     setChangesRequest(null);
+    setPendingAttachments([]);
+    setActiveAttachment(null);
     if (agentId) void refreshChanges(agentId);
   }, [agentId, refreshChanges]);
 
@@ -545,6 +569,11 @@ export function App() {
               checkingSignIn={checkingSignIn}
               deskOpen={showDesk}
               changeSets={changeSets}
+              attachments={pendingAttachments}
+              activeAttachment={activeAttachment}
+              onAttachmentsChange={setPendingAttachments}
+              onPinActive={pinActive}
+              onClearActive={clearActiveAttachment}
               onOpenChanges={openChanges}
               onRefreshChanges={() => refreshChanges()}
               approval={approval}
@@ -603,6 +632,7 @@ export function App() {
             request={changesRequest}
             chatCollapsed={chatCollapsed}
             onToggleChat={() => setChatCollapsed((collapsed) => !collapsed)}
+            onActiveContext={setActiveAttachment}
             onClose={closeChanges}
             onRefresh={() => refreshChanges()}
           />

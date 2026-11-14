@@ -71,7 +71,7 @@ export function memoryTurns(messages: TranscriptRow[]): MemoryTurn[] {
   return turns;
 }
 
-export function unsummarizedMemoryTurns(turns: MemoryTurn[], summarized: number): MemoryTurn[] {
+function unsummarizedMemoryTurns(turns: MemoryTurn[], summarized: number): MemoryTurn[] {
   return turns.slice(Math.min(Math.max(0, summarized), turns.length));
 }
 
@@ -80,7 +80,7 @@ export function pendingMemoryTurns(turns: MemoryTurn[], summarized: number): Mem
   return pending.length >= MEMORY_SUMMARY_EVERY_TURNS ? pending : null;
 }
 
-export type CompactPlan =
+type CompactPlan =
   | { action: "empty" }
   | { action: "current" }
   | { action: "update"; pending: MemoryTurn[] };

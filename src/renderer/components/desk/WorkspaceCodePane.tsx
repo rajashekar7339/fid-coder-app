@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { FileText, Image as ImageIcon, Loader2 } from "lucide-react";
 import { imageMimeForPath } from "../../../shared/image";
 import { htmlPreviewDocument, previewKindForPath } from "../../../shared/preview";
@@ -26,6 +26,7 @@ export function WorkspaceCodePane({
   endLine,
   changed,
   onViewDiff,
+  onSelectionChange,
 }: {
   agentId: string;
   path: string;
@@ -33,6 +34,7 @@ export function WorkspaceCodePane({
   endLine: number | null;
   changed: FileChangeSummary | null;
   onViewDiff: () => void;
+  onSelectionChange: (selection: { startLine: number; endLine: number } | null) => void;
 }) {
   const previewKind = previewKindForPath(path);
   const [mode, setMode] = useState<ViewMode>(() =>
@@ -48,16 +50,56 @@ export function WorkspaceCodePane({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewTruncated, setPreviewTruncated] = useState(false);
+  const [selection, setSelection] = useState<{ anchor: number; start: number; end: number } | null>(
+    null,
+  );
   const code = useRef<HTMLPreElement>(null);
   const generation = useRef(0);
   const previewGeneration = useRef(0);
+  const dragging = useRef(false);
+  const ignoreTextSelectionUntil = useRef(0);
+  const selectionAnchor = useRef<number | null>(null);
   const isImage = imageMimeForPath(path) !== null;
   const showPreview = previewKind !== null && mode === "preview";
   const sourceMode = previewKind === null || mode === "source";
 
   useEffect(() => {
     setMode(line === null && previewKind ? "preview" : "source");
+    setSelection(null);
+    selectionAnchor.current = null;
+    dragging.current = false;
   }, [line, path, previewKind]);
+
+  useEffect(() => {
+    const stop = () => {
+      dragging.current = false;
+    };
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    return () => {
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    };
+  }, []);
+
+  useEffect(() => {
+    onSelectionChange(
+      selection ? { startLine: selection.start, endLine: selection.end } : null,
+    );
+  }, [onSelectionChange, selection]);
+
+  useEffect(() => () => onSelectionChange(null), [onSelectionChange]);
+
+  useEffect(() => {
+    if (!selection) return;
+    const clear = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setSelection(null);
+      selectionAnchor.current = null;
+    };
+    window.addEventListener("keydown", clear);
+    return () => window.removeEventListener("keydown", clear);
+  }, [selection]);
 
   useEffect(() => {
     if (!sourceMode) {
@@ -187,6 +229,70 @@ export function WorkspaceCodePane({
     );
   }, [line, pages.length, path]);
 
+  function startSelection(number: number, event: ReactPointerEvent<HTMLSpanElement>) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const anchor =
+      event.shiftKey && selectionAnchor.current !== null ? selectionAnchor.current : number;
+    selectionAnchor.current = anchor;
+    dragging.current = true;
+    ignoreTextSelectionUntil.current = Date.now() + 300;
+    setSelection({
+      anchor,
+      start: Math.min(anchor, number),
+      end: Math.max(anchor, number),
+    });
+  }
+
+  function extendSelection(number: number) {
+    if (!dragging.current) return;
+    const anchor = selectionAnchor.current;
+    if (anchor === null) return;
+    setSelection({
+      anchor,
+      start: Math.min(anchor, number),
+      end: Math.max(anchor, number),
+    });
+  }
+
+  function lineNumberAt(node: Node): number | null {
+    const element =
+      node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
+    const line = element?.closest<HTMLElement>(".citation-line");
+    const number = Number(line?.dataset.line);
+    return Number.isFinite(number) && number > 0 ? number : null;
+  }
+
+  function syncTextSelection(target: EventTarget | null, clearOnCollapse: boolean) {
+    if (Date.now() < ignoreTextSelectionUntil.current) return;
+    const targetElement = target instanceof Element ? target : null;
+    if (targetElement?.closest(".citation-line-number")) return;
+    const native = window.getSelection();
+    if (!native || native.rangeCount === 0) return;
+    const range = native.getRangeAt(0);
+    if (!code.current?.contains(range.commonAncestorContainer)) return;
+    if (native.isCollapsed) {
+      if (clearOnCollapse) {
+        const element = target instanceof Element ? target : null;
+        if (!element?.closest(".citation-line-number")) {
+          setSelection(null);
+          selectionAnchor.current = null;
+        }
+      }
+      return;
+    }
+    const start = lineNumberAt(range.startContainer);
+    const end = lineNumberAt(range.endContainer);
+    if (start === null || end === null) return;
+    selectionAnchor.current = start;
+    dragging.current = false;
+    setSelection({
+      anchor: start,
+      start: Math.min(start, end),
+      end: Math.max(start, end),
+    });
+  }
+
   function loadMore() {
     if (isImage || !last || loadingMore || last.endLine >= last.totalLines) return;
     const current = generation.current;
@@ -257,6 +363,14 @@ export function WorkspaceCodePane({
               Source
             </button>
           </div>
+        ) : null}
+        {selection ? (
+          <span
+            className="changes-active-note"
+            title="These lines are included in your next message"
+          >
+            {rangeLabel(selection.start, selection.end)} included
+          </span>
         ) : null}
         <span className="changes-diff-stats">
           <span className="changes-diff-range">{range}</span>
@@ -334,6 +448,8 @@ export function WorkspaceCodePane({
             className="citation-code"
             tabIndex={0}
             aria-label={`Contents of ${displayPath}`}
+            onMouseUp={(event) => syncTextSelection(event.target, true)}
+            onKeyUp={(event) => syncTextSelection(event.target, false)}
           >
             {total === 0 ? (
               <span className="citation-empty-line">(empty file)</span>
@@ -348,12 +464,22 @@ export function WorkspaceCodePane({
                     anchorEnd !== null &&
                     number >= anchorLine &&
                     number <= anchorEnd;
+                  const isSelected =
+                    selection !== null && number >= selection.start && number <= selection.end;
                   return (
                     <span
                       key={`${pageIndex}:${number}`}
-                      className={`citation-line ${isTarget ? "is-target" : ""}`}
+                      data-line={number}
+                      className={`citation-line ${isTarget ? "is-target" : ""} ${isSelected ? "is-selected" : ""}`}
                     >
-                      <span className="citation-line-number">{number}</span>
+                      <span
+                        className="citation-line-number"
+                        title="Select this line"
+                        onPointerDown={(event) => startSelection(number, event)}
+                        onPointerEnter={() => extendSelection(number)}
+                      >
+                        {number}
+                      </span>
                       {highlighted ? (
                         <span
                           className="citation-line-text"

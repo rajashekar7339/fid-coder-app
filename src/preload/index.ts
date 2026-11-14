@@ -7,6 +7,7 @@ import type {
   ApprovalRequest,
   ApprovalRule,
   ChatEvent,
+  MessageAttachment,
   RoutineInput,
   RoutinePatch,
 } from "../shared/types";
@@ -61,6 +62,7 @@ const channels = {
   settingsSaveJiraToken: "settings:save-jira-token",
   settingsClearJiraToken: "settings:clear-jira-token",
   dialogPickFolder: "dialog:pick-folder",
+  dialogPickFiles: "dialog:pick-files",
   modelsList: "models:list",
   skillsList: "skills:list",
   skillsRead: "skills:read",
@@ -82,7 +84,8 @@ const api: FidApi = {
     list: (agentId: string) => ipcRenderer.invoke(channels.messagesList, agentId),
   },
   chat: {
-    send: (agentId: string, text: string) => ipcRenderer.invoke(channels.chatSend, agentId, text),
+    send: (agentId: string, text: string, attachments?: MessageAttachment[]) =>
+      ipcRenderer.invoke(channels.chatSend, agentId, text, attachments ?? []),
     running: (agentId: string) => ipcRenderer.invoke(channels.chatRunning, agentId),
     abort: (agentId: string) => ipcRenderer.invoke(channels.chatAbort, agentId),
     enhance: (agentId: string, text: string) => ipcRenderer.invoke(channels.chatEnhance, agentId, text),
@@ -174,6 +177,7 @@ const api: FidApi = {
   },
   dialog: {
     pickFolder: () => ipcRenderer.invoke(channels.dialogPickFolder),
+    pickFiles: () => ipcRenderer.invoke(channels.dialogPickFiles),
   },
   models: {
     list: () => ipcRenderer.invoke(channels.modelsList),

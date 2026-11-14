@@ -67,7 +67,15 @@ test("/compact summarizes new turns and the next message uses that summary", asy
     assert.equal(opened.length, 1);
 
     assert.equal(
-      await runner.runTurn({ agentId: agent.id, text: "/compact", source: "chat" }),
+      await runner.runTurn({
+        agentId: agent.id,
+        text: "/compact",
+        source: "chat",
+        // A command ignores attachments; this missing file is never inspected.
+        attachments: [
+          { kind: "upload", path: path.join(os.tmpdir(), "missing-never.txt"), name: "never.txt" },
+        ],
+      }),
       COMPACT_DONE,
     );
     assert.equal(summaries.length, 1);
@@ -115,6 +123,38 @@ test("an already summarized conversation skips the model and still drops the ses
     assert.equal(db.getAgent(agent.id).memorySummary, "Keep PROJ-4 blocked.");
     assert.equal(opened[0].disconnected, true);
   } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("/compact retries when an automatic memory update wins the race", async () => {
+  opened.length = 0;
+  summaries.length = 0;
+  const { dir, db } = tempDb();
+  const original = copilot.completeOnce;
+  try {
+    const agent = makeAgent(db);
+    const runner = new Runner(db, {}, { finalizeTurn: () => undefined });
+    await runner.runTurn({ agentId: agent.id, text: "Check PROJ-4", source: "chat" });
+    let raced = false;
+    copilot.completeOnce = async () => {
+      if (!raced) {
+        raced = true;
+        db.setMemorySummary(agent.id, "RACED SUMMARY", 1);
+        return "compact attempt";
+      }
+      return "compact attempt two";
+    };
+    assert.equal(
+      await runner.runTurn({ agentId: agent.id, text: "/compact", source: "chat" }),
+      COMPACT_CURRENT,
+    );
+    assert.equal(db.getAgent(agent.id).memorySummary, "RACED SUMMARY");
+    assert.equal(raced, true);
+    assert.equal(opened[0].disconnected, true);
+  } finally {
+    copilot.completeOnce = original;
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -42,6 +42,21 @@ export type TokenUsage = {
   creditStatus: CreditStatus;
 };
 
+export type AttachmentKind = "selection" | "workspace" | "upload";
+
+export type MessageAttachment = {
+  kind: AttachmentKind;
+  path: string;
+  name: string;
+  startLine?: number;
+  endLine?: number;
+};
+
+export type AttachmentPick = {
+  attachments: MessageAttachment[];
+  errors: string[];
+};
+
 export type Message = {
   id: string;
   agentId: string;
@@ -50,6 +65,7 @@ export type Message = {
   createdAt: string;
   turnId?: string | null;
   usage?: TokenUsage | null;
+  attachments?: MessageAttachment[] | null;
 };
 
 export type Routine = {

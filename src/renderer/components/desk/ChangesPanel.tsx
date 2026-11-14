@@ -19,6 +19,7 @@ import type {
   ChangesOpenRequest,
   FileChangeSummary,
   FileDiff,
+  MessageAttachment,
   WorkspaceDirectory,
 } from "../../../shared/types";
 import { errorText, fid } from "../../lib/fid";
@@ -27,7 +28,7 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { DiffView } from "./DiffView";
 import { WorkspaceCodePane } from "./WorkspaceCodePane";
 import { WorkspaceNavigator } from "./WorkspaceNavigator";
-import { rangeLabel, type CitationView } from "./workspace-labels";
+import { fileName, rangeLabel, type CitationView } from "./workspace-labels";
 
 type Props = {
   agent: Agent;
@@ -37,6 +38,7 @@ type Props = {
   request: ChangesOpenRequest | null;
   chatCollapsed: boolean;
   onToggleChat: () => void;
+  onActiveContext: (attachment: MessageAttachment | null) => void;
   onClose: () => void;
   onRefresh: () => Promise<void> | void;
 };
@@ -51,6 +53,7 @@ export function ChangesPanel({
   request,
   chatCollapsed,
   onToggleChat,
+  onActiveContext,
   onClose,
   onRefresh,
 }: Props) {
@@ -62,6 +65,10 @@ export function ChangesPanel({
   );
   const [citation, setCitation] = useState<CitationView | null>(null);
   const [codePath, setCodePath] = useState<string | null>(request?.path ?? null);
+  const [codeSelection, setCodeSelection] = useState<{
+    startLine: number;
+    endLine: number;
+  } | null>(null);
   const [view, setView] = useState<"diff" | "code">("diff");
   const [filter, setFilter] = useState("");
   const [changedOnly, setChangedOnly] = useState(false);
@@ -306,6 +313,33 @@ export function ChangesPanel({
       : null;
   const totals = changeTotals(selectedTurn);
   const related = request?.related ?? [];
+  useEffect(() => {
+    if (view === "code" && codePath) {
+      const name = fileName(codePath);
+      if (codeSelection) {
+        onActiveContext({
+          kind: "selection",
+          path: codePath,
+          name,
+          startLine: codeSelection.startLine,
+          endLine: codeSelection.endLine,
+        });
+      } else {
+        onActiveContext({ kind: "workspace", path: codePath, name });
+      }
+      return;
+    }
+    if (view === "diff" && selectedFile) {
+      onActiveContext({
+        kind: "workspace",
+        path: selectedFile.path,
+        name: fileName(selectedFile.path),
+      });
+      return;
+    }
+    onActiveContext(null);
+  }, [codePath, codeSelection, onActiveContext, selectedFile, view]);
+
   const activePath = view === "diff" ? selectedFile?.path ?? null : codePath;
   const activeIsImage = activePath ? imageMimeForPath(activePath) !== null : false;
   const showCitation = Boolean(
@@ -634,6 +668,7 @@ export function ChangesPanel({
               endLine={codeCitation?.endLine ?? null}
               changed={codeChange?.file ?? null}
               onViewDiff={() => viewDiffForPath(codePath)}
+              onSelectionChange={setCodeSelection}
             />
           ) : (
             <ViewerPlaceholder hasWorkspace={Boolean(agent.workspaceDir)} loading={loading} />

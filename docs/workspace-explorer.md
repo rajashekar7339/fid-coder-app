@@ -20,6 +20,9 @@ The Changes panel is now a Workspace navigator. The chat header's **Workspace** 
 - HTML files open in a sandboxed **Preview / Source** view. Scripts, forms, and external assets are blocked by the sandbox and a restrictive CSP; inline styles work. The preview reads up to 20,000 lines.
 - Below 1180px the panel uses the existing overlay. At 1180px and above it stays a third column.
 - At 1181px and wider, **Collapse chat** in the panel header slides the chat left and gives the workspace the full width. **Show chat** restores the split; closing the panel also restores it.
+- Opening a file makes it the active context for the next message; the last file visited wins. In source mode, click a line number, shift-click, or drag down the gutter to make the active context a range instead of the whole file. Escape clears the selection, and the active chip's **×** clears the file. The active chip is automatically included with the next send.
+- Press **Ctrl+Shift+L** (or the chip's pin action) to pin the active file or range. Pin several files or ranges while browsing; pinned chips stay in the composer until they are sent or removed.
+- The composer paperclip attaches local files. A text or code upload is copied to `.fid/uploads/` so the agent's file tools can read it; a supported image is sent as an image attachment. A text upload needs an agent with file tools; a Browser & Jira agent can still receive a supported image. Both sources share the same send path.
 
 ## Data
 
@@ -53,6 +56,28 @@ workspace.image(agentId: string, path: string): Promise<WorkspaceImagePeek>;
 - Every path goes through `resolveInside`; the tree is agent-scoped.
 - No schema change, no model call, no new agent tool.
 
+## Composer attachments
+
+```ts
+export type MessageAttachment = {
+  kind: "selection" | "workspace" | "upload";
+  path: string; // relative for workspace kinds, absolute for an upload
+  name: string;
+  startLine?: number;
+  endLine?: number;
+};
+
+chat.send(agentId, text, attachments): Promise<void>;
+dialog.pickFiles(): Promise<{ attachments: MessageAttachment[]; errors: string[] }>;
+```
+
+- `src/shared/attachments.ts` owns labels, dedupe, line-range normalization, and stored JSON parsing.
+- `src/main/workspace/attachments.ts` validates selection ranges, stats workspace files, reads the exact selection lines, and follows Code Puppy's split: supported images up to 10 MB become binary attachments; text, code, binary, and other images are copied or passed as paths; workspace files and copied uploads are passed to the agent as paths. A text attachment without file tools is rejected with a clear error.
+- Uploads come from the native picker in main. `FID_CODER_ATTACH_IMPORT_FILES` (`path.delimiter` separated) replaces the dialog in tests.
+- The runner prepends `Attached files:` to the user prompt with the copied upload path, the workspace reference path, or the selected range. It stores the descriptors in `messages.attachments` as JSON; the file body is never stored in the database. The agent decides how to read the file with its normal tools; no attachment-specific tool rules are added.
+- Limits: 10 MB per supported image and 200,000 characters per selection. Text and code files are passed by workspace path, so their size is not capped. Images larger than 10 MB or in another format are passed as files when the agent has file tools.
+- Images keep their detected `image/*` MIME type and are sent as binary attachments. Text uploads are copied under `.fid/uploads/<id>/` and referenced by that workspace-relative path. The stored descriptor keeps the path, name, and line range, never the file body.
+
 ## Files
 
 - `src/main/workspace/file-tree.ts`, `src/main/workspace/file-peek.ts`, `src/main/workspace/image-peek.ts`, `src/main/workspace/resolve-file.ts`: safe listing, path resolution, paging, image preview.
@@ -60,11 +85,12 @@ workspace.image(agentId: string, path: string): Promise<WorkspaceImagePeek>;
 - `src/shared/channels.ts`, `src/shared/api.ts`, `src/preload/index.ts`, `src/main/ipc/index.ts`: `workspace:list`, `workspace:image-read`, and the paging arguments.
 - `src/renderer/components/desk/ChangesPanel.tsx`: panel state, request and citation selection, diff, revert.
 - `src/renderer/components/desk/WorkspaceNavigator.tsx`: References, Changed, All files, filtering, and the tree.
-- `src/renderer/components/desk/WorkspaceCodePane.tsx`: read-only code, paging, Markdown/HTML previews, and image preview.
-- `src/renderer/styles/index.css`: navigator, tree, preview, image, and collapse rules.
-- `src/renderer/components/chat/ChatView.tsx`, `src/shared/commands.ts`: the **Workspace** header button and `/files` command.
+- `src/renderer/components/desk/WorkspaceCodePane.tsx`: read-only code, paging, gutter selection, references, Markdown/HTML previews, and image preview.
+- `src/renderer/styles/index.css`: navigator, tree, preview, image, composer chips, and collapse rules.
+- `src/renderer/components/chat/ChatView.tsx`, `src/shared/commands.ts`: the **Workspace** header button, `/files` command, paperclip, and composer chips.
+- `src/shared/attachments.ts`, `src/main/workspace/attachments.ts`, `src/main/db/index.ts`, `src/main/chat/runner.ts`: attachment rules, SDK shape, storage, and send.
 - `src/renderer/components/desk/AgentDesk.tsx`: the Workspace section's **Browse files** action.
-- Tests: `tests/unit/file-tree.test.ts`, `tests/unit/image.test.ts`, `tests/unit/preview.test.ts`, `tests/unit/changes.test.ts`, `tests/unit/commands.test.ts`, `tests/integration/file-tree.test.cjs`, `tests/integration/file-peek.test.cjs`, `tests/integration/image-peek.test.cjs`, `tests/e2e-live/changes-ui.e2e.mjs`. The changes e2e includes a bare-name citation to an unchanged nested file.
+- Tests: `tests/unit/file-tree.test.ts`, `tests/unit/image.test.ts`, `tests/unit/preview.test.ts`, `tests/unit/changes.test.ts`, `tests/unit/commands.test.ts`, `tests/unit/attachments.test.ts`, `tests/integration/file-tree.test.cjs`, `tests/integration/file-peek.test.cjs`, `tests/integration/image-peek.test.cjs`, `tests/integration/attachments.test.cjs`, `tests/e2e-live/changes-ui.e2e.mjs`. The changes e2e includes a bare-name citation to an unchanged nested file and the composer attachment checks.
 - Help: `docs/guide/work-in-a-workspace.md`, `docs/guide/understand-a-codebase.md`, `docs/guide/chat-with-an-agent.md`, `docs/guide/the-cockpit.md`.
 
 ## Decisions and limits
@@ -76,3 +102,5 @@ workspace.image(agentId: string, path: string): Promise<WorkspaceImagePeek>;
 - No editing, saving, git status, filesystem watching, symbol outlines, or second diff engine.
 - A folder is capped at 400 entries; a text page at 400 lines; a preview read at 20,000 lines; an image at 10 MB.
 - HTML previews never run scripts or load external assets. Source mode is always available.
+- Text uploads are copied into `.fid/uploads/` and stay there for later turns; `.fid/uploads/.gitignore` keeps them out of git status. Images are sent as attachments. A cleanup/retention policy is deferred.
+- A vision model is required for image attachments; the runtime decides whether the chosen model accepts them.
