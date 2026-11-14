@@ -4089,43 +4089,14 @@ kbd {
   min-height: 148px;
 }
 
-.agent-templates {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
+.agent-mode-switch {
+  align-self: flex-start;
 }
 
-.agent-template {
-  min-height: 64px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 10px 11px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.018);
-  text-align: left;
-}
-
-.agent-template:hover {
-  border-color: var(--line-strong);
-}
-
-.agent-template.is-active {
-  border-color: rgba(216, 248, 120, 0.28);
-  background: rgba(216, 248, 120, 0.045);
-}
-
-.agent-template strong {
-  color: var(--text);
-  font-size: 11px;
-  font-weight: 560;
-}
-
-.agent-template span {
-  color: var(--faint);
-  font-size: 9.5px;
-  line-height: 1.4;
+.agent-mode-switch button {
+  height: 27px;
+  padding: 0 10px;
+  font-size: 10px;
 }
 
 .skill-name {
@@ -7667,7 +7638,6 @@ kbd {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .agent-templates,
   .starter-grid {
     grid-template-columns: 1fr;
   }

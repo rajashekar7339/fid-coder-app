@@ -27,7 +27,7 @@ copilot.openSession = async (input) => {
 const { Runner } = require("../../dist/main/chat/runner.js");
 const { AppDatabase } = require("../../dist/main/db/index.js");
 
-test("Ask mode is read-only and keeps the workspace readable", async () => {
+test("Ask mode filters each tool profile and Agent mode restores it", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fid-ask-mode-"));
   const previousUserData = process.env.FID_CODER_USER_DATA;
   process.env.FID_CODER_USER_DATA = root;
@@ -77,9 +77,10 @@ test("Ask mode is read-only and keeps the workspace readable", async () => {
     });
     const code = await runner.previewContext(agent.id);
     assert.equal(code.readOnly, false);
-    for (const name of ["file_write", "apply_patch", "shell_run"]) {
+    for (const name of ["file_write", "apply_patch", "shell_run", "review_code"]) {
       assert.equal(code.tools.includes(name), true, name);
     }
+    assert.equal(code.tools.includes("browser_navigate"), false);
     assert.match(code.systemMessage, /Edit an existing file with apply_patch/);
     assert.doesNotMatch(code.systemMessage, /You are in Ask mode/);
 
@@ -117,6 +118,57 @@ test("Ask mode is read-only and keeps the workspace readable", async () => {
     }
     assert.match(browserView.systemMessage, /Only read-only tools are available/);
     assert.match(browserView.systemMessage, /Do not edit files, run shell commands, click, type, submit a form/);
+
+    const allAsk = db.createAgent({
+      name: "All ask",
+      systemPrompt: "Read everything.",
+      workspaceDir: workspace,
+      model: "auto",
+      toolProfile: "all",
+      readOnly: true,
+      memoryEnabled: false,
+    });
+    const allAskView = await runner.previewContext(allAsk.id);
+    for (const name of ["file_read", "read_many", "git_status", "browser_navigate", "browser_snapshot", "explore_code"]) {
+      assert.equal(allAskView.tools.includes(name), true, name);
+    }
+    for (const name of ["file_write", "apply_patch", "shell_run", "browser_click", "browser_type"]) {
+      assert.equal(allAskView.tools.includes(name), false, name);
+    }
+    assert.match(allAskView.systemMessage, /You are in Ask mode/);
+
+    db.updateAgent(allAsk.id, {
+      name: allAsk.name,
+      systemPrompt: allAsk.systemPrompt,
+      workspaceDir: workspace,
+      model: "auto",
+      toolProfile: "all",
+      readOnly: false,
+      memoryEnabled: false,
+    });
+    const allAgentView = await runner.previewContext(allAsk.id);
+    for (const name of ["file_write", "apply_patch", "shell_run", "browser_navigate", "browser_click", "browser_type"]) {
+      assert.equal(allAgentView.tools.includes(name), true, name);
+    }
+    assert.doesNotMatch(allAgentView.systemMessage, /You are in Ask mode/);
+
+    const browserFullAgent = db.createAgent({
+      name: "Browser agent",
+      systemPrompt: "Operate pages.",
+      workspaceDir: null,
+      model: "auto",
+      toolProfile: "browser",
+      readOnly: false,
+      memoryEnabled: false,
+    });
+    const browserAgentView = await runner.previewContext(browserFullAgent.id);
+    for (const name of ["browser_navigate", "browser_snapshot", "browser_click", "browser_type"]) {
+      assert.equal(browserAgentView.tools.includes(name), true, name);
+    }
+    for (const name of ["file_write", "apply_patch", "shell_run"]) {
+      assert.equal(browserAgentView.tools.includes(name), false, name);
+    }
+    assert.doesNotMatch(browserAgentView.systemMessage, /You are in Ask mode/);
   } finally {
     db.close();
     if (previousUserData === undefined) delete process.env.FID_CODER_USER_DATA;

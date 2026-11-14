@@ -2,7 +2,7 @@
 
 An agent is a saved teammate on this PC. It has its own instructions, model, tool access, browser profile, and conversation. This guide creates a developer agent that can read a repository and draft release notes.
 
-![The New agent editor filled in with a name, role, instructions, developer tools, and a workspace folder.](images/agent-editor.png)
+![The New agent editor filled in with a name, role, instructions, developer tools, Agent mode, and a workspace folder.](images/agent-editor.png)
 
 ## Before you start
 
@@ -14,7 +14,7 @@ An agent is a saved teammate on this PC. It has its own instructions, model, too
 
 Select **+** at the top of the sidebar, or **New agent** below the agent list. The editor opens with a preview of the agent and the fields that define it.
 
-Choose a **Start from** template. **Codebase guide** is read-only and is a good fit for questions about a repository. **General agent** starts with the full tool set for edits and commands. You can change every field after choosing a template.
+Give the agent a name and role. Its capabilities come from **Tools** and **Mode**, which you set below; there are no agent templates or types to pick. You can change every field later.
 
 ## Fill in the identity
 
@@ -37,7 +37,7 @@ Keep the first version short. You can edit the agent later from the menu on its 
 
 For this release assistant, choose **Shell, search, git, and files** and pick the repository folder. The file and search tools stay inside that folder. The shell starts in that folder too, but it is not a full sandbox. Without a workspace folder, the local tools stay unavailable.
 
-The template sets the initial mode: **Codebase guide** starts in Ask mode, and **General agent** starts in Agent mode. Change it with the **Ask mode / Agent mode** switch in the composer, before the model picker. Ask mode registers only read-only tools; Agent mode gives the agent its full profile. The choice is saved for the agent.
+Two controls decide what the agent can do. **Tools** chooses the domain: all tools, Browser and Jira, or shell/search/git/files. **Mode** chooses access: **Ask mode** registers only the read-only tools from that domain; **Agent mode** registers the full domain. Both are in the agent editor, and the **Ask mode / Agent mode** switch in the composer changes the same setting. The choice is saved for the agent. Instructions describe the role; they do not grant or deny access.
 
 Skills are not assigned in the editor. Open **Skills** in the sidebar to browse or upload them, then use `/skills <skill> <task>` in the chat. See **Use skills on demand** in this guide.
 

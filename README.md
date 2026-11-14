@@ -33,6 +33,7 @@ npm run dev
 | `npm run test:unit` | Fast tests against source files |
 | `npm run test:integration` | Tests against compiled `dist` output; builds first |
 | `npm run test:features` | Live Electron harness for the changes card and panel, file/turn revert, rules, and the context inspector. Needs Copilot sign-in and runs against a temporary profile. |
+| `npm run test:modes` | Live Electron harness for Tools × Mode. Creates an agent, switches it to Agent mode, proves a real turn edits a file, then proves Ask mode makes no changes. Also checks every Tools × Mode combination against a dummy repo. Needs Copilot. |
 | `npm run test:changes` | Deterministic Electron harness for the edited-files card, Workspace panel, changed list, lazy file tree, citation bridge, automatic active-file context, pinned multi-file references, local attachments, Markdown/HTML/image previews, file revert, and turn revert. Seeds its own workspace and checkpoint data. |
 | `npm run test:skills` | Deterministic Electron harness for Ask mode, starters, the project map, the in-place citation view, navigator references, the lazy workspace tree, clean diagram labels, full-screen diagrams, the Skills library, command menu, and help screenshots. |
 | `npm run test:skills-reuse` | Live harness for using a skill once and reloading it on a later turn. Needs Copilot and two turns. |

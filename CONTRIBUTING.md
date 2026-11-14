@@ -86,7 +86,7 @@ If the owner says “then I will review those,” stop after the review. If they
 - **Skills:** global, not per-agent. A skill is invoked explicitly with `/skills <id> <task>`. Store the used id per agent. Later turns get only a compact id/name/description list; the agent calls `use_skill` when it decides the skill is needed. The body is not kept in the system prompt. Supporting files are read with `skill_read`, scoped to the skill folder.
 - **Skill versions:** read `version` from `SKILL.md`. Do not add a code fallback such as `1.0.0`.
 - **Enhance:** manual and one-shot. One button click, one model call. Use a throwaway session with no tools, a cheap model when available, a timeout, and input/output caps. Write nothing to SQLite and never auto-send. Skip composer commands and a running agent; reject a chat send while a rewrite is in flight.
-- **Ask mode:** store `readOnly` on the agent, but decide the tools from it at session build time. `askTools(profile)` filters the agent's normal tool set, so one read-only name set covers workspace and Browser & Jira agents. Never rely on prompt-only restrictions. Switching modes may drop the live session; replaying the conversation is expected.
+- **Tools and mode:** `toolProfile` chooses the domain and `readOnly` chooses access; they are the only permission model. Decide the tools at session build time: `askTools(profile)` filters the agent's normal tool set, so one read-only name set covers workspace and Browser & Jira agents. Both controls live in the agent editor, and the composer switch saves the same `readOnly`. There are no templates; instructions describe the role and never a permission rule. Never rely on prompt-only restrictions. Switching modes may drop the live session; replaying the conversation is expected.
 - **Project map:** explicit build, one read-only exploration, cached by workspace and git key. Opening the dialog or reading a saved map must not call a model. Mark stale maps; do not inject the map into every turn.
 - **Model calls:** a throwaway session still spends quota. Document it. Do not add a standing model call to a normal turn without asking.
 - **Routines from chat:** `/routine` is the only path that exposes `routine_create`. The runner gives that turn only the create tool and a routine hint; normal turns and Ask mode never get it. Tools are scoped to `ctx.agentId`, capped at 20 per agent, and deduplicated. A bare time is a one-time run, not a daily routine. Routine write tools are removed during a routine turn. One-time runs are marked missed and paused when the app was closed at the chosen time.
@@ -108,6 +108,7 @@ Run the smallest set that proves the change, then the relevant end-to-end path.
 | Live UI | `npm run test:map` | One real project-map build, read-only workspace check, and cached reopen. Needs Copilot. |
 | Live UI | `npm run test:enhance` | One real rewrite, Undo, skips, and no-send checks. Needs Copilot. |
 | Live UI | `npm run test:features` | Live changes card and panel, file/turn revert, workspace rules, and context inspector. Needs Copilot. |
+| Live UI | `npm run test:modes` | Creates an agent, switches it to Agent mode, proves a real turn edits a file, then proves Ask mode makes no changes. Also checks every Tools × Mode combination. Needs Copilot. |
 
 Rules:
 

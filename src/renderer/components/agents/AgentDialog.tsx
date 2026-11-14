@@ -21,12 +21,8 @@ type Props = {
 };
 
 const DEFAULT_INSTRUCTIONS = "You are a helpful local assistant. Use tools when they help the user.";
-const GUIDE_INSTRUCTIONS =
-  "You are a codebase guide. Answer questions about this repository. Read the code before you answer, cite evidence as path:line, and use Mermaid diagrams for flows. Do not edit files or run commands. If the user wants a change, tell them to switch to Code.";
 const MEMORY_PREVIEW_CHARS = 320;
 const MEMORY_PREVIEW_LINES = 4;
-
-type AgentTemplate = "guide" | "general";
 
 function memoryPreview(text: string): string {
   const first = text.split(/\r?\n/).slice(0, MEMORY_PREVIEW_LINES).join("\n");
@@ -49,14 +45,13 @@ export function AgentDialog({
 }: Props) {
   const [name, setName] = useState(agent?.name ?? "");
   const [description, setDescription] = useState(agent?.description ?? "");
-  const [systemPrompt, setSystemPrompt] = useState(agent?.systemPrompt ?? GUIDE_INSTRUCTIONS);
+  const [systemPrompt, setSystemPrompt] = useState(agent?.systemPrompt ?? DEFAULT_INSTRUCTIONS);
   const [workspaceDir, setWorkspaceDir] = useState(agent?.workspaceDir ?? "");
   const [model, setModel] = useState(agent?.model ?? AUTO_MODEL_ID);
   const [toolProfile, setToolProfile] = useState<AgentToolProfile>(
-    agent?.toolProfile ?? (agent ? DEFAULT_TOOL_PROFILE : "developer"),
+    agent?.toolProfile ?? DEFAULT_TOOL_PROFILE,
   );
   const [readOnly, setReadOnly] = useState(agent?.readOnly ?? true);
-  const [template, setTemplate] = useState<AgentTemplate>("guide");
   const [memorySummary, setMemorySummary] = useState(agent?.memorySummary ?? "");
   const [memoryEnabled, setMemoryEnabled] = useState(agent?.memoryEnabled ?? true);
   const [memoryOpen, setMemoryOpen] = useState(false);
@@ -77,19 +72,6 @@ export function AgentDialog({
     } finally {
       setClearingMemory(false);
     }
-  }
-
-  function applyTemplate(next: AgentTemplate) {
-    setTemplate(next);
-    if (next === "guide") {
-      setReadOnly(true);
-      setSystemPrompt(GUIDE_INSTRUCTIONS);
-      setToolProfile("developer");
-      return;
-    }
-    setReadOnly(false);
-    setSystemPrompt(DEFAULT_INSTRUCTIONS);
-    setToolProfile(DEFAULT_TOOL_PROFILE);
   }
 
   async function save(event: FormEvent) {
@@ -153,32 +135,6 @@ export function AgentDialog({
               <div className="agent-preview-note">Runs on this PC with its own browser profile.</div>
             </div>
           </div>
-
-          {!agent ? (
-            <div className="field">
-              <span className="field-label">Start from</span>
-              <div className="agent-templates" role="group" aria-label="Agent template">
-                <button
-                  type="button"
-                  className={`agent-template ${template === "guide" ? "is-active" : ""}`}
-                  aria-pressed={template === "guide"}
-                  onClick={() => applyTemplate("guide")}
-                >
-                  <strong>Codebase guide</strong>
-                  <span>Read code, explain flows, and review architecture. No edits.</span>
-                </button>
-                <button
-                  type="button"
-                  className={`agent-template ${template === "general" ? "is-active" : ""}`}
-                  aria-pressed={template === "general"}
-                  onClick={() => applyTemplate("general")}
-                >
-                  <strong>General agent</strong>
-                  <span>Full tools for edits, commands, and browser work.</span>
-                </button>
-              </div>
-            </div>
-          ) : null}
 
           <label className="field">
             <span className="field-label">Name</span>
@@ -255,6 +211,35 @@ export function AgentDialog({
             </select>
             <span className="field-note">
               Browser and Jira agents cannot run commands or touch files. Shell, search, git, and files agents cannot control a browser or read Jira.
+            </span>
+          </div>
+
+          <div className="field">
+            <span className="field-label">Mode</span>
+            <div className="mode-switch agent-mode-switch" role="group" aria-label="Agent mode">
+              <button
+                type="button"
+                className={readOnly ? "is-active" : ""}
+                aria-pressed={readOnly}
+                disabled={saving}
+                title="Ask mode: registers only the read-only tools from the selected profile."
+                onClick={() => setReadOnly(true)}
+              >
+                Ask mode
+              </button>
+              <button
+                type="button"
+                className={!readOnly ? "is-active" : ""}
+                aria-pressed={!readOnly}
+                disabled={saving}
+                title="Agent mode: registers the full tools for the selected profile."
+                onClick={() => setReadOnly(false)}
+              >
+                Agent mode
+              </button>
+            </div>
+            <span className="field-note">
+              Ask mode registers only the read-only tools from the selected profile. Agent mode registers the full profile.
             </span>
           </div>
 
