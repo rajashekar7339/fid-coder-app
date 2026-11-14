@@ -2,7 +2,7 @@
 // and the context inspector.
 //
 // Usage:
-//   npm run test:features            # two real Copilot turns
+//   npm run test:features            # four real Copilot turns
 //   FID_SKIP_TURNS=1 npm run test:features   # launch/UI setup only
 //
 // Requirements:
@@ -12,6 +12,8 @@
 // The test launches its own Electron instance with a temporary userData
 // directory, so it does not touch the app you are using. It reuses Vite on
 // port 5173 if one is running; otherwise it starts and stops its own.
+// The agent workspace is a throwaway dummy repo under os.tmpdir(); no file
+// from the Fid Coder source tree is used as workspace content.
 // Screenshots and logs stay under the printed ARTIFACTS directory.
 
 import { execFileSync, spawn } from "node:child_process";
@@ -56,15 +58,98 @@ function git(args) {
   });
 }
 
+function assertDummyRepo() {
+  const tempRoot = path.resolve(os.tmpdir());
+  const repo = path.resolve(workspace);
+  const liveRepo = path.resolve(appDir);
+  if (!repo.startsWith(`${tempRoot}${path.sep}`)) {
+    throw new Error(`The test workspace must stay under ${tempRoot}`);
+  }
+  if (repo === liveRepo || repo.startsWith(`${liveRepo}${path.sep}`)) {
+    throw new Error("The test workspace must not be the live app repo");
+  }
+}
+
 function prepare() {
   fs.mkdirSync(userData, { recursive: true });
   fs.mkdirSync(workspace, { recursive: true });
+  assertDummyRepo();
+  fs.mkdirSync(path.join(workspace, "src", "main"), { recursive: true });
   fs.mkdirSync(shots, { recursive: true });
   fs.writeFileSync(path.join(workspace, "demo.ts"), "export const greeting = 'hello';\n", "utf8");
+  fs.writeFileSync(
+    path.join(workspace, "package.json"),
+    [
+      "{",
+      '  "name": "dummy-repo-fixture",',
+      '  "version": "1.0.0",',
+      '  "private": true,',
+      '  "main": "dist/dummy-app.js",',
+      '  "scripts": {',
+      '    "clean": "rm -rf dist",',
+      '    "build:node": "tsc -p tsconfig.main.json",',
+      '    "dev": "vite",',
+      '    "build": "npm run build:node && vite build",',
+      '    "typecheck": "tsc --noEmit",',
+      '    "test": "node --test",',
+      '    "test:unit": "node --test tests/unit",',
+      '    "test:integration": "node --test tests/integration",',
+      '    "test:changes": "electron tests/changes.mjs",',
+      '    "test:features": "electron tests/features.mjs",',
+      '    "start": "electron .",',
+      '    "dist:win": "electron-builder --win portable",',
+      '    "lint": "eslint .",',
+      '    "format": "prettier --write .",',
+      '    "seed": "node scripts/seed.mjs",',
+      '    "clean:all": "npm run clean && rm -rf release",',
+      '    "check": "npm run typecheck && npm test",',
+      '    "ci": "npm run check && npm run build",',
+      '    "watch": "tsc --watch",',
+      '    "serve": "vite preview",',
+      '    "prepare": "husky",',
+      '    "postinstall": "node scripts/postinstall.mjs"',
+      "  },",
+      '  "dependencies": {}',
+      "}",
+    ].join("\n") + "\n",
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(workspace, "src", "main", "index.ts"),
+    [
+      'import fs from "node:fs";',
+      'import os from "node:os";',
+      'import path from "node:path";',
+      'import { app } from "electron";',
+      "",
+      'const APP_NAME = "dummy-app";',
+      "",
+      "function defaultUserData(): string {",
+      '  return path.join(os.homedir(), ".dummy_app");',
+      "}",
+      "",
+      "function start(): void {",
+      "  app.setName(APP_NAME);",
+      "  const userData = defaultUserData();",
+      "  fs.mkdirSync(userData, { recursive: true });",
+      '  app.setPath("userData", userData);',
+      "  const override = process.env.FID_CODER_USER_DATA;",
+      "  if (override) {",
+      '    app.setPath("userData", override);',
+      "  }",
+      "  app.whenReady().then(() => {",
+      "    createWindow();",
+      "  });",
+      "}",
+      "",
+      "start();",
+    ].join("\n") + "\n",
+    "utf8",
+  );
   fs.writeFileSync(uploadFile, "PINEAPPLE_MARKER\n", "utf8");
   git(["init"]);
-  git(["add", "demo.ts"]);
-  git(["commit", "-m", "baseline"]);
+  git(["add", "."]);
+  git(["commit", "-m", "baseline dummy repo"]);
 }
 
 async function sleep(ms) {
@@ -158,6 +243,38 @@ async function lastAssistantText(page) {
   const bodies = page.locator("article.message .message-body");
   const count = await bodies.count();
   return count === 0 ? "" : bodies.nth(count - 1).innerText();
+}
+
+async function sendLiveAttachments(page, prompt, attachments) {
+  return page.evaluate(
+    async ({ name, prompt: text, refs }) => {
+      const agents = await window.fid.agents.list();
+      const target = agents.find((item) => item.name === name);
+      if (!target) return { error: "agent missing", attachments: 0, ranges: "", assistant: "" };
+      try {
+        await window.fid.chat.send(target.id, text, refs);
+      } catch (error) {
+        return {
+          error: error instanceof Error ? error.message : String(error),
+          attachments: 0,
+          ranges: "",
+          assistant: "",
+        };
+      }
+      const messages = await window.fid.messages.list(target.id);
+      const user = [...messages].reverse().find((item) => item.role === "user");
+      const assistant = [...messages].reverse().find((item) => item.role === "assistant");
+      return {
+        error: "",
+        attachments: user?.attachments?.length ?? 0,
+        ranges: (user?.attachments ?? [])
+          .map((item) => `${item.path}:${item.startLine ?? 0}-${item.endLine ?? 0}`)
+          .join(", "),
+        assistant: assistant?.content ?? "",
+      };
+    },
+    { name: agentName, prompt, refs: attachments },
+  );
 }
 
 async function main() {
@@ -363,37 +480,13 @@ async function main() {
 
     console.log("watch: sending a line selection (demo.ts:1) and an upload (brief.txt) to Copilot");
     await page.waitForTimeout(1500);
-    const attachmentSmoke = await page.evaluate(
-      async ({ name, upload }) => {
-        const agents = await window.fid.agents.list();
-        const target = agents.find((item) => item.name === name);
-        if (!target) return { error: "agent missing", attachments: 0, assistant: "" };
-        try {
-          await window.fid.chat.send(
-            target.id,
-            "Reply with the exact code on the attached selection and the exact word in the attached file. Keep it to one line.",
-            [
-              { kind: "selection", path: "demo.ts", name: "demo.ts", startLine: 1, endLine: 1 },
-              { kind: "upload", path: upload, name: "brief.txt" },
-            ],
-          );
-        } catch (error) {
-          return {
-            error: error instanceof Error ? error.message : String(error),
-            attachments: 0,
-            assistant: "",
-          };
-        }
-        const messages = await window.fid.messages.list(target.id);
-        const user = [...messages].reverse().find((item) => item.role === "user");
-        const assistant = [...messages].reverse().find((item) => item.role === "assistant");
-        return {
-          error: "",
-          attachments: user?.attachments?.length ?? 0,
-          assistant: assistant?.content ?? "",
-        };
-      },
-      { name: agentName, upload: uploadFile },
+    const attachmentSmoke = await sendLiveAttachments(
+      page,
+      "Reply with the exact code on the attached selection and the exact word in the attached file. Keep it to one line.",
+      [
+        { kind: "selection", path: "demo.ts", name: "demo.ts", startLine: 1, endLine: 1 },
+        { kind: "upload", path: uploadFile, name: "brief.txt" },
+      ],
     );
     check(
       "selection and upload attachments reach the live turn",
@@ -406,6 +499,97 @@ async function main() {
     await page.waitForTimeout(2500);
     await shot(page, "08-attachments");
 
+    console.log("watch: pinning package.json:8-28 and src/main/index.ts:11-25 from the workspace panel");
+    await page.locator(".header-workspace").click();
+    await page.waitForSelector(".changes-panel", { timeout: 15_000 });
+
+    const packageRow = page.locator(".workspace-tree-file", { hasText: "package.json" }).first();
+    await packageRow.waitFor({ timeout: 15_000 });
+    await packageRow.click();
+    await page.waitForSelector('.citation-line[data-line="8"]', { timeout: 15_000 });
+    await page.locator('.citation-line[data-line="8"] .citation-line-number').click();
+    await page.locator('.citation-line[data-line="28"] .citation-line-number').click({ modifiers: ["Shift"] });
+    await page.waitForFunction(
+      () =>
+        /package\.json:8–28/.test(
+          document.querySelector(".composer-attachment.is-active-context")?.textContent ?? "",
+        ),
+      null,
+      { timeout: 10_000 },
+    );
+    await page.keyboard.press("Control+Shift+L");
+    await page.waitForFunction(
+      () =>
+        [...document.querySelectorAll(".composer-attachment:not(.is-active-context)")].some((item) =>
+          /package\.json:8–28/.test(item.textContent ?? ""),
+        ),
+      null,
+      { timeout: 10_000 },
+    );
+
+    const srcFolder = page.locator(".workspace-tree-folder", { hasText: "src" }).first();
+    await srcFolder.click();
+    const mainFolder = page.locator(".workspace-tree-folder", { hasText: "main" }).first();
+    await mainFolder.waitFor({ timeout: 15_000 });
+    await mainFolder.click();
+    const indexRow = page.locator(".workspace-tree-file", { hasText: "index.ts" }).first();
+    await indexRow.waitFor({ timeout: 15_000 });
+    await indexRow.click();
+    await page.waitForSelector('.citation-line[data-line="11"]', { timeout: 15_000 });
+    await page.locator('.citation-line[data-line="11"] .citation-line-number').click();
+    await page.locator('.citation-line[data-line="25"] .citation-line-number').click({ modifiers: ["Shift"] });
+    await page.waitForFunction(
+      () =>
+        /index\.ts:11–25/.test(
+          document.querySelector(".composer-attachment.is-active-context")?.textContent ?? "",
+        ),
+      null,
+      { timeout: 10_000 },
+    );
+    await page.keyboard.press("Control+Shift+L");
+    await page.waitForFunction(
+      () => document.querySelectorAll(".composer-attachment:not(.is-active-context)").length === 2,
+      null,
+      { timeout: 10_000 },
+    );
+    const pinnedChips = await page
+      .locator(".composer-attachment:not(.is-active-context)")
+      .allInnerTexts();
+    check(
+      "two line ranges are pinned in the composer",
+      pinnedChips.length === 2 &&
+        /package\.json:8–28/.test(pinnedChips.join(" ")) &&
+        /index\.ts:11–25/.test(pinnedChips.join(" ")),
+      pinnedChips.join(", "),
+    );
+    await page.waitForTimeout(250);
+    await shot(page, "08b-two-range-pinned");
+
+    await page.getByRole("button", { name: "Close changes" }).click();
+    await page.waitForSelector(".changes-panel", { state: "detached", timeout: 10_000 });
+    await sendAndWait(page, "what are the list of code highlighted.");
+    const rangeReply = await lastAssistantText(page);
+    check(
+      "the two pinned ranges reach the live agent",
+      /(scripts|build:node|postinstall)/i.test(rangeReply) &&
+        /(user.?data|startup|main.process|whenReady|setName|initializ)/i.test(rangeReply),
+      rangeReply.replace(/\s+/g, " ").slice(0, 220),
+    );
+    const lastUser = page.locator(".user-message").last();
+    const lastUserChips = await lastUser.locator(".user-attachment").allInnerTexts();
+    check(
+      "the two range chips appear on the live user message",
+      lastUserChips.length === 2 &&
+        /package\.json:8–28/.test(lastUserChips.join(" ")) &&
+        /index\.ts:11–25/.test(lastUserChips.join(" ")),
+      lastUserChips.join(", "),
+    );
+    await lastUser.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(250);
+    await shot(page, "08b-two-range-chips");
+
+    await page.locator('button[aria-label="Show agent desk"]').click();
+    await page.waitForSelector(".agent-desk", { timeout: 10_000 });
     await page.locator('.agent-desk button:has-text("Context")').click();
     await page.waitForSelector(".context-modal", { timeout: 15_000 });
     await page.waitForSelector(".context-modal .context-block", { timeout: 30_000 });
