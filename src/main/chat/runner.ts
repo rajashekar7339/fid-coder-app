@@ -1,8 +1,14 @@
 import {
+  COMPACT_CURRENT,
+  COMPACT_DONE,
+  COMPACT_EMPTY,
   MEMORY_MESSAGE_WINDOW,
+  MEMORY_SUMMARY_SYSTEM,
   buildSessionPrompt,
   clipMemorySummary,
+  compactPlan,
   memoryTurns,
+  type MemoryTurn,
   messageWindow,
   pendingMemoryTurns,
   summaryUpdatePrompt,
@@ -368,6 +374,10 @@ export class Runner {
         if (parsed.command.id === "review") {
           return await this.runReviewTurn(agent, parsed.args, turnId);
         }
+        if (parsed.command.id === "compact") {
+          if (parsed.args) throw new Error("Send /compact on its own.");
+          return await this.runCompactTurn(agent, userMessage.id, turnId);
+        }
         if (parsed.command.id === "routine") {
           if (!parsed.args) throw new Error(`Add the task and time after ${parsed.command.usage.split(" ")[0]}.`);
           this.turnCommands.set(agent.id, "routine");
@@ -476,6 +486,26 @@ export class Runner {
       this.sink({ agentId: agent.id, type: "tool-end", toolName: "review_code", ok: false, text: message });
       throw new Error(message);
     }
+  }
+
+  private async runCompactTurn(agent: Agent, userMessageId: string, turnId: string): Promise<string> {
+    const prior = this.db.listMessages(agent.id).filter((message) => message.id !== userMessageId);
+    const turns = memoryTurns(prior);
+    const plan = compactPlan(turns, this.db.getMemoryTurnCount(agent.id), agent.memorySummary);
+    let reply = COMPACT_EMPTY;
+    if (plan.action === "update") {
+      const wrote = await this.writeMemory(agent, plan.pending, turns.length);
+      if (!wrote) throw new Error("Copilot could not compact this conversation.");
+      await this.dropSession(agent.id).catch(() => undefined);
+      reply = COMPACT_DONE;
+    } else if (plan.action === "current") {
+      await this.dropSession(agent.id).catch(() => undefined);
+      reply = COMPACT_CURRENT;
+    }
+    this.db.addMessage(agent.id, "assistant", reply, turnId);
+    this.db.finishTurn(turnId, "ok");
+    this.sink({ agentId: agent.id, type: "done", text: reply });
+    return reply;
   }
 
   private async sessionFor(
@@ -897,17 +927,22 @@ export class Runner {
     const turns = memoryTurns(messages);
     const pending = pendingMemoryTurns(turns, this.db.getMemoryTurnCount(agent.id));
     if (!pending) return;
+    await this.writeMemory(agent, pending, turns.length);
+  }
+
+  private async writeMemory(agent: Agent, pending: MemoryTurn[], coveredTurns: number): Promise<boolean> {
     const startSummary = agent.memorySummary;
     const text = await completeOnce(
       AUTO_MODEL_ID,
-      "You keep a short memory of an agent conversation. Reply with the memory only.",
+      MEMORY_SUMMARY_SYSTEM,
       summaryUpdatePrompt(startSummary, pending),
     );
     const summary = clipMemorySummary(text);
-    if (!summary) return;
+    if (!summary) return false;
     const current = this.db.getAgent(agent.id);
-    if (!current || current.memorySummary !== startSummary) return;
-    this.db.setMemorySummary(agent.id, summary, turns.length);
+    if (!current || current.memorySummary !== startSummary) return false;
+    this.db.setMemorySummary(agent.id, summary, coveredTurns);
+    return true;
   }
 }
 

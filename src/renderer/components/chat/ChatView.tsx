@@ -13,6 +13,7 @@ import {
   Copy,
   FileText,
   Folder,
+  FoldVertical,
   GitBranch,
   Globe2,
   Keyboard,
@@ -137,6 +138,7 @@ const COMMAND_ICONS: Record<string, LucideIcon> = {
   review: ScanSearch,
   skills: Wrench,
   routine: CalendarPlus,
+  compact: FoldVertical,
   files: Folder,
   help: BookOpen,
 };
@@ -388,7 +390,9 @@ export function ChatView({
   }, [commandsOpen, skillPickerOpen]);
 
   function commandUnavailable(command: CommandInfo): string | null {
-    if (command.id === "review" && !signedIn) return "Sign in to Copilot first.";
+    if ((command.id === "review" || command.id === "compact") && !signedIn) {
+      return "Sign in to Copilot first.";
+    }
     return commandAvailability(command, agent.toolProfile, hasWorkspace, agent.readOnly);
   }
 

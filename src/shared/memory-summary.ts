@@ -3,6 +3,13 @@ export const MEMORY_RECENT_MESSAGES = 6;
 export const MEMORY_TRANSCRIPT_CHARS = 12_000;
 export const MEMORY_SUMMARY_CHARS = 1_500;
 export const MEMORY_SUMMARY_EVERY_TURNS = 10;
+export const MEMORY_SUMMARY_SYSTEM =
+  "You keep a short memory of an agent conversation. Reply with the memory only.";
+export const COMPACT_EMPTY = "Nothing to compact yet. Send a few messages first.";
+export const COMPACT_DONE =
+  "Compacted this conversation. The next message starts from that summary and the latest messages.";
+export const COMPACT_CURRENT =
+  "This conversation is already summarized. The next message starts from that summary and the latest messages.";
 
 const MEMORY_SUMMARY_MAX_TURNS = 10;
 const MEMORY_SUMMARY_TURN_CHARS = 800;
@@ -64,9 +71,27 @@ export function memoryTurns(messages: TranscriptRow[]): MemoryTurn[] {
   return turns;
 }
 
+export function unsummarizedMemoryTurns(turns: MemoryTurn[], summarized: number): MemoryTurn[] {
+  return turns.slice(Math.min(Math.max(0, summarized), turns.length));
+}
+
 export function pendingMemoryTurns(turns: MemoryTurn[], summarized: number): MemoryTurn[] | null {
-  const pending = turns.slice(Math.min(Math.max(0, summarized), turns.length));
+  const pending = unsummarizedMemoryTurns(turns, summarized);
   return pending.length >= MEMORY_SUMMARY_EVERY_TURNS ? pending : null;
+}
+
+export type CompactPlan =
+  | { action: "empty" }
+  | { action: "current" }
+  | { action: "update"; pending: MemoryTurn[] };
+
+/** What /compact should do. Automatic updates still wait for ten new turns. */
+export function compactPlan(turns: MemoryTurn[], summarized: number, summary: string): CompactPlan {
+  if (turns.length === 0) return { action: "empty" };
+  const pending = unsummarizedMemoryTurns(turns, summarized);
+  if (pending.length > 0) return { action: "update", pending };
+  if (summary.trim()) return { action: "current" };
+  return { action: "update", pending: turns };
 }
 
 export function summaryUpdatePrompt(previous: string, turns: MemoryTurn[]): string {

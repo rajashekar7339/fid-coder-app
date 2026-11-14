@@ -24,7 +24,7 @@ While the agent runs, its current tool step is highlighted in the open tool card
 
 Day dividers mark **Today**, **Yesterday**, and older calendar dates. They stay at the top of the thread while you scroll that day. Hover any time to see the full date and timestamp.
 
-The conversation is saved in the local SQLite database. When Fid Coder rebuilds a Copilot session, it sends the last 30 messages, clipped to 12,000 characters, so the agent has recent context.
+The conversation is saved in the local SQLite database. When Fid Coder rebuilds a Copilot session, it sends the last 30 messages, or the summary plus the latest messages after a summary exists. That transcript is clipped to 12,000 characters. Send `/compact` to summarize before the automatic update.
 
 ## Use a command
 
@@ -33,12 +33,19 @@ Type `/` in the composer, or choose **Commands** next to the model picker, to op
 - `/skills <skill-id> <task>` — load an installed skill for this message. Later messages keep a short used-skills list and can reload it.
 - `/skills` — open the Skills library.
 - `/review` — review uncommitted changes, staged changes, a branch, a PR number, or a path.
+- `/compact` — summarize this conversation now. The next message keeps the summary and the latest messages.
 - `/files` — open the workspace file browser. It is available only when the agent has a workspace folder.
 - `/help` — open this guide.
 
 Use ↑/↓ to move, Enter or Tab to select, and Escape to close. A command that needs a workspace or developer tools shows the reason in the list. The empty conversation also shows the available commands as chips.
 
 The **Skills** row at the bottom of the sidebar opens the library. It lists every installed skill, its source, version, and size, and has the **Upload skill** button. Skills are global; nothing from a skill is added to an agent until you use `/skills`. After that, later messages get a short used-skills list and the assistant can reload the skill when it needs it.
+
+## Compact the conversation
+
+Send `/compact` when you want the conversation summarized now. Fid Coder uses the same Auto summary it builds after the thread passes 30 messages. The messages stay in the chat. The next message starts a fresh Copilot session that keeps the summary and only the latest messages.
+
+`/compact` also runs when Automatic memory is off, and before the thread is long enough for an automatic update. It spends Copilot quota only when there is something new to summarize. If the summary is already current, the next message still starts from that summary. Send `/compact` on its own.
 
 ## Ask for a code review
 

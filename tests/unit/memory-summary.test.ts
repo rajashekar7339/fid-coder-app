@@ -10,6 +10,7 @@ import {
   clipMemorySummary,
   memoryTurns,
   messageWindow,
+  compactPlan,
   pendingMemoryTurns,
   summaryUpdatePrompt,
 } from "../../src/shared/memory-summary.ts";
@@ -132,6 +133,21 @@ test("batches memory updates every ten turns", () => {
   assert.equal(pendingMemoryTurns(turns, 2)?.length, 10);
   assert.equal(pendingMemoryTurns(turns, 3), null);
   assert.equal(pendingMemoryTurns(turns, 20), null);
+});
+
+test("a manual compact summarizes before the automatic batch", () => {
+  const turns = [{ user: "Check PROJ-4", assistant: "PROJ-4 is blocked." }];
+  assert.equal(pendingMemoryTurns(turns, 0), null);
+  assert.deepEqual(compactPlan(turns, 0, ""), {
+    action: "update",
+    pending: turns,
+  });
+  assert.deepEqual(compactPlan([], 0, ""), { action: "empty" });
+  assert.deepEqual(compactPlan(turns, 1, "PROJ-4 is blocked."), { action: "current" });
+  assert.deepEqual(compactPlan(turns, 1, "  "), {
+    action: "update",
+    pending: turns,
+  });
 });
 
 test("clips a long summary", () => {

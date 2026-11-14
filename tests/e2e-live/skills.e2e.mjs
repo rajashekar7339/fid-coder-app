@@ -514,7 +514,7 @@ async function main() {
     const commandMenu = await page.locator(".command-menu").innerText();
     check(
       "slash menu lists commands",
-      ["/review", "/skills", "/help"].every((id) => commandMenu.includes(id)),
+      ["/review", "/skills", "/compact", "/help"].every((id) => commandMenu.includes(id)),
       commandMenu.replace(/\s+/g, " ").slice(0, 120),
     );
     await page.locator(".composer-input").fill("/skills");

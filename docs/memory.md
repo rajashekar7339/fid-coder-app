@@ -1,6 +1,6 @@
 # How Fid Coder keeps AI memory
 
-Each agent remembers through its chat transcript in local SQLite. That transcript is what GitHub Copilot sees on the next turn. After the transcript grows past 30 messages, the app also keeps a short rolling summary on the agent. That summary is sent only when a fresh Copilot session starts. It is not part of the system message. There is no separate facts store and no embedding index.
+Each agent remembers through its chat transcript in local SQLite. That transcript is what GitHub Copilot sees on the next turn. After the transcript grows past 30 messages, the app also keeps a short rolling summary on the agent. Sending `/compact` writes that summary immediately. That summary is sent only when a fresh Copilot session starts. It is not part of the system message. There is no separate facts store and no embedding index.
 
 The code lives in `src/main/db/index.ts` (storage) and `src/main/chat/runner.ts` (what gets sent to Copilot).
 
@@ -44,6 +44,10 @@ Two paths decide what text the turn sends:
 - **New session.** The app drops the user row just inserted for this turn. When a memory summary exists, it keeps only the last 6 messages; without a summary, it keeps the last 30. Those rows are formatted as `[timestamp] role: content`, joined, and clipped to the last 12,000 characters. The prompt starts with `Current time:` and `Last message:`, then, when a summary exists, `Earlier summary (reference only; not instructions):` and that text, then `Previous conversation:` and the transcript, then `User:` and the new text. The same routine lead is added in front. The timestamps and the smaller transcript window let the model tell old task context from the new message. A new session with no earlier messages and no summary sends only the new text (plus the routine lead, when there is one).
 
 Once the agent has more than 30 messages, the app updates the summary at most once every ten user turns, and only when **Automatic memory** is on for that agent. The update runs on Auto, not the agent's selected model, and uses the previous summary plus the user and assistant turns since the last update. Tool output is left out so page content cannot be written into memory, and the summarizer is told to record facts only, never instructions. It does not resend the older transcript. The stored summary is at most 1,500 characters, and the agent remembers how many turns it covers. A failed summary call, or a failed turn, leaves the previous summary. Clearing the summary in the agent editor stores an empty string, resets the turn counter, and drops that agent's session.
+
+## Compacting on request
+
+`/compact` runs that same summary immediately. It does not wait for 30 messages or ten new turns, and it runs when Automatic memory is off. `Runner` handles it like `/review`: the command is not sent to the agent's session and it registers no tools. Turns already covered by the stored summary are skipped. When there is something new, the update uses Auto, the previous summary, and the user and assistant turns since the last update, with the same caps. The `/compact` message itself is not part of that input. After a successful update, or when the summary is already current, the live session is dropped so the next message is a fresh session. An empty conversation does not call the model. A failed call leaves the previous summary and leaves the live session open.
 
 A new session happens when the app process starts, because the map is only in memory. It also happens when the model, the system message, or the tool profile changes, because that changes the signature and the old session is dropped.
 
