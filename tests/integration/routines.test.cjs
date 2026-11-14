@@ -208,11 +208,9 @@ test("routine management stays in agent mode and creation is only on the routine
     assert.equal(names.includes("routine_create"), false, `${profile}: routine_create`);
   }
   assert.deepEqual(routineCreateTools().map((item) => item.name), ["routine_create"]);
-  for (const profile of ["developer", "browser", "all"]) {
-    const names = askTools(profile).map((item) => item.name);
-    for (const name of ["routine_list", "routine_create", "routine_delete"]) {
-      assert.equal(names.includes(name), false, `${profile}: ${name}`);
-    }
+  const askNames = askTools().map((item) => item.name);
+  for (const name of ["routine_list", "routine_create", "routine_delete"]) {
+    assert.equal(askNames.includes(name), false, name);
   }
 });
 

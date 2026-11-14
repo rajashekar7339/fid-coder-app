@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { FolderOpen, X } from "lucide-react";
+import { Check, FolderOpen, X } from "lucide-react";
 import { AUTO_MODEL_ID } from "../../../shared/model";
-import { DEFAULT_TOOL_PROFILE } from "../../../shared/tool-profile";
 import type { Agent, AgentToolProfile, CopilotModel } from "../../../shared/types";
 import { errorText, fid } from "../../lib/fid";
 import { AgentAvatar } from "./AgentAvatar";
@@ -20,9 +19,60 @@ type Props = {
   onMemoryCleared?: (agent: Agent) => void;
 };
 
-const DEFAULT_INSTRUCTIONS = "You are a helpful local assistant. Use tools when they help the user.";
+const DEFAULT_INSTRUCTIONS =
+  "You are a helpful local assistant. Read the workspace and the conversation before you answer, use tools when they help, and cite file evidence as path:line. Keep replies short and say what you changed or found.";
 const MEMORY_PREVIEW_CHARS = 320;
 const MEMORY_PREVIEW_LINES = 4;
+
+const INSTRUCTION_PRESETS = [
+  {
+    id: "general",
+    label: "General",
+    text: DEFAULT_INSTRUCTIONS,
+  },
+  {
+    id: "codebase",
+    label: "Codebase guide",
+    text: "You are a codebase guide. Answer questions about this repository by reading the code first, not by guessing from names. Follow the entry points, callers, and tests that matter, cite evidence as path:line, and use a Mermaid flowchart for control flow or data flow. When the user asks for an architecture review, load the architecture-review skill with use_skill.",
+  },
+  {
+    id: "review",
+    label: "Code reviewer",
+    text: "You review code changes like the person who will be paged when they break. Load the review-change skill with use_skill and follow it: understand the diff and its callers, then report correctness, safety, load, test, speed, and lean-code risks in priority order. Cite evidence as path:line and end with a verdict.",
+  },
+  {
+    id: "implementer",
+    label: "Implementer",
+    text: "You are a careful coding agent. Load the write-lean skill with use_skill and follow it: read the code the change touches, name the full scope, reuse what is already there, and make the smallest complete change. Add one small test when the new logic can be wrong, run the relevant checks, and keep the reply short.",
+  },
+  {
+    id: "debugger",
+    label: "Debugger",
+    text: "You troubleshoot from evidence. Read the failing path and the supplied logs, trace the actual flow with the file and explorer tools, and state the likely cause before proposing a fix. Cite evidence as path:line, separate confirmed facts from guesses, and suggest the smallest fix that addresses the cause.",
+  },
+  {
+    id: "architecture",
+    label: "Architecture reviewer",
+    text: "You review a codebase's architecture. Load the architecture-review skill with use_skill and follow it: map the components and boundaries, trace two or three important runtime flows, and report coupling, risks, and test gaps. Cite evidence as path:line and keep the report structured.",
+  },
+  {
+    id: "release",
+    label: "Release notes",
+    text: "You are a release assistant. Read the changelog and open pull requests, then draft release notes with the main changes, risks, and testing gaps. When the user wants a shareable page, load the html-report skill with use_skill and produce one self-contained HTML file.",
+  },
+];
+
+const TOOL_CHOICES: { value: AgentToolProfile; label: string }[] = [
+  { value: "all", label: "All tools" },
+  { value: "browser", label: "Browser and Jira" },
+  { value: "developer", label: "Shell, search, git, and files" },
+];
+
+function toolChoiceDetail(profile: AgentToolProfile): string {
+  if (profile === "all") return "Browser, Jira, shell, search, git, and files.";
+  if (profile === "browser") return "Full browser control, Jira, and history.";
+  return "Shell, file writes, search, git, and history.";
+}
 
 function memoryPreview(text: string): string {
   const first = text.split(/\r?\n/).slice(0, MEMORY_PREVIEW_LINES).join("\n");
@@ -44,12 +94,11 @@ export function AgentDialog({
   onMemoryCleared,
 }: Props) {
   const [name, setName] = useState(agent?.name ?? "");
-  const [description, setDescription] = useState(agent?.description ?? "");
   const [systemPrompt, setSystemPrompt] = useState(agent?.systemPrompt ?? DEFAULT_INSTRUCTIONS);
   const [workspaceDir, setWorkspaceDir] = useState(agent?.workspaceDir ?? "");
   const [model, setModel] = useState(agent?.model ?? AUTO_MODEL_ID);
-  const [toolProfile, setToolProfile] = useState<AgentToolProfile>(
-    agent?.toolProfile ?? DEFAULT_TOOL_PROFILE,
+  const [toolProfile, setToolProfile] = useState<AgentToolProfile | null>(
+    agent?.toolProfile ?? null,
   );
   const [readOnly, setReadOnly] = useState(agent?.readOnly ?? true);
   const [memorySummary, setMemorySummary] = useState(agent?.memorySummary ?? "");
@@ -82,16 +131,20 @@ export function AgentDialog({
       setError("Give this agent a name.");
       return;
     }
+    if (!readOnly && !toolProfile) {
+      setError("Choose a tool profile.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
       const input = {
         name: trimmedName,
-        description: description.trim(),
+        description: agent?.description ?? "",
         systemPrompt: systemPrompt.trim() || DEFAULT_INSTRUCTIONS,
         workspaceDir: workspaceDir.trim() || null,
         model,
-        toolProfile,
+        toolProfile: toolProfile ?? "developer",
         readOnly,
         memoryEnabled,
       };
@@ -106,7 +159,7 @@ export function AgentDialog({
   const previewAgent = {
     id: agent?.id ?? `draft-${name}`,
     name: name.trim() || "New agent",
-    description,
+    description: agent?.description ?? "",
     systemPrompt,
   };
   const memoryTruncated =
@@ -147,31 +200,38 @@ export function AgentDialog({
             />
           </label>
 
-          <label className="field">
-            <span className="field-label">
-              Role <span className="field-optional">Optional</span>
-            </span>
-            <input
-              className="input"
-              value={description}
-              maxLength={160}
-              placeholder="A short description, like “Jira teammate”"
-              onChange={(event) => setDescription(event.target.value)}
-            />
-          </label>
-
-          <label className="field">
-            <span className="field-label">Instructions</span>
+          <div className="field">
+            <label className="field-label" htmlFor="agent-instructions">
+              Instructions
+            </label>
+            <div className="instruction-presets" role="group" aria-label="Instruction presets">
+              {INSTRUCTION_PRESETS.map((preset) => {
+                const active = systemPrompt.trim() === preset.text;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className={`instruction-preset ${active ? "is-active" : ""}`}
+                    aria-pressed={active}
+                    disabled={saving}
+                    onClick={() => setSystemPrompt(preset.text)}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
             <textarea
+              id="agent-instructions"
               className="textarea agent-instructions"
               value={systemPrompt}
               placeholder="You are a coding agent. Help with code changes, tests, and questions about this project."
               onChange={(event) => setSystemPrompt(event.target.value)}
             />
             <span className="field-note">
-              Sent with every message. Write standing instructions, not a one-time task.
+              Pick a starting point, then edit it. Sent with every message.
             </span>
-          </label>
+          </div>
 
           <div className="field">
             <span className="field-label">Model</span>
@@ -195,26 +255,6 @@ export function AgentDialog({
           </div>
 
           <div className="field">
-            <label className="field-label" htmlFor="agent-tools">
-              Tools
-            </label>
-            <select
-              id="agent-tools"
-              className="select"
-              value={toolProfile}
-              disabled={saving}
-              onChange={(event) => setToolProfile(event.target.value as AgentToolProfile)}
-            >
-              <option value="all">All tools — browser, Jira, shell, search, git, and files</option>
-              <option value="browser">Browser and Jira</option>
-              <option value="developer">Shell, search, git, and files</option>
-            </select>
-            <span className="field-note">
-              Browser and Jira agents cannot run commands or touch files. Shell, search, git, and files agents cannot control a browser or read Jira.
-            </span>
-          </div>
-
-          <div className="field">
             <span className="field-label">Mode</span>
             <div className="mode-switch agent-mode-switch" role="group" aria-label="Agent mode">
               <button
@@ -222,7 +262,7 @@ export function AgentDialog({
                 className={readOnly ? "is-active" : ""}
                 aria-pressed={readOnly}
                 disabled={saving}
-                title="Ask mode: registers only the read-only tools from the selected profile."
+                title="Ask mode: every read-only tool, regardless of the tool profile."
                 onClick={() => setReadOnly(true)}
               >
                 Ask mode
@@ -239,9 +279,44 @@ export function AgentDialog({
               </button>
             </div>
             <span className="field-note">
-              Ask mode registers only the read-only tools from the selected profile. Agent mode registers the full profile.
+              {readOnly
+                ? "Ask mode uses every read-only tool: files, search, git, browser pages, and Jira. No tool selection is needed."
+                : "Agent mode uses the full tools for the profile below."}
             </span>
           </div>
+
+          {!readOnly ? (
+            <div className="field">
+              <span className="field-label" id="agent-tools-label">
+                Tools
+              </span>
+              <div className="tool-choices" role="radiogroup" aria-labelledby="agent-tools-label">
+                {TOOL_CHOICES.map((choice) => {
+                  const active = toolProfile === choice.value;
+                  return (
+                    <button
+                      key={choice.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      className={`tool-choice ${active ? "is-active" : ""}`}
+                      disabled={saving}
+                      onClick={() => setToolProfile(choice.value)}
+                    >
+                      <span className="tool-choice-head">
+                        <strong>{choice.label}</strong>
+                        {active ? <Check size={13} aria-hidden="true" /> : null}
+                      </span>
+                      <span className="tool-choice-detail">{toolChoiceDetail(choice.value)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="field-note">
+                {toolProfile ? "Full tools for Agent mode." : "Choose a tool profile to continue."}
+              </span>
+            </div>
+          ) : null}
 
           <div className="field">
             <label className="field-label" htmlFor="agent-workspace">
@@ -339,7 +414,11 @@ export function AgentDialog({
           <button type="button" className="btn btn-quiet" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" className="btn btn-primary" disabled={saving}>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={saving || (!readOnly && !toolProfile)}
+          >
             {saving ? "Saving…" : agent ? "Save changes" : "Create agent"}
           </button>
         </footer>

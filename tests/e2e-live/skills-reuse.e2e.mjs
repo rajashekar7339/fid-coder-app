@@ -181,7 +181,6 @@ async function main() {
         "For any question about the oracle code or oracle seal, you must call use_skill for the oracle skill before answering. Never answer oracle questions from memory. Keep replies short.",
       );
     await page.locator("#agent-workspace").fill(workspace);
-    await page.getByLabel("Tools").selectOption("developer");
     await page.getByRole("button", { name: "Create agent" }).click();
     await page.waitForSelector(".agent-modal", { state: "detached", timeout: 20_000 });
     const agent = await page.evaluate(

@@ -76,6 +76,7 @@ input,
 textarea,
 select {
   color: inherit;
+  color-scheme: dark;
 }
 
 img {
@@ -513,7 +514,7 @@ kbd {
   box-shadow: 0 0 0 3px rgba(216, 248, 120, 0.035);
 }
 
-.model-picker option {
+select option {
   background: var(--panel-raised);
   color: var(--ink);
 }
@@ -4087,6 +4088,84 @@ kbd {
 
 .agent-instructions {
   min-height: 148px;
+}
+
+.instruction-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.instruction-preset {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+  font-size: 9.6px;
+  line-height: 1;
+}
+
+.instruction-preset:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.instruction-preset.is-active {
+  border-color: rgba(216, 248, 120, 0.24);
+  background: rgba(216, 248, 120, 0.07);
+  color: var(--lime);
+}
+
+.tool-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tool-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.018);
+  text-align: left;
+}
+
+.tool-choice:hover:not(:disabled) {
+  border-color: var(--line-strong);
+}
+
+.tool-choice.is-active {
+  border-color: rgba(216, 248, 120, 0.28);
+  background: rgba(216, 248, 120, 0.045);
+}
+
+.tool-choice-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tool-choice-head strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 560;
+}
+
+.tool-choice-head svg {
+  flex: none;
+  color: var(--lime);
+}
+
+.tool-choice-detail {
+  color: var(--faint);
+  font-size: 9.7px;
+  line-height: 1.4;
 }
 
 .agent-mode-switch {

@@ -21,7 +21,7 @@ The center column is the saved conversation for the selected agent.
 - Replies stream in as Copilot writes them.
 - Tool calls collapse into one card. The running step is highlighted; expand the card to see each call and a short result summary.
 - The composer at the bottom sends with Enter. Use Shift+Enter for a new line.
-- **Tools** and **Mode** in the agent editor choose the domain and its access. **Ask mode** and **Agent mode** in the composer, before the model picker, change the same saved mode between read-only questions and the agent's full tools.
+- **Mode** in the agent editor chooses access. Ask mode uses every read-only tool; Agent mode reveals **Tools** for the domain. **Ask mode** and **Agent mode** in the composer, before the model picker, change the same saved mode between read-only questions and the agent's full tools.
 - The map button in the chat header opens the cached project map. Choose **Build map** or **Refresh map** to spend one read-only exploration.
 - The **Workspace** button in the chat header, `/files`, or **Browse files** on the Agent Desk opens the workspace navigator: the answer's references, the selected turn's changed files, and the full file tree. The entries are hidden without a workspace folder. It opens even before a turn has changed a file. On a wide window, **Collapse chat** in the panel header slides the chat left; **Show chat** restores it. It replaces the Agent Desk while open; close it to return to the desk.
 - Choose **Enhance** to rewrite the draft; nothing is sent until you press Enter. It is manual and one-shot.

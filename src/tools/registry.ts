@@ -45,9 +45,9 @@ export function reviewTools(): AppTool[] {
   return [...readOnlyTools(), ...gitTools.filter((tool) => reviewReadNames.has(tool.name))];
 }
 
-/** Ask mode: keep the agent's normal profile, but expose only tools that cannot change state. */
-export function askTools(profile: AgentToolProfile): AppTool[] {
-  return toolsForAgent(profile).filter((tool) => askReadNames.has(tool.name));
+/** Ask mode: every read-only tool, regardless of the Agent-mode profile. */
+export function askTools(): AppTool[] {
+  return toolsForAgent("all").filter((tool) => askReadNames.has(tool.name));
 }
 
 /** The /routine turn exposes only the tool that creates the routine. */

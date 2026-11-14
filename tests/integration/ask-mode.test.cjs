@@ -27,7 +27,7 @@ copilot.openSession = async (input) => {
 const { Runner } = require("../../dist/main/chat/runner.js");
 const { AppDatabase } = require("../../dist/main/db/index.js");
 
-test("Ask mode filters each tool profile and Agent mode restores it", async () => {
+test("Ask mode registers every read-only tool and Agent mode uses the profile", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fid-ask-mode-"));
   const previousUserData = process.env.FID_CODER_USER_DATA;
   process.env.FID_CODER_USER_DATA = root;
@@ -49,10 +49,10 @@ test("Ask mode filters each tool profile and Agent mode restores it", async () =
     const runner = new Runner(db, {}, { finalizeTurn: () => undefined });
     const view = await runner.previewContext(agent.id);
     assert.equal(view.readOnly, true);
-    for (const name of ["list_dir", "glob_files", "search_text", "file_read", "read_many", "git_status", "git_diff", "git_log", "explore_code"]) {
+    for (const name of ["list_dir", "glob_files", "search_text", "file_read", "read_many", "git_status", "git_diff", "git_log", "browser_navigate", "browser_snapshot", "explore_code"]) {
       assert.equal(view.tools.includes(name), true, name);
     }
-    for (const name of ["file_write", "apply_patch", "shell_run", "browser_navigate", "jira_search"]) {
+    for (const name of ["file_write", "apply_patch", "shell_run", "browser_click", "browser_type"]) {
       assert.equal(view.tools.includes(name), false, name);
     }
     assert.match(view.systemMessage, /You are in Ask mode/);
@@ -110,7 +110,7 @@ test("Ask mode filters each tool profile and Agent mode restores it", async () =
     });
     const browserView = await runner.previewContext(browserAgent.id);
     assert.equal(browserView.readOnly, true);
-    for (const name of ["browser_navigate", "browser_snapshot", "history_first"]) {
+    for (const name of ["browser_navigate", "browser_snapshot", "history_first", "file_read", "search_text", "git_status"]) {
       assert.equal(browserView.tools.includes(name), true, name);
     }
     for (const name of ["browser_click", "browser_type", "file_write", "shell_run"]) {

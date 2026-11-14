@@ -18,7 +18,7 @@ The workspace is required for file, search, git, and shell tools. Without one, t
 
 ## Ask or Agent mode
 
-**Tools** chooses the domain and **Mode** chooses access. Set both in the agent editor; the **Ask mode / Agent mode** switch in the composer changes the same setting. **Ask mode** registers only the read-only tools from the selected domain: discovery, reads, search, git and pull-request reads, and the read-only explorer. It cannot edit, run shell commands, click or type in the browser, or change git. **Agent mode** registers the full tool profile above.
+**Mode** chooses access. **Ask mode** ignores the tool profile and registers every read-only tool: discovery, reads, search, git and pull-request reads, browser navigate/snapshot, Jira reads, history, and the read-only explorer. It cannot edit, run shell commands, click or type in the browser, or change git. **Agent mode** reveals **Tools** and registers the full profile you choose. The **Ask mode / Agent mode** switch in the composer changes the same setting.
 
 Use Ask for architecture questions, flow diagrams, troubleshooting from a log, and onboarding. Switch to Agent mode when the agent needs to run a test or build command or make an edit. Ask mode is enforced by the tool list the model receives, not only by its instructions.
 
