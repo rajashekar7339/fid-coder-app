@@ -1378,7 +1378,7 @@ export function ChatView({
                 className={agent.readOnly ? "is-active" : ""}
                 aria-pressed={agent.readOnly}
                 disabled={running || savingMode || savingModel || enhancing}
-                title="Ask mode: registers only the read-only tools from this agent's profile. No edits, clicks, or commands."
+                title="Ask mode: every read-only tool, including browser navigate and snapshot. No edits, clicks, or commands."
                 onClick={() => void changeMode(true)}
               >
                 Ask mode
@@ -1388,7 +1388,7 @@ export function ChatView({
                 className={!agent.readOnly ? "is-active" : ""}
                 aria-pressed={!agent.readOnly}
                 disabled={running || savingMode || savingModel || enhancing}
-                title="Agent mode: registers the full tools for this agent's profile. Writes and actions need approval where required."
+                title="Agent mode: registers the full tools for the selected profile. Writes and actions need approval where required."
                 onClick={() => void changeMode(false)}
               >
                 Agent mode

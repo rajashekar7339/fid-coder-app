@@ -214,17 +214,14 @@ async function toolCalls(page, agentId) {
   );
 }
 
-async function editAgent(page, name, { toolProfile, readOnly }) {
-  await page.getByRole("button", { name: `Actions for ${name}` }).click();
-  await page.getByRole("menuitem", { name: "Edit agent" }).click();
-  await page.waitForSelector(".agent-modal", { timeout: 10_000 });
-  const beforeMode = await page.locator(".agent-mode-switch button[aria-pressed='true']").innerText();
-  await page.locator("#agent-tools").selectOption(toolProfile);
-  await page
-    .locator(".agent-mode-switch")
-    .getByRole("button", { name: readOnly ? "Ask mode" : "Agent mode", exact: true })
-    .click();
-  return beforeMode;
+const TOOL_LABELS = {
+  all: /^All tools/,
+  browser: /^Browser and Jira/,
+  developer: /^Shell, search, git, and files/,
+};
+
+async function chooseTools(page, toolProfile) {
+  await page.getByRole("radio", { name: TOOL_LABELS[toolProfile] }).click();
 }
 
 async function main() {
@@ -246,7 +243,7 @@ async function main() {
     check("signed in to Copilot", status.signedIn === true, status.authStatus);
     if (!status.signedIn) throw new Error("Copilot is not signed in; cannot run live turns");
 
-    // ---- Create an agent through the UI; Tools and Mode are the only choices ----
+    // ---- Create an agent through the UI ----
     await page.locator(".new-agent-row").click();
     await page.waitForSelector(".agent-modal", { timeout: 10_000 });
     check("the editor has no agent templates", (await page.locator(".agent-templates").count()) === 0);
@@ -254,7 +251,11 @@ async function main() {
       "the new agent defaults to Ask mode",
       (await page.locator(".agent-mode-switch button.is-active").innerText()) === "Ask mode",
     );
-    check("the new agent defaults to All tools", (await page.locator("#agent-tools").inputValue()) === "all");
+    check("Ask mode hides the tool profile picker", (await page.locator(".tool-choices").count()) === 0);
+    check(
+      "Ask mode does not require a tool profile",
+      !(await page.getByRole("button", { name: "Create agent" }).isDisabled()),
+    );
 
     await page.getByLabel("Name", { exact: true }).fill(agentName);
     await page.getByLabel("Workspace", { exact: true }).fill(workspace);
@@ -262,6 +263,28 @@ async function main() {
       element.scrollTop = 0;
     });
     await shot(page, "01-new-agent");
+
+    // ---- Switch to Agent mode; Tools appears and must be chosen ----
+    await page
+      .locator(".agent-mode-switch")
+      .getByRole("button", { name: "Agent mode", exact: true })
+      .click();
+    check(
+      "the editor lists every tool domain",
+      /All tools[\s\S]*Browser and Jira[\s\S]*Shell, search, git, and files/.test(
+        (await page.locator(".tool-choice").allInnerTexts()).join("\n"),
+      ),
+    );
+    check("no tool profile is selected by default", (await page.locator(".tool-choice.is-active").count()) === 0);
+    check(
+      "Create agent is disabled until a tool profile is chosen",
+      await page.getByRole("button", { name: "Create agent" }).isDisabled(),
+    );
+    await chooseTools(page, "all");
+    check(
+      "the chosen tool profile is active",
+      /All tools/.test(await page.locator(".tool-choice.is-active").innerText()),
+    );
     await page.locator(".agent-mode-switch").scrollIntoViewIfNeeded();
     await shot(page, "01b-new-agent-mode");
     await page.getByRole("button", { name: "Create agent" }).click();
@@ -275,8 +298,8 @@ async function main() {
     const created = await agentByName(page, agentName);
     if (!created) throw new Error("The test agent was not created");
     check(
-      "the new agent saves Ask mode and All tools",
-      created.readOnly === true && created.toolProfile === "all",
+      "the new agent saves Agent mode and All tools",
+      created.readOnly === false && created.toolProfile === "all",
       `readOnly=${created.readOnly} profile=${created.toolProfile}`,
     );
     check(
@@ -286,35 +309,7 @@ async function main() {
         !/switch to code/i.test(created.systemPrompt),
       created.systemPrompt,
     );
-
-    const defaultAsk = await preview(page, created.id);
-    check(
-      "Ask mode registers the read-only All tools profile",
-      hasTools(defaultAsk, ["file_read", "read_many", "search_text", "git_status", "browser_navigate", "browser_snapshot", "explore_code"]) &&
-        lacksTools(defaultAsk, ["file_write", "apply_patch", "shell_run", "browser_click", "browser_type"]),
-      defaultAsk.tools.join(", "),
-    );
-    check("the Ask mode hint is in the prompt", /You are in Ask mode/.test(defaultAsk.systemMessage));
-
-    // ---- Change Mode to Agent mode through the UI ----
-    const editorModeBefore = await editAgent(page, agentName, { toolProfile: "all", readOnly: false });
-    check("the editor shows the saved Ask mode before the change", editorModeBefore === "Ask mode", editorModeBefore);
-    check(
-      "the editor selects Agent mode",
-      (await page.locator(".agent-mode-switch button[aria-pressed='true']").innerText()) === "Agent mode",
-    );
-    await page.locator(".agent-mode-switch").scrollIntoViewIfNeeded();
-    await shot(page, "02-agent-mode-editor");
-    await page.getByRole("button", { name: "Save changes" }).click();
-    await page.waitForSelector(".agent-modal", { state: "detached", timeout: 20_000 });
-
-    const updated = await agentByName(page, agentName);
-    check(
-      "the editor saves All tools and Agent mode",
-      updated.readOnly === false && updated.toolProfile === "all",
-      `readOnly=${updated.readOnly} profile=${updated.toolProfile}`,
-    );
-    const agentView = await preview(page, updated.id);
+    const agentView = await preview(page, created.id);
     check(
       "Agent mode registers the full All tools profile",
       hasTools(agentView, ["file_write", "apply_patch", "shell_run", "browser_navigate", "browser_click", "browser_type"]),
@@ -371,8 +366,8 @@ async function main() {
     );
     const browserAskView = await preview(page, matrix.browserAsk);
     check(
-      "Matrix: Browser + Ask mode only navigates and snapshots",
-      hasTools(browserAskView, ["browser_navigate", "browser_snapshot"]) &&
+      "Matrix: Browser + Ask mode ignores the profile and reads everything",
+      hasTools(browserAskView, ["browser_navigate", "browser_snapshot", "file_read", "search_text", "git_status"]) &&
         lacksTools(browserAskView, ["browser_click", "browser_type", "file_write", "shell_run"]),
     );
     const developerAgentView = await preview(page, matrix.developerAgent);
@@ -416,11 +411,11 @@ async function main() {
     const editReply = await lastAssistantText(page);
     check("Agent mode returned a reply", editReply.trim().length > 0, editReply.replace(/\s+/g, " ").slice(0, 140));
     await page.waitForSelector(".edited-files-card", { timeout: 20_000 });
-    check("Agent mode recorded a change set", (await changes(page, updated.id)).length >= 1);
+    check("Agent mode recorded a change set", (await changes(page, created.id)).length >= 1);
     await shot(page, "03-live-edit");
 
-    const changesBeforeAsk = (await changes(page, updated.id)).length;
-    const toolsBeforeAsk = (await toolCalls(page, updated.id)).length;
+    const changesBeforeAsk = (await changes(page, created.id)).length;
+    const toolsBeforeAsk = (await toolCalls(page, created.id)).length;
 
     // ---- Switch back to Ask mode from the composer ----
     await page.locator(".mode-switch").getByRole("button", { name: "Ask mode", exact: true }).click();
@@ -437,7 +432,7 @@ async function main() {
     );
     check("the composer saves Ask mode", (await page.locator(".mode-switch button.is-active").innerText()) === "Ask mode");
 
-    const askView = await preview(page, updated.id);
+    const askView = await preview(page, created.id);
     check(
       "Ask mode filters All tools down to read-only tools",
       hasTools(askView, ["file_read", "search_text", "git_status", "browser_navigate", "browser_snapshot"]) &&
@@ -459,13 +454,13 @@ async function main() {
     const locked = fs.readFileSync(path.join(workspace, "locked.ts"), "utf8");
     check("Ask mode left locked.ts unchanged", locked.includes("locked") && !locked.includes("unlocked"), locked.trim());
     check("Ask mode did not create a shell file", !fs.existsSync(path.join(workspace, "should-not-exist.txt")));
-    const changesAfterAsk = (await changes(page, updated.id)).length;
+    const changesAfterAsk = (await changes(page, created.id)).length;
     check(
       "Ask mode recorded no change set",
       changesAfterAsk === changesBeforeAsk,
       `${changesBeforeAsk} -> ${changesAfterAsk}`,
     );
-    const toolsAfterAsk = (await toolCalls(page, updated.id)).length;
+    const toolsAfterAsk = (await toolCalls(page, created.id)).length;
     check(
       "Ask mode called no apply_patch, file_write, or shell_run",
       toolsAfterAsk === toolsBeforeAsk,

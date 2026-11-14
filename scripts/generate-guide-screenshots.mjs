@@ -222,17 +222,12 @@ async function captureAgentEditor(page) {
   const modal = page.locator(".agent-modal");
   await modal.waitFor({ state: "visible" });
   await modal.getByLabel("Name").fill("Release notes");
-  await modal.getByLabel("Role").fill("Release assistant");
-  await modal
-    .getByLabel("Instructions")
-    .fill(
-      "You are a release assistant. Read the changelog and open pull requests, then draft release notes with the main changes, risks, and testing gaps.",
-    );
-  await modal.getByLabel("Tools").selectOption("developer");
+  await modal.getByRole("button", { name: "Release notes", exact: true }).click();
   await modal
     .locator(".agent-mode-switch")
     .getByRole("button", { name: "Agent mode", exact: true })
     .click();
+  await modal.getByRole("radio", { name: /^Shell, search, git, and files/ }).click();
   await modal.locator("#agent-workspace").fill("D:\\Projects\\my-app");
   await page.addStyleTag({
     content:

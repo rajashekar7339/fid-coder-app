@@ -658,8 +658,8 @@ export class Runner {
   ): ToolContext {
     const agent = this.db.getAgent(agentId);
     if (!agent) throw new Error("Agent not found");
-    const workspaceTools = agent.toolProfile !== "browser";
     const readOnly = askMode(agent);
+    const workspaceTools = readOnly || agent.toolProfile !== "browser";
     const shell = shellEnabled(agent);
     const workspaceDir = agent.workspaceDir;
     const turnId = this.activeTurns.get(agentId) ?? null;
@@ -860,9 +860,9 @@ export class Runner {
   private async systemParts(
     agent: Agent,
   ): Promise<{ text: string; brief: string | null; rules: WorkspaceRules | null }> {
-    const workspaceTools = agent.toolProfile !== "browser";
     const readOnly = askMode(agent);
-    const browserRead = readOnly && (agent.toolProfile === "browser" || agent.toolProfile === "all");
+    const workspaceTools = readOnly || agent.toolProfile !== "browser";
+    const browserRead = readOnly;
     const shell = shellEnabled(agent);
     const browser = browserEnabled(agent);
     const history =
@@ -875,8 +875,8 @@ export class Runner {
     let rules: WorkspaceRules | null = null;
     if (readOnly) {
       lines.push(ASK_HINT);
-      if (!agent.workspaceDir && !browserRead) {
-        lines.push("Ask mode is on. Add a workspace folder to give this agent read-only file tools.");
+      if (!agent.workspaceDir) {
+        lines.push("Ask mode is on. Add a workspace folder to give this agent read-only file and git tools.");
       }
     }
     if (workspaceTools && agent.workspaceDir) {
@@ -924,7 +924,7 @@ export class Runner {
     if (this.turnCommands.get(agent.id) === "routine") return routineCreateTools();
     let tools: AppTool[];
     if (askMode(agent)) {
-      tools = [...askTools(agent.toolProfile), ...extra];
+      tools = [...askTools(), ...extra];
     } else {
       tools = [...toolsForAgent(agent.toolProfile), ...extra];
     }

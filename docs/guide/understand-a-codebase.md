@@ -4,7 +4,7 @@ Most questions about a checked-out repository do not need an edit. Ask mode read
 
 ## Ask mode
 
-Choose **Ask mode** in the agent editor or in the composer, before the model picker, to use the read-only subset of the selected tools: file reads, search, a workspace explorer, git status/diff/log, and pull-request reads. Choose **Agent mode** when the agent should edit, run tests, or use its full tool profile. **Tools** chooses the domain and **Mode** chooses access; they are the only permission controls. The switch is saved for the agent, and the conversation is kept when you switch.
+Choose **Ask mode** in the agent editor or in the composer, before the model picker. Ask mode ignores the tool profile and registers every read-only tool: file reads, search, a workspace explorer, git status/diff/log, pull-request reads, browser navigate/snapshot, Jira reads, and history. Choose **Agent mode** when the agent should edit, run tests, or use its full tool profile; Tools appears only in Agent mode. The switch is saved for the agent, and the conversation is kept when you switch.
 
 The read-only guarantee is enforced by the tools the agent receives, not only by its instructions. A question that needs a command or a change ends with a suggestion to switch to Agent mode.
 
@@ -64,6 +64,6 @@ Use **Troubleshoot an error** and paste the stack trace or log after the prompt.
 
 ## Start an agent for codebase questions
 
-Create an agent, choose **Shell, search, git, and files** under **Tools**, and leave **Mode** on **Ask**. Give it role instructions if you want it to explain code and cite evidence. To let the same agent make changes later, switch **Mode** to **Agent**; the instructions do not need to change.
+Create an agent and leave **Mode** on **Ask**. There is no tool profile to choose: Ask mode registers every read-only tool, including browser navigation and file reads. Pick the **Codebase guide** instruction preset; it tells the agent to read the code, cite evidence, and load the `architecture-review` skill when the question is an architecture review. To let the same agent make changes later, switch **Mode** to **Agent**, choose a tool profile, and the instructions do not need to change.
 
 > **Keep in mind:** Ask mode is a tool boundary, not a sandbox. It can read any text file inside the workspace, so keep secrets out of the repository. It never writes, runs shell commands, or changes git.
