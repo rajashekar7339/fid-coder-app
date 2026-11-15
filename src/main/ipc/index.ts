@@ -35,6 +35,10 @@ import type { Runner } from "../chat/runner";
 import type { Scheduler } from "../routines/scheduler";
 import type { RoutineService } from "../routines/service";
 import { clearSecret, getSecret, hasSecret, secretKeys, setSecret } from "../secrets";
+import { currentInbox } from "../routines/inbox";
+import { appPresence, saveAppPresence } from "../routines/presence";
+import { assertInboxAction } from "../../shared/inbox";
+import { snoozeUntilIso } from "../../shared/routine-runs";
 import { logJiraSettingsChange, logWarn } from "../log";
 import { listSkillInfo, readSkill, skillRoots } from "../skills";
 import { installSkill, planSkillImport } from "../skills/install";
@@ -53,10 +57,12 @@ type AppServices = {
   browser: BrowserManager;
   checkpoints: CheckpointStore;
   getWindow: () => BrowserWindow | null;
+  noteInbox?: () => void;
 };
 
 export function registerIpc(services: AppServices): void {
   const { db, runner, scheduler, routines, browser, checkpoints } = services;
+  const noteInbox = () => services.noteInbox?.();
 
   ipcMain.handle(channels.agentsList, () => db.listAgents());
   ipcMain.handle(channels.agentsCreate, (_event, input: AgentInput) => db.createAgent(cleanAgent(input)));
@@ -76,6 +82,7 @@ export function registerIpc(services: AppServices): void {
     db.placeAgent(String(id ?? ""), parseAgentPlacement(placement)),
   );
   ipcMain.handle(channels.agentsDelete, async (_event, id: string) => {
+    runner.clearQueue(id);
     await runner.dropSession(id);
     try {
       await browser.deleteProfile(id);
@@ -98,6 +105,57 @@ export function registerIpc(services: AppServices): void {
         attachments: Array.isArray(attachments) ? attachments : [],
       });
     },
+  );
+  ipcMain.handle(
+    channels.chatEnqueue,
+    (_event, agentId: string, text: string, attachments?: MessageAttachment[]) =>
+      runner.enqueue({
+        agentId: String(agentId ?? ""),
+        text: String(text ?? ""),
+        attachments: Array.isArray(attachments) ? attachments : [],
+      }),
+  );
+  ipcMain.handle(channels.chatQueue, (_event, agentId: string) =>
+    runner.listQueue(String(agentId ?? "")),
+  );
+  ipcMain.handle(
+    channels.chatUpdateQueued,
+    (_event, agentId: string, id: string, text: string) =>
+      runner.updateQueued(String(agentId ?? ""), String(id ?? ""), String(text ?? "")),
+  );
+  ipcMain.handle(channels.chatRemoveQueued, (_event, agentId: string, id: string) =>
+    runner.removeQueued(String(agentId ?? ""), String(id ?? "")),
+  );
+  ipcMain.handle(channels.chatClearQueue, (_event, agentId: string) =>
+    runner.clearQueue(String(agentId ?? "")),
+  );
+  ipcMain.handle(
+    channels.chatForceSend,
+    async (_event, agentId: string, text: string, attachments?: MessageAttachment[]) => {
+      await runner.forceSend({
+        agentId: String(agentId ?? ""),
+        text: String(text ?? ""),
+        attachments: Array.isArray(attachments) ? attachments : [],
+      });
+    },
+  );
+  ipcMain.handle(channels.chatForceQueued, async (_event, agentId: string, id: string) => {
+    await runner.forceQueued(String(agentId ?? ""), String(id ?? ""));
+  });
+  ipcMain.handle(
+    channels.chatEditMessage,
+    (_event, agentId: string, messageId: string, text: string) =>
+      runner.editMessage({
+        agentId: String(agentId ?? ""),
+        messageId: String(messageId ?? ""),
+        text: String(text ?? ""),
+      }),
+  );
+  ipcMain.handle(channels.chatDeleteMessage, (_event, agentId: string, messageId: string) =>
+    runner.deleteMessage({
+      agentId: String(agentId ?? ""),
+      messageId: String(messageId ?? ""),
+    }),
   );
   ipcMain.handle(channels.chatRunning, (_event, agentId: string) => runner.isRunning(String(agentId ?? "")));
   ipcMain.handle(channels.chatAbort, async (_event, agentId: string) => {
@@ -234,12 +292,37 @@ export function registerIpc(services: AppServices): void {
     if (!routine) throw new Error("Routine not found");
     return routine;
   });
+  ipcMain.handle(channels.routinesHistory, (_event, agentId: string) => db.listRoutineRuns(String(agentId ?? "")));
+  ipcMain.handle(channels.routinesStop, async (_event, runId: string) => {
+    await scheduler.stopRun(String(runId ?? ""));
+    noteInbox();
+  });
+  ipcMain.handle(channels.appPresence, () => appPresence(db));
+  ipcMain.handle(channels.appPresenceSet, (_event, patch: unknown) =>
+    saveAppPresence(db, patch, (paused) => scheduler.setPaused(paused)),
+  );
+  ipcMain.handle(channels.inboxList, () => currentInbox(db, runner.listPendingApprovals()));
+  ipcMain.handle(channels.inboxRead, (_event, id: string) => {
+    const itemId = String(id ?? "");
+    assertInboxAction(itemId);
+    db.readInbox(itemId);
+    noteInbox();
+    return currentInbox(db, runner.listPendingApprovals());
+  });
+  ipcMain.handle(channels.inboxSnooze, (_event, id: string) => {
+    const itemId = String(id ?? "");
+    assertInboxAction(itemId);
+    db.snoozeInbox(itemId, snoozeUntilIso(Date.now()));
+    noteInbox();
+    return currentInbox(db, runner.listPendingApprovals());
+  });
 
   ipcMain.handle(channels.settingsGet, async (_event, options?: { refreshAuth?: boolean }) => {
     if (options?.refreshAuth) await stopClient();
     const status = {
       ...(await getCopilotStatus()),
       jiraSiteUrl: db.getSetting("jira_site_url") ?? "",
+      ...appPresence(db),
     };
     watchCopilotUsage(status.signedIn);
     return status;
@@ -259,6 +342,7 @@ export function registerIpc(services: AppServices): void {
     return {
       ...(await getCopilotStatus()),
       jiraSiteUrl: db.getSetting("jira_site_url") ?? "",
+      ...appPresence(db),
     };
   });
   ipcMain.handle(channels.settingsLogin, async () => {

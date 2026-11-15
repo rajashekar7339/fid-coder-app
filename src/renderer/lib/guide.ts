@@ -1,6 +1,11 @@
+/// <reference types="vite/client" />
+
 import askModeImage from "../../../docs/guide/images/ask-mode.png";
 import enhancePromptImage from "../../../docs/guide/images/enhance-prompt.png";
+import messageActionsImage from "../../../docs/guide/images/message-actions.png";
 import projectMapImage from "../../../docs/guide/images/project-map.png";
+import queueWhileRunningImage from "../../../docs/guide/images/queue-while-running.png";
+import routineHistoryImage from "../../../docs/guide/images/routine-history.png";
 import skillsLibraryImage from "../../../docs/guide/images/skills-library.png";
 import skillsUseImage from "../../../docs/guide/images/skills-use.png";
 
@@ -28,7 +33,7 @@ const SOURCES: GuideSource[] = [
     id: "the-cockpit",
     title: "The cockpit at a glance",
     group: "Start here",
-    summary: "Search, pin, and archive agents in the sidebar, then use the conversation, Agent Desk, and shortcuts.",
+    summary: "Search, pin, and archive agents, open the inbox, then use the conversation, Agent Desk, and shortcuts.",
     readMinutes: 4,
     file: "the-cockpit.md",
   },
@@ -37,8 +42,8 @@ const SOURCES: GuideSource[] = [
     title: "Chat with an agent",
     group: "Using Fid Coder",
     summary:
-      "Send messages, improve a draft, follow tool steps, answer a question, hand the browser back for sign-in, read token and credit usage, switch models, stop a turn, and approve deletes, pushes, and downloads.",
-    readMinutes: 8,
+      "Send messages, queue a follow-up while a turn runs, edit or delete a chat message, improve a draft, follow tool steps, answer a question, hand the browser back for sign-in, read token and credit usage, switch models, stop a turn, and approve deletes, pushes, and downloads.",
+    readMinutes: 9,
     file: "chat-with-an-agent.md",
   },
   {
@@ -54,8 +59,8 @@ const SOURCES: GuideSource[] = [
     id: "create-a-routine",
     title: "Create a routine",
     group: "Using Fid Coder",
-    summary: "Create a routine that runs once or repeats, and get a Windows notification when it needs you.",
-    readMinutes: 4,
+    summary: "Create a routine that runs once or repeats while Fid Coder is open. A slot that passes while the app is closed does not run.",
+    readMinutes: 6,
     file: "create-a-routine.md",
   },
   {
@@ -100,7 +105,10 @@ const IMAGES = import.meta.glob("../../../docs/guide/images/*", {
 const EXPLICIT_IMAGES: Record<string, string> = {
   "ask-mode.png": askModeImage,
   "enhance-prompt.png": enhancePromptImage,
+  "message-actions.png": messageActionsImage,
   "project-map.png": projectMapImage,
+  "queue-while-running.png": queueWhileRunningImage,
+  "routine-history.png": routineHistoryImage,
   "skills-library.png": skillsLibraryImage,
   "skills-use.png": skillsUseImage,
 };

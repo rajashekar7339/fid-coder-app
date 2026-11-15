@@ -42,12 +42,13 @@ function findAppRoot(start: string): string {
   return path.resolve(start);
 }
 
-export function notify(title: string, body: string): void {
+export function notify(title: string, body: string, onClick?: () => void): void {
   ensureWindowsToastShortcut();
   if (!Notification.isSupported()) return;
   const toast = new Notification({
     title: title.slice(0, 64),
     body: body.slice(0, 240),
   });
+  if (onClick) toast.on("click", () => onClick());
   toast.show();
 }

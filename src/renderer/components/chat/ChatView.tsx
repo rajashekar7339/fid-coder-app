@@ -25,6 +25,7 @@ import {
   Network,
   PanelRight,
   Paperclip,
+  Pencil,
   Pin,
   Save,
   ScanSearch,
@@ -34,9 +35,11 @@ import {
   Square,
   Tag,
   Terminal,
+  Trash2,
   Undo2,
   Wrench,
   X,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { HandoffCard } from "../approvals/HandoffCard";
@@ -52,6 +55,7 @@ import {
   attachmentsForSend,
 } from "../../../shared/attachments";
 import { groupToolCalls, liveTurnSettled, projectThread, userTurnAccepted, type LiveTool, type LiveTurn } from "../../../shared/chat-thread";
+import { isEditableUserMessage } from "../../../shared/message-actions";
 import { COMMANDS, commandAvailability, filterCommands, parseCommand, type CommandInfo } from "../../../shared/commands";
 import { changeTotals, findChangedFile } from "../../../shared/changes";
 import {
@@ -77,6 +81,7 @@ import type {
   CopilotModel,
   Message,
   MessageAttachment,
+  QueuedMessage,
   SkillInfo,
 } from "../../../shared/types";
 import { agentSubtitle } from "../../lib/agent-display";
@@ -93,6 +98,7 @@ import { ApprovalCard } from "../approvals/ApprovalCard";
 import { EditedFilesCard } from "./EditedFilesCard";
 import { MessageContent } from "./MessageContent";
 import { ProjectMapDialog } from "./ProjectMapDialog";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { ModelSelect } from "../ui/ModelSelect";
 import { TokenUsage } from "./TokenUsage";
 
@@ -215,6 +221,15 @@ function toolPreview(name: string, preview: string | undefined): string {
   return `${name}: ${text.slice(0, 160)}`;
 }
 
+function queuedLabel(item: QueuedMessage): string {
+  const text = item.text.replace(/\s+/g, " ").trim();
+  const label =
+    text === ATTACHMENT_ONLY_MESSAGE && item.attachments.length > 0
+      ? `${item.attachments.length} file${item.attachments.length === 1 ? "" : "s"}`
+      : text;
+  return label.length > 70 ? `${label.slice(0, 70)}…` : label;
+}
+
 function finishLiveTool(tools: LiveTool[], name: string, ok: boolean, text: string): LiveTool[] {
   const next = tools.slice();
   let index = next.findIndex((tool) => tool.pending && tool.name === name);
@@ -328,14 +343,26 @@ export function ChatView({
   const [attaching, setAttaching] = useState(false);
   const [enhanceStatus, setEnhanceStatus] = useState<string | null>(null);
   const [undoDraft, setUndoDraft] = useState<string | null>(null);
+  const [queued, setQueued] = useState<QueuedMessage[]>([]);
+  const [queueBusy, setQueueBusy] = useState(false);
+  const [forceSending, setForceSending] = useState(false);
+  const [confirmClearQueue, setConfirmClearQueue] = useState(false);
+  const [editingQueued, setEditingQueued] = useState<string | null>(null);
+  const [queueEditText, setQueueEditText] = useState("");
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingMessageText, setEditingMessageText] = useState("");
+  const [deleteMessageTarget, setDeleteMessageTarget] = useState<Message | null>(null);
+  const [messageActionBusy, setMessageActionBusy] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
   const mapButton = useRef<HTMLButtonElement>(null);
   const pinned = useRef(true);
   const generation = useRef(0);
   const messageLoad = useRef(0);
+  const turnEpoch = useRef(0);
   const sendLock = useRef(false);
   const enhanceLock = useRef(false);
+  const editWasPinned = useRef(false);
 
   const updateLive = useCallback(
     (updater: (current: LiveTurn | null) => LiveTurn | null) => {
@@ -397,6 +424,8 @@ export function ChatView({
   const showingActive = activePinned ? null : activeAttachment;
   const allAttachments = attachmentsForSend(attachments, activeAttachment);
   const hasContent = draft.trim().length > 0 || allAttachments.length > 0;
+  const queuePaused = queued.length > 0 && !running && !forceSending;
+  const messageActionsLocked = running || enhancing || forceSending || messageActionBusy;
   const enhanceHint = enhancing ? "Enhancing your draft…" : enhanceStatus;
 
   useEffect(() => {
@@ -416,6 +445,22 @@ export function ChatView({
       cancelled = true;
     };
   }, [agent.workspaceDir, skillsRevision]);
+
+  useEffect(() => {
+    setQueued([]);
+    setEditingQueued(null);
+    setQueueEditText("");
+    let cancelled = false;
+    void fid()
+      .chat.queue(agent.id)
+      .then((list) => {
+        if (!cancelled) setQueued(list);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [agent.id]);
 
   useEffect(() => {
     setCommandIndex(0);
@@ -569,6 +614,7 @@ export function ChatView({
     const id = fid().chat.onEvent((event: ChatEvent) => {
       if (event.agentId !== agent.id || generation.current !== gen) return;
       if (event.type === "user") {
+        turnEpoch.current += 1;
         setRunning(true);
         updateLive((current) => {
           if (current?.userText === event.text) return current;
@@ -615,16 +661,29 @@ export function ChatView({
       if (event.type === "usage") {
         updateLive((current) => (current ? { ...current, usage: event.usage } : current));
       }
+      if (event.type === "queue") {
+        setQueued(event.queue);
+        setEditingQueued((id) =>
+          id && event.queue.some((item) => item.id === id) ? id : null,
+        );
+      }
       if (event.type === "done" || event.type === "error") {
-        if (event.type === "error") {
+        if (event.type === "error" && event.aborted !== true) {
           setError(event.error);
           if (signInRequired(event.error)) onAuthRequired();
         }
         const nextLoad = ++messageLoad.current;
+        const epoch = turnEpoch.current;
         void fid()
           .messages.list(agent.id)
           .then((list) => {
-            if (generation.current !== gen || nextLoad !== messageLoad.current) return;
+            if (
+              generation.current !== gen ||
+              nextLoad !== messageLoad.current ||
+              epoch !== turnEpoch.current
+            ) {
+              return;
+            }
             remember(agent.id, null);
             setMessages(list);
             setLiveState(null);
@@ -759,36 +818,46 @@ export function ChatView({
     window.requestAnimationFrame(() => composer.current?.focus());
   }
 
-  function send() {
-    if (enhancing) return;
+  function outgoingText(): string | null {
+    if (enhancing) return null;
     const text = draft.trim();
     const parsed = parseCommand(text);
     if (parsed?.command.id === "routine" && !parsed.args) {
       setError("Add the task and time after /routine.");
-      return;
+      return null;
     }
     if (text === "/skills") {
       onOpenSkills();
-      return;
+      return null;
     }
     if (skillCatalogState === "ready" && parsed?.command.id === "skills") {
       const matched = matchSkillInvocation(skillCatalog, parsed.args);
       if ("error" in matched) {
         setError(matched.error);
-        return;
+        return null;
       }
       if (!matched.task) {
         setError("Add the task after the skill name.");
-        return;
+        return null;
       }
     }
-    sendText(text);
+    return text;
   }
 
-  function sendText(raw: string) {
+  function send() {
+    const text = outgoingText();
+    if (text !== null) sendText(text);
+  }
+
+  function sendNow() {
+    const text = outgoingText();
+    if (text !== null) sendText(text, { force: true });
+  }
+
+  function sendText(raw: string, options: { force?: boolean } = {}) {
     const text =
       raw.trim() || (allAttachments.length > 0 ? ATTACHMENT_ONLY_MESSAGE : "");
-    if (!text || running || enhancing || sendLock.current) return;
+    if (!text || enhancing || sendLock.current) return;
     const uiCommand = COMMANDS.find((command) => command.ui && text === `/${command.id}`);
     if (uiCommand) {
       chooseCommand(uiCommand);
@@ -798,6 +867,13 @@ export function ChatView({
     const usesAttachments = command === null || command.command.id === "skills";
     const sentAttachments = usesAttachments ? allAttachments : [];
     const sentPinned = attachments;
+
+    if (running) {
+      if (options.force) void forceSendText(text, sentAttachments, usesAttachments);
+      else void queueText(text, sentAttachments, usesAttachments);
+      return;
+    }
+
     setCommandsOpen(false);
     sendLock.current = true;
     queueMicrotask(() => {
@@ -839,9 +915,223 @@ export function ChatView({
           if (usesAttachments && sentPinned.length > 0) onAttachmentsChange(sentPinned);
         }
         const message = errorText(caught);
-        setError(message);
-        if (signInRequired(message)) onAuthRequired();
+        if (message !== "Stopped by the user.") {
+          setError(message);
+          if (signInRequired(message)) onAuthRequired();
+        }
       });
+  }
+
+  async function queueText(
+    text: string,
+    sentAttachments: MessageAttachment[],
+    usesAttachments: boolean,
+  ) {
+    const gen = generation.current;
+    const draftAtSend = draft;
+    sendLock.current = true;
+    setCommandsOpen(false);
+    setSkillPickerClosed(true);
+    setError(null);
+    try {
+      await fid().chat.enqueue(agent.id, text, sentAttachments);
+      if (generation.current !== gen) return;
+      setDraft((current) => (current === draftAtSend ? "" : current));
+      if (usesAttachments) onAttachmentsChange([]);
+      setUndoDraft(null);
+      setEnhanceStatus(null);
+      pinned.current = true;
+      setShowJump(false);
+    } catch (caught) {
+      if (generation.current === gen) setError(errorText(caught));
+    } finally {
+      sendLock.current = false;
+    }
+  }
+
+  async function forceSendText(
+    text: string,
+    sentAttachments: MessageAttachment[],
+    usesAttachments: boolean,
+  ) {
+    const gen = generation.current;
+    const draftAtSend = draft;
+    sendLock.current = true;
+    setForceSending(true);
+    setCommandsOpen(false);
+    setSkillPickerClosed(true);
+    setError(null);
+    pinned.current = true;
+    setShowJump(false);
+    try {
+      await fid().chat.forceSend(agent.id, text, sentAttachments);
+      if (generation.current !== gen) return;
+      setDraft((current) => (current === draftAtSend ? "" : current));
+      if (usesAttachments) onAttachmentsChange([]);
+      setUndoDraft(null);
+      setEnhanceStatus(null);
+    } catch (caught) {
+      if (generation.current === gen) setError(errorText(caught));
+    } finally {
+      if (generation.current === gen) setForceSending(false);
+      sendLock.current = false;
+    }
+  }
+
+  async function forceQueuedNow(item: QueuedMessage) {
+    if (queueBusy || forceSending) return;
+    const gen = generation.current;
+    setQueueBusy(true);
+    setForceSending(true);
+    setError(null);
+    try {
+      await fid().chat.forceQueued(agent.id, item.id);
+    } catch (caught) {
+      if (generation.current === gen) setError(errorText(caught));
+    } finally {
+      if (generation.current === gen) {
+        setQueueBusy(false);
+        setForceSending(false);
+      }
+    }
+  }
+
+  async function removeQueuedItem(id: string) {
+    if (queueBusy || forceSending) return;
+    const gen = generation.current;
+    setQueueBusy(true);
+    try {
+      await fid().chat.removeQueued(agent.id, id);
+    } catch (caught) {
+      if (generation.current === gen) setError(errorText(caught));
+    } finally {
+      if (generation.current === gen) setQueueBusy(false);
+    }
+  }
+
+  function beginQueuedEdit(item: QueuedMessage) {
+    if (queueBusy || forceSending) return;
+    setEditingQueued(item.id);
+    setQueueEditText(
+      item.text === ATTACHMENT_ONLY_MESSAGE && item.attachments.length > 0
+        ? ""
+        : item.text,
+    );
+    setError(null);
+  }
+
+  function cancelQueuedEdit() {
+    setEditingQueued(null);
+    setQueueEditText("");
+    window.requestAnimationFrame(() => composer.current?.focus());
+  }
+
+  async function saveQueuedEdit(item: QueuedMessage) {
+    if (queueBusy || forceSending) return;
+    const text = queueEditText.trim();
+    if (!text && item.attachments.length === 0) {
+      setError("Type a message before saving.");
+      return;
+    }
+    const gen = generation.current;
+    setQueueBusy(true);
+    try {
+      await fid().chat.updateQueued(agent.id, item.id, text);
+      if (generation.current !== gen) return;
+      setEditingQueued(null);
+      setQueueEditText("");
+      window.requestAnimationFrame(() => composer.current?.focus());
+    } catch (caught) {
+      if (generation.current === gen) setError(errorText(caught));
+    } finally {
+      if (generation.current === gen) setQueueBusy(false);
+    }
+  }
+
+  async function clearQueueNow() {
+    await fid().chat.clearQueue(agent.id);
+    setConfirmClearQueue(false);
+  }
+
+  function beginMessageEdit(message: Message) {
+    if (!isEditableUserMessage(message) || messageActionsLocked) return;
+    if (editingMessageId && editingMessageId !== message.id) return;
+    editWasPinned.current = pinned.current;
+    pinned.current = false;
+    setEditingMessageId(message.id);
+    setEditingMessageText(
+      message.attachments?.length && message.content === ATTACHMENT_ONLY_MESSAGE
+        ? ""
+        : message.content,
+    );
+    setError(null);
+    setCommandsOpen(false);
+    setSkillPickerClosed(true);
+  }
+
+  function cancelMessageEdit() {
+    if (messageActionBusy) return;
+    setEditingMessageId(null);
+    setEditingMessageText("");
+    pinned.current = editWasPinned.current;
+    if (pinned.current && scroller.current) {
+      scroller.current.scrollTop = scroller.current.scrollHeight;
+    }
+  }
+
+  async function reloadMessages(gen: number) {
+    const list = await fid().messages.list(agent.id);
+    if (generation.current !== gen) return;
+    setMessages(list);
+  }
+
+  async function saveMessageEdit(message: Message) {
+    if (messageActionsLocked || editingMessageId !== message.id) return;
+    const text = editingMessageText.trim();
+    if (!text && !(message.attachments?.length)) {
+      setError("Type a message before saving.");
+      return;
+    }
+    const gen = generation.current;
+    setMessageActionBusy(true);
+    setError(null);
+    try {
+      const updated = await fid().chat.editMessage(agent.id, message.id, text);
+      if (generation.current !== gen) return;
+      onUpdated(updated);
+      setEditingMessageId(null);
+      setEditingMessageText("");
+      pinned.current = true;
+      setRunning(true);
+      await reloadMessages(gen);
+      onActivity();
+    } catch (caught) {
+      if (generation.current === gen) setError(errorText(caught));
+    } finally {
+      if (generation.current === gen) setMessageActionBusy(false);
+    }
+  }
+
+  async function deleteMessageNow() {
+    const target = deleteMessageTarget;
+    if (!target) return;
+    const gen = generation.current;
+    setMessageActionBusy(true);
+    setError(null);
+    try {
+      const updated = await fid().chat.deleteMessage(agent.id, target.id);
+      if (generation.current !== gen) return;
+      onUpdated(updated);
+      setDeleteMessageTarget(null);
+      try {
+        await reloadMessages(gen);
+      } catch (caught) {
+        if (generation.current === gen) setError(errorText(caught));
+      }
+      onActivity();
+    } finally {
+      if (generation.current === gen) setMessageActionBusy(false);
+    }
   }
 
   async function changeModel(model: string) {
@@ -1119,6 +1409,22 @@ export function ChatView({
                         });
                       }}
                       onOpenFile={openFile}
+                      editing={editingMessageId === item.message.id}
+                      editText={editingMessageText}
+                      actionsLocked={
+                        messageActionsLocked ||
+                        (editingMessageId !== null && editingMessageId !== item.message.id)
+                      }
+                      actionBusy={messageActionBusy}
+                      onEditTextChange={setEditingMessageText}
+                      onBeginEdit={() => beginMessageEdit(item.message)}
+                      onCancelEdit={cancelMessageEdit}
+                      onSaveEdit={() => void saveMessageEdit(item.message)}
+                      onDelete={() => {
+                        if (!messageActionsLocked && isEditableUserMessage(item.message)) {
+                          setDeleteMessageTarget(item.message);
+                        }
+                      }}
                     />
                   )}
                   {item.kind === "message" ? changeCardFor(item.message) : null}
@@ -1281,6 +1587,137 @@ export function ChatView({
               </div>
             </div>
           ) : null}
+          {queued.length > 0 ? (
+            <div className="queue-panel" aria-label="Queued messages">
+              <div className="queue-head">
+                <span className="queue-title">
+                  Queued · {queued.length}
+                  {queuePaused ? <span className="queue-paused">Paused</span> : null}
+                </span>
+                <span className="queue-head-actions">
+                  {queuePaused ? (
+                    <button
+                      type="button"
+                      className="queue-head-button"
+                      title="Send the first queued message now"
+                      disabled={queueBusy || forceSending}
+                      onClick={() => {
+                        const next = queued[0];
+                        if (next) void forceQueuedNow(next);
+                      }}
+                    >
+                      Send next
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="queue-head-button"
+                    title="Remove every queued message"
+                    disabled={queueBusy || forceSending}
+                    onClick={() => setConfirmClearQueue(true)}
+                  >
+                    Clear
+                  </button>
+                </span>
+              </div>
+              {queued.map((item, index) => {
+                const label = queuedLabel(item);
+                if (editingQueued === item.id) {
+                  return (
+                    <div className="queue-row is-editing" key={item.id}>
+                      <span className="queue-row-index">#{index + 1}</span>
+                      <textarea
+                        className="queue-edit-input"
+                        value={queueEditText}
+                        rows={2}
+                        autoFocus
+                        aria-label={`Edit queued message ${index + 1}`}
+                        onChange={(event) => setQueueEditText(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            cancelQueuedEdit();
+                            return;
+                          }
+                          if (
+                            event.key === "Enter" &&
+                            !event.shiftKey &&
+                            !event.nativeEvent.isComposing
+                          ) {
+                            event.preventDefault();
+                            void saveQueuedEdit(item);
+                          }
+                        }}
+                      />
+                      <span className="queue-row-actions">
+                        <button
+                          type="button"
+                          className="queue-row-text-button is-send"
+                          disabled={queueBusy || forceSending}
+                          onClick={() => void saveQueuedEdit(item)}
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          className="queue-row-text-button"
+                          disabled={queueBusy || forceSending}
+                          onClick={cancelQueuedEdit}
+                        >
+                          Cancel
+                        </button>
+                      </span>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="queue-row" key={item.id}>
+                    <span className="queue-row-index">#{index + 1}</span>
+                    <span className="queue-row-text" title={item.text}>
+                      {item.text}
+                    </span>
+                    {item.attachments.length > 0 ? (
+                      <span className="queue-row-meta">
+                        {item.attachments.length} file{item.attachments.length === 1 ? "" : "s"}
+                      </span>
+                    ) : null}
+                    <span className="queue-row-actions">
+                      <button
+                        type="button"
+                        className="queue-row-text-button is-send"
+                        aria-label={`Send queued message now: ${label}`}
+                        title="Stop the current turn and send this message now"
+                        disabled={queueBusy || forceSending}
+                        onClick={() => void forceQueuedNow(item)}
+                      >
+                        Send now
+                      </button>
+                      <button
+                        type="button"
+                        className="queue-row-text-button"
+                        aria-label={`Edit queued message: ${label}`}
+                        title="Edit this queued message"
+                        disabled={queueBusy || forceSending}
+                        onClick={() => beginQueuedEdit(item)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="queue-row-text-button"
+                        aria-label={`Cancel queued message: ${label}`}
+                        title="Remove from the queue"
+                        disabled={queueBusy || forceSending}
+                        onClick={() => void removeQueuedItem(item.id)}
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
           {attachments.length > 0 || showingActive ? (
             <div className="composer-attachments" aria-label="Attached context">
               {attachments.map((attachment) => {
@@ -1353,18 +1790,28 @@ export function ChatView({
             placeholder={
               !settingsReady
                 ? "Checking Copilot…"
-                : signedIn
-                  ? `Message ${agent.name}`
-                  : checkingSignIn
+                : !signedIn
+                  ? checkingSignIn
                     ? "Checking Copilot sign-in…"
                     : "Sign in to Copilot to chat"
+                  : forceSending
+                    ? "Sending your message now…"
+                    : running
+                      ? `Queue a message for ${agent.name}`
+                      : `Message ${agent.name}`
             }
             disabled={!settingsReady || !signedIn}
-            readOnly={enhancing}
+            readOnly={enhancing || forceSending}
             aria-label={`Message ${agent.name}`}
             aria-expanded={commandsOpen || skillPickerOpen}
             aria-controls={commandsOpen ? "composer-commands" : skillPickerOpen ? "composer-skills" : undefined}
-            title="Enter to send. Shift+Enter for a new line."
+            title={
+              forceSending
+                ? "Stopping the current turn and sending your message."
+                : running
+                  ? "Enter queues this message. Ctrl+Enter stops the current turn and sends it now. Shift+Enter for a new line."
+                  : "Enter to send. Shift+Enter for a new line."
+            }
             onChange={(event) => {
               const value = event.target.value;
               setDraft(value);
@@ -1444,7 +1891,8 @@ export function ChatView({
               }
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
-                send();
+                if (running && (event.ctrlKey || event.metaKey)) sendNow();
+                else send();
               }
             }}
           />
@@ -1476,7 +1924,7 @@ export function ChatView({
               className="composer-command composer-attach"
               aria-label="Attach files"
               title="Attach files from this PC"
-              disabled={!settingsReady || !signedIn || running || enhancing || attaching}
+              disabled={!settingsReady || !signedIn || enhancing || attaching || forceSending}
               onClick={() => void attachFiles()}
             >
               {attaching ? (
@@ -1541,29 +1989,65 @@ export function ChatView({
                 Model list unavailable · Retry
               </button>
             ) : null}
-            {running ? (
-              <button
-                type="button"
-                className="send-button is-stop"
-                aria-label="Stop generating"
-                onClick={() => {
-                  void fid()
-                    .chat.abort(agent.id)
-                    .catch((caught: unknown) => setError(errorText(caught)));
-                }}
-              >
-                <Square size={11} fill="currentColor" />
-              </button>
-            ) : (
-              <button
-                type="submit"
-                className="send-button"
-                aria-label="Send message"
-                disabled={!settingsReady || !signedIn || !hasContent || enhancing}
-              >
-                <ArrowUp size={15} />
-              </button>
-            )}
+            <div className="composer-actions">
+              {forceSending ? (
+                <button
+                  type="button"
+                  className="send-button is-now"
+                  aria-label="Sending now"
+                  aria-busy="true"
+                  disabled
+                >
+                  <Loader2 size={13} className="spin" />
+                </button>
+              ) : running ? (
+                <>
+                  {hasContent ? (
+                    <>
+                      <button
+                        type="button"
+                        className="send-button is-queue"
+                        aria-label="Queue message"
+                        title="Queue for after this turn (Enter)"
+                        onClick={() => send()}
+                      >
+                        <ArrowUp size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        className="send-button is-now"
+                        aria-label="Send now and stop the current turn"
+                        title="Stop the current turn and send this message (Ctrl+Enter)"
+                        onClick={() => sendNow()}
+                      >
+                        <Zap size={13} />
+                      </button>
+                    </>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="send-button is-stop"
+                    aria-label="Stop generating"
+                    onClick={() => {
+                      void fid()
+                        .chat.abort(agent.id)
+                        .catch((caught: unknown) => setError(errorText(caught)));
+                    }}
+                  >
+                    <Square size={11} fill="currentColor" />
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="submit"
+                  className="send-button"
+                  aria-label="Send message"
+                  disabled={!settingsReady || !signedIn || !hasContent || enhancing}
+                >
+                  <ArrowUp size={15} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
         {enhanceHint ? (
@@ -1580,6 +2064,37 @@ export function ChatView({
           <p className="command-hint">{hint}</p>
         ) : null}
       </form>
+
+      {confirmClearQueue ? (
+        <ConfirmDialog
+          title="Clear queued messages?"
+          description={`Remove ${queued.length} queued message${queued.length === 1 ? "" : "s"}?`}
+          confirmLabel="Clear queue"
+          busyLabel="Clearing…"
+          onCancel={() => setConfirmClearQueue(false)}
+          onConfirm={clearQueueNow}
+        />
+      ) : null}
+
+      {deleteMessageTarget ? (
+        <ConfirmDialog
+          title="Delete this message?"
+          description={
+            <>
+              <strong>
+                “{deleteMessageTarget.content.replace(/\s+/g, " ").trim().slice(0, 160)}”
+              </strong>{" "}
+              and the agent's reply will be removed. Later messages stay and may refer to
+              the removed exchange. File edits and command effects already made are not
+              reverted.
+            </>
+          }
+          confirmLabel="Delete message"
+          busyLabel="Deleting…"
+          onCancel={() => setDeleteMessageTarget(null)}
+          onConfirm={deleteMessageNow}
+        />
+      ) : null}
 
       {mapOpen ? (
         <ProjectMapDialog
@@ -1621,6 +2136,15 @@ function MessageRow({
   copied,
   onCopy,
   onOpenFile,
+  editing,
+  editText,
+  actionsLocked,
+  actionBusy,
+  onEditTextChange,
+  onBeginEdit,
+  onCancelEdit,
+  onSaveEdit,
+  onDelete,
 }: {
   agent: Agent;
   message: Message;
@@ -1628,36 +2152,160 @@ function MessageRow({
   copied: boolean;
   onCopy: (content: string) => void;
   onOpenFile: (path: string, line: number, endLine: number | null, related: Citation[]) => void;
+  editing: boolean;
+  editText: string;
+  actionsLocked: boolean;
+  actionBusy: boolean;
+  onEditTextChange: (text: string) => void;
+  onBeginEdit: () => void;
+  onCancelEdit: () => void;
+  onSaveEdit: () => void;
+  onDelete: () => void;
 }) {
+  const editRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (!editing) return;
+    const frame = window.requestAnimationFrame(() => {
+      const field = editRef.current;
+      if (!field) return;
+      field.focus();
+      const scroller = field.closest(".chat-scroll");
+      if (!(scroller instanceof HTMLElement)) return;
+      const sticky = scroller.querySelector(".day-separator");
+      const scrollerTop = scroller.getBoundingClientRect().top;
+      const safeTop =
+        sticky instanceof HTMLElement
+          ? sticky.getBoundingClientRect().bottom + 8
+          : scrollerTop + 12;
+      const top = field.getBoundingClientRect().top - scrollerTop + scroller.scrollTop;
+      scroller.scrollTo({ top: Math.max(0, top - (safeTop - scrollerTop)) });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [editing]);
+
   if (message.role === "user") {
+    const attachments = message.attachments ?? [];
+    const manageable = isEditableUserMessage(message);
+    const attachmentChips =
+      attachments.length > 0 ? (
+        <div className="user-attachments" aria-label="Attached context">
+          {attachments.map((attachment) => (
+            <span
+              className="user-attachment"
+              key={attachmentKey(attachment)}
+              title={attachment.path}
+            >
+              {attachment.kind === "upload" ? (
+                <Paperclip size={9} aria-hidden="true" />
+              ) : (
+                <FileText size={9} aria-hidden="true" />
+              )}
+              {attachmentLabel(attachment)}
+            </span>
+          ))}
+        </div>
+      ) : null;
+    if (editing) {
+      return (
+        <div className="user-message is-editing">
+          {attachmentChips}
+          <textarea
+            ref={editRef}
+            className="user-edit-input"
+            value={editText}
+            rows={3}
+            placeholder={
+              attachments.length > 0
+                ? "Add a message, or save to resend the attachments."
+                : "Edit your message"
+            }
+            aria-label="Edit message"
+            onChange={(event) => onEditTextChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && !actionBusy) {
+                event.preventDefault();
+                onCancelEdit();
+                return;
+              }
+              if (
+                event.key === "Enter" &&
+                (event.ctrlKey || event.metaKey) &&
+                !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault();
+                onSaveEdit();
+              }
+            }}
+          />
+          <div className="user-edit-footer">
+            <span className="user-edit-note">
+              Saving removes the reply and every later message. File edits and command effects stay.
+            </span>
+            <div className="user-edit-actions">
+              <button
+                type="button"
+                className="btn btn-quiet"
+                disabled={actionBusy}
+                onClick={onCancelEdit}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={actionBusy || actionsLocked || (!editText.trim() && attachments.length === 0)}
+                onClick={onSaveEdit}
+              >
+                {actionBusy ? "Saving…" : "Save & rerun"}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="user-message">
-        {message.attachments && message.attachments.length > 0 ? (
-          <div className="user-attachments" aria-label="Attached context">
-            {message.attachments.map((attachment) => (
-              <span
-                className="user-attachment"
-                key={attachmentKey(attachment)}
-                title={attachment.path}
-              >
-                {attachment.kind === "upload" ? (
-                  <Paperclip size={9} aria-hidden="true" />
-                ) : (
-                  <FileText size={9} aria-hidden="true" />
-                )}
-                {attachmentLabel(attachment)}
-              </span>
-            ))}
-          </div>
-        ) : null}
+        {attachmentChips}
         <div className="user-bubble">{message.content}</div>
-        <time
-          className="user-time"
-          dateTime={message.createdAt}
-          title={formatFullTimestamp(message.createdAt)}
-        >
-          {formatClock(message.createdAt)}
-        </time>
+        <div className="user-meta">
+          {manageable ? (
+            <span className="user-actions">
+              <button
+                type="button"
+                className="user-action"
+                aria-label="Edit message"
+                title={actionsLocked ? "Stop the agent to edit" : "Edit and rerun from here"}
+                disabled={actionsLocked}
+                onClick={onBeginEdit}
+              >
+                <Pencil size={10} aria-hidden="true" />
+                Edit
+              </button>
+              <button
+                type="button"
+                className="user-action is-delete"
+                aria-label="Delete message"
+                title={
+                  actionsLocked
+                    ? "Stop the agent to delete"
+                    : "Delete this message and its reply"
+                }
+                disabled={actionsLocked}
+                onClick={onDelete}
+              >
+                <Trash2 size={10} aria-hidden="true" />
+                Delete
+              </button>
+            </span>
+          ) : null}
+          <time
+            className="user-time"
+            dateTime={message.createdAt}
+            title={formatFullTimestamp(message.createdAt)}
+          >
+            {formatClock(message.createdAt)}
+          </time>
+        </div>
       </div>
     );
   }

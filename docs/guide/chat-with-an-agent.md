@@ -10,6 +10,19 @@ Type in the composer and press **Enter**. Use **Shift+Enter** for a new line. Th
 
 The agent can only answer after Copilot is connected. If the composer says "Sign in to Copilot to chat", open **Settings → Copilot** and sign in.
 
+## Queue a follow-up
+
+While a turn is running, the composer stays open. Type a follow-up and press **Enter** to queue it. Queued messages appear above the composer in order. Each row shows **Send now**, **Edit**, and **Cancel**.
+
+- **Send now** stops the current turn and starts that message immediately. It does not inject the message into the running turn.
+- **Edit** opens the queued text in place. **Enter** saves, **Shift+Enter** adds a line, and **Escape** closes the editor.
+- **Cancel** removes the message from the queue.
+- With text in the composer, **Ctrl+Enter** (or **Cmd+Enter** on a Mac) also sends now and stops the current turn. The queue arrow and Send now bolt sit next to **Stop** while a turn is running.
+
+A queued message is not saved until it starts. When a turn finishes normally, the next queued message starts automatically. If you press **Stop** or the turn fails, the queue pauses: choose **Send next** or **Clear**, or send another message. The queue is kept for the current app session; closing Fid Coder clears it. Attachments can be queued too. The queue holds up to 20 messages.
+
+![A running question with a queued follow-up, its Send now, Edit, and Cancel actions, and the composer's Send now button.](images/queue-while-running.png)
+
 ## Attach files and code
 
 Use the paperclip button in the composer to attach local files. A text or code file is copied to `.fid/uploads/` in the workspace and the agent is given its path; it reads the file with its normal file tools. A text or code attachment needs an agent with file tools; a Browser & Jira agent can still receive a supported image up to 10 MB. PNG, JPEG, WebP, and GIF images are sent to the model as images, capped at 10 MB. Other images, and text or code files of any size, are passed by path. Remove a chip with its **×** before sending. If the draft is empty, the message is sent as "Review the attached content."
@@ -19,6 +32,18 @@ To point at code, open the Workspace panel. The file you are viewing is automati
 Attachments use the model's attachment support. An image needs a model that accepts images. The chips stay under the user message after the turn is saved.
 
 Text and code attachments are not sent as binary context. The app copies the file into the workspace and puts its path at the top of the message, so the agent can read it with the same tools it uses for the repository. This follows Code Puppy's approach: the app passes the file, and the agent decides what to do with it.
+
+## Edit or delete a message
+
+User messages from a normal chat turn show **Edit** and **Delete** beside their time. The actions are disabled while the agent is working; press **Stop**, then edit or delete. Routine messages, assistant replies, and tool steps are read-only.
+
+**Edit** opens the message in place. **Save & rerun** removes the old reply and every later message, then sends the edited text as a new turn. The attachments stay with the message. **Cancel** closes the editor without changing anything.
+
+**Delete** asks for confirmation. It removes that user message and the agent's reply, but keeps earlier and later messages; later messages may refer to the removed exchange. The actions are not undoable.
+
+Neither action reverts files the agent already changed, undoes a created routine, or removes a saved skill. Those side effects stay. The agent's rolling summary is cleared, so it is rebuilt from the remaining messages on a later turn.
+
+![A user message in edit mode with the rewind note and Save & rerun, and the Edit and Delete actions on the other user messages.](images/message-actions.png)
 
 ## Improve a draft
 

@@ -1,6 +1,18 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { Loader2, Play, Plus, Trash2, X } from "lucide-react";
-import type { Agent, Routine } from "../../../shared/types";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  ChevronRight,
+  Clock3,
+  History as HistoryIcon,
+  ListChecks,
+  Loader2,
+  Play,
+  Plus,
+  RefreshCw,
+  Trash2,
+  X,
+} from "lucide-react";
+import type { Agent, Routine, RoutineRun } from "../../../shared/types";
+import { routineStatusLabel, routineStatusTone, runDurationLabel } from "../../../shared/routine-runs";
 import { errorText, fid } from "../../lib/fid";
 import { formatNextRun, formatRelativeTime } from "../../lib/format";
 import {
@@ -28,6 +40,7 @@ type Selection = { kind: "routine"; id: string } | { kind: "new" };
 
 export function RoutinesDialog({ agent, routines, onClose, onRefresh }: Props) {
   const [list, setList] = useState(routines);
+  const [pane, setPane] = useState<"edit" | "history">("edit");
   const [selection, setSelection] = useState<Selection>(() =>
     routines[0] ? { kind: "routine", id: routines[0].id } : { kind: "new" },
   );
@@ -72,18 +85,31 @@ export function RoutinesDialog({ agent, routines, onClose, onRefresh }: Props) {
 
       <div className="routines-body">
         <nav className="routines-nav" aria-label="Agent routines">
+          <div className="routines-view-tabs" role="group" aria-label="Routine views">
+            <button
+              type="button"
+              className={`routines-view-tab ${pane === "edit" ? "is-active" : ""}`}
+              aria-pressed={pane === "edit"}
+              onClick={() => setPane("edit")}
+            >
+              <ListChecks size={12} aria-hidden="true" />
+              Routines
+            </button>
+            <button
+              type="button"
+              className={`routines-view-tab ${pane === "history" ? "is-active" : ""}`}
+              aria-pressed={pane === "history"}
+              onClick={() => setPane("history")}
+            >
+              <HistoryIcon size={12} aria-hidden="true" />
+              History
+            </button>
+          </div>
+
           <div className="routines-nav-head">
             <span>
               {list.length} {list.length === 1 ? "routine" : "routines"}
             </span>
-            <button
-              type="button"
-              className="desk-icon-button"
-              aria-label="New routine"
-              onClick={() => setSelection({ kind: "new" })}
-            >
-              <Plus size={12} />
-            </button>
           </div>
 
           <div className="routines-nav-list">
@@ -91,8 +117,11 @@ export function RoutinesDialog({ agent, routines, onClose, onRefresh }: Props) {
               <button
                 key={routine.id}
                 type="button"
-                className={`routines-nav-item ${selected?.id === routine.id ? "is-active" : ""}`}
-                onClick={() => setSelection({ kind: "routine", id: routine.id })}
+                className={`routines-nav-item ${pane === "edit" && selected?.id === routine.id ? "is-active" : ""}`}
+                onClick={() => {
+                  setPane("edit");
+                  setSelection({ kind: "routine", id: routine.id });
+                }}
               >
                 <span className={`routine-nav-title ${routine.enabled ? "" : "is-paused"}`}>
                   <span className={`routine-nav-dot ${routine.enabled ? "" : "is-paused"}`} />
@@ -109,23 +138,33 @@ export function RoutinesDialog({ agent, routines, onClose, onRefresh }: Props) {
             {list.length === 0 ? <p className="routines-nav-empty">No routines yet.</p> : null}
           </div>
 
-          <button type="button" className="new-routine-button" onClick={() => setSelection({ kind: "new" })}>
+          <button
+            type="button"
+            className="new-routine-button"
+            onClick={() => {
+              setPane("edit");
+              setSelection({ kind: "new" });
+            }}
+          >
             <Plus size={13} />
             New routine
           </button>
-          <div className="routines-nav-foot">
-            Routines run while Fid Coder is open. Notifications appear in Windows.
-          </div>
         </nav>
 
-        <RoutineEditor
-          key={selected?.id ?? "new"}
-          agentId={agent.id}
-          routine={selected}
-          onSaved={saved}
-          onDeleted={deleted}
-          onClose={onClose}
-        />
+        <div className="routines-main">
+          <RoutineEditor
+            key={selected?.id ?? "new"}
+            agentId={agent.id}
+            routine={selected}
+            hidden={pane !== "edit"}
+            onSaved={saved}
+            onDeleted={deleted}
+            onClose={onClose}
+          />
+          {pane === "history" ? (
+            <RoutineHistory agentId={agent.id} onOpenChat={onClose} />
+          ) : null}
+        </div>
       </div>
     </Modal>
   );
@@ -134,12 +173,14 @@ export function RoutinesDialog({ agent, routines, onClose, onRefresh }: Props) {
 function RoutineEditor({
   agentId,
   routine,
+  hidden,
   onSaved,
   onDeleted,
   onClose,
 }: {
   agentId: string;
   routine: Routine | null;
+  hidden?: boolean;
   onSaved: (routine: Routine) => Promise<void>;
   onDeleted: () => Promise<void>;
   onClose: () => void;
@@ -232,6 +273,7 @@ function RoutineEditor({
         ? await fid().routines.update(routine.id, input)
         : await fid().routines.create({ agentId, ...input });
       await onSaved(next);
+      setBusy(false);
     } catch (caught) {
       setError(errorText(caught));
       setBusy(false);
@@ -252,10 +294,10 @@ function RoutineEditor({
   }
 
   return (
-    <form className="routine-editor" onSubmit={(event) => void save(event)}>
+    <form className="routine-editor" hidden={hidden} onSubmit={(event) => void save(event)}>
       <div className="routine-editor-scroll">
         <div className="editor-titlebar">
-          <h2>{routine?.name || "New routine"}</h2>
+          <h2>{name.trim() || "New routine"}</h2>
           <span className={`editor-active ${enabled ? "is-on" : ""}`}>
             <Switch checked={enabled} label="Routine enabled" onChange={setEnabled} />
             {enabled ? "Active" : "Paused"}
@@ -456,17 +498,145 @@ function RoutineEditor({
   );
 }
 
-function routineStatusLabel(status: string | null): string {
-  if (!status) return "Unknown";
-  if (status === "ok") return "Completed";
-  if (status.startsWith("missed")) return "Missed";
-  if (status.startsWith("skipped")) return "Skipped";
-  if (status.startsWith("error")) return "Failed";
-  return status;
-}
+function RoutineHistory({ agentId, onOpenChat }: { agentId: string; onOpenChat: () => void }) {
+  const [runs, setRuns] = useState<RoutineRun[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [stopping, setStopping] = useState<string | null>(null);
 
-function routineStatusTone(status: string | null): string {
-  if (status === "ok") return "is-success";
-  if (status?.startsWith("error") || status?.startsWith("missed")) return "is-error";
-  return "";
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setRuns(await fid().routines.history(agentId));
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      setLoading(false);
+    }
+  }, [agentId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function stop(runId: string) {
+    setStopping(runId);
+    setError(null);
+    try {
+      await fid().routines.stop(runId);
+      await load();
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      setStopping(null);
+    }
+  }
+
+  const count = runs?.length ?? 0;
+  return (
+    <div className="routine-history">
+      <div className="routine-history-head">
+        <div>
+          <h2>Run history</h2>
+          <p>
+            {runs === null
+              ? "Loading recent runs…"
+              : count === 0
+                ? "Scheduled and manual runs for this agent."
+                : `${count} ${count === 1 ? "run" : "runs"} · scheduled and manual`}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="routine-history-refresh"
+          aria-label="Refresh history"
+          title="Refresh history"
+          disabled={loading}
+          onClick={() => void load()}
+        >
+          {loading ? (
+            <Loader2 size={12} className="spin" aria-hidden="true" />
+          ) : (
+            <RefreshCw size={12} aria-hidden="true" />
+          )}
+          <span>Refresh</span>
+        </button>
+      </div>
+
+      {error ? (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      {runs === null && loading ? (
+        <div className="routine-history-empty" role="status">
+          <Loader2 size={18} className="spin" aria-hidden="true" />
+          <span>Loading runs…</span>
+        </div>
+      ) : runs === null ? (
+        <div className="routine-history-empty">
+          <Clock3 size={20} aria-hidden="true" />
+          <strong>History could not be loaded</strong>
+          <span>Choose Refresh to try again.</span>
+        </div>
+      ) : runs.length === 0 ? (
+        <div className="routine-history-empty">
+          <Clock3 size={20} aria-hidden="true" />
+          <strong>No runs yet</strong>
+          <span>Runs appear here after a routine fires or you choose Run now.</span>
+        </div>
+      ) : (
+        <div className="routine-history-list">
+          {runs.map((run) => {
+            const tone = routineStatusTone(run.status);
+            const excerpt = run.output ?? run.error ?? "";
+            const meta = [
+              run.trigger === "manual" ? "Manual" : "Scheduled",
+              runDurationLabel(run.startedAt, run.endedAt),
+              formatRelativeTime(run.startedAt),
+            ]
+              .filter(Boolean)
+              .join(" · ");
+            return (
+              <div className="routine-history-row" key={run.id}>
+                <button
+                  type="button"
+                  className="routine-history-open"
+                  aria-label={`Open chat for ${run.routineName}`}
+                  onClick={onOpenChat}
+                >
+                  <span className="routine-history-main">
+                    <span className="routine-history-title-line">
+                      <span className="routine-name">{run.routineName}</span>
+                      <span className={`routine-status-chip ${tone}`}>
+                        {routineStatusLabel(run.status)}
+                      </span>
+                    </span>
+                    <span className="routine-history-meta">{meta}</span>
+                    {excerpt ? <span className="routine-history-excerpt">{excerpt}</span> : null}
+                  </span>
+                  <span className="routine-history-cta">
+                    Open chat
+                    <ChevronRight size={11} aria-hidden="true" />
+                  </span>
+                </button>
+                {run.status === "running" ? (
+                  <button
+                    type="button"
+                    className="btn btn-quiet"
+                    disabled={stopping === run.id}
+                    onClick={() => void stop(run.id)}
+                  >
+                    {stopping === run.id ? "Stopping…" : "Stop"}
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }

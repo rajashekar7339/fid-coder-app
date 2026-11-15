@@ -26,10 +26,12 @@ import { BrandMark } from "./components/ui/BrandMark";
 import { ChatView } from "./components/chat/ChatView";
 import { ConfirmDialog } from "./components/ui/ConfirmDialog";
 import { HelpDialog } from "./components/help/HelpDialog";
+import { InboxDialog } from "./components/routines/InboxDialog";
 import { RoutinesDialog } from "./components/routines/RoutinesDialog";
 import { SkillsDialog } from "./components/skills/SkillsDialog";
 import { SettingsDialog, type SettingsSection, type SignInNote } from "./components/settings/SettingsDialog";
 import { Sidebar, type CopilotPresence } from "./components/sidebar/Sidebar";
+import type { InboxItem, InboxView } from "../shared/inbox";
 import { errorText, fid, hasFid } from "./lib/fid";
 
 type Dialog =
@@ -37,6 +39,7 @@ type Dialog =
   | { kind: "edit"; agentId: string }
   | { kind: "help" }
   | { kind: "routines" }
+  | { kind: "inbox" }
   | { kind: "skills" }
   | { kind: "settings"; section: SettingsSection };
 
@@ -51,6 +54,7 @@ export function App() {
   const [modelsLoading, setModelsLoading] = useState(false);
   const [agentId, setAgentId] = useState<string | null>(null);
   const [routines, setRoutines] = useState<Routine[]>([]);
+  const [inbox, setInbox] = useState<InboxView>({ items: [], unread: 0 });
   const [settings, setSettings] = useState<SettingsView | null>(null);
   const [usage, setUsage] = useState<CopilotUsageView | null>(null);
   const [usageMessage, setUsageMessage] = useState<string | null>(null);
@@ -147,6 +151,37 @@ export function App() {
     if (request === routinesRequest.current) setRoutines(list);
     return list;
   }, [agentId]);
+
+  const refreshInbox = useCallback(async () => {
+    if (!hasFid() || typeof fid().inbox?.list !== "function") return;
+    setInbox(await fid().inbox.list());
+  }, []);
+
+  useEffect(() => {
+    if (!hasFid() || typeof fid().inbox?.onChanged !== "function" || typeof fid().app?.onOpenAgent !== "function") return;
+    void refreshInbox().catch((caught: unknown) => setLoadError(errorText(caught)));
+    const changed = fid().inbox.onChanged(() => {
+      void refreshInbox().catch(() => undefined);
+    });
+    const opened = fid().app.onOpenAgent((id) => {
+      setAgentId(id);
+      setDialog(null);
+    });
+    return () => {
+      fid().inbox.offChanged(changed);
+      fid().app.offOpenAgent(opened);
+    };
+  }, [refreshInbox]);
+
+  const openInboxItem = useCallback(async (item: InboxItem) => {
+    if (item.kind !== "approval") setInbox(await fid().inbox.read(item.id));
+    setAgentId(item.agentId);
+    setDialog(null);
+  }, []);
+
+  const snoozeInboxItem = useCallback(async (item: InboxItem) => {
+    setInbox(await fid().inbox.snooze(item.id));
+  }, []);
 
   const refreshChanges = useCallback(
     async (id: string | null = agentId): Promise<void> => {
@@ -684,6 +719,8 @@ export function App() {
           onSettings={() => openSettings("copilot")}
           onSkills={openSkills}
           onHelp={openHelp}
+          inboxCount={inbox.unread}
+          onInbox={() => setDialog({ kind: "inbox" })}
         />
 
         <div className="center-column">
@@ -889,6 +926,15 @@ export function App() {
           routines={routines}
           onClose={() => setDialog(null)}
           onRefresh={refreshRoutinesForDialog}
+        />
+      ) : null}
+
+      {dialog?.kind === "inbox" ? (
+        <InboxDialog
+          view={inbox}
+          onClose={() => setDialog(null)}
+          onOpen={(item) => void openInboxItem(item).catch((caught: unknown) => setLoadError(errorText(caught)))}
+          onSnooze={(item) => void snoozeInboxItem(item).catch((caught: unknown) => setLoadError(errorText(caught)))}
         />
       ) : null}
 

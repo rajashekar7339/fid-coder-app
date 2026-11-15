@@ -36,7 +36,7 @@ src/
     browser/browser-manager.ts, gate.ts
     history/        history.ts
     skills/         index.ts, install.ts, save.ts
-    routines/       scheduler.ts, cron.ts, notify.ts, service.ts
+    routines/       scheduler.ts, cron.ts, notify.ts, service.ts, tray.ts, presence.ts, inbox.ts
     workspace/      checkpoints.ts, explore-session.ts, review-session.ts, workspace-brief.ts, workspace-rules.ts,
                     architecture-map.ts, file-peek.ts, file-tree.ts
   preload/
@@ -52,7 +52,7 @@ src/
       sidebar/      Sidebar
       settings/     SettingsDialog
       desk/         AgentDesk, ContextDialog, ChangesPanel, DiffView, WorkspaceNavigator, WorkspaceCodePane
-      routines/     RoutinesDialog
+      routines/     RoutinesDialog, InboxDialog
       skills/       SkillsDialog
       help/         HelpDialog, GuideContent
       ui/           Modal, Switch, ConfirmDialog, BrandMark, UsageBar, ModelSelect
@@ -80,7 +80,7 @@ scripts/
 skills/             review-change/SKILL.md, architecture-review/SKILL.md, write-lean/SKILL.md
 docs/
   guide/            in-app help
-  feature-enhancements.md
+  features.md
   memory.md
   build-exe.md
 ```
@@ -96,6 +96,7 @@ docs/
 | Reusing a used skill | `agent_skills` in `src/main/db/index.ts`, `use_skill` in `src/tools/skills/skills.ts`, and `usedSkillsFor` in `src/main/chat/runner.ts` |
 | Creating a routine from chat | `src/main/routines/service.ts`, `src/tools/routines/routines.ts`, and `RoutinePort` in `src/tools/types.ts` |
 | Routine timing rules | `src/shared/routine-schedule.ts` |
+| Run history, the inbox, and the tray | `src/main/routines/scheduler.ts`, `tray.ts`, `presence.ts`, `inbox.ts`, `src/shared/routine-runs.ts`, `src/shared/inbox.ts`, `RoutinesDialog.tsx`, and `InboxDialog.tsx` |
 | Jira diagnostics | `src/main/log.ts`, the Jira tool callbacks in `src/main/chat/runner.ts`, and Settings → Jira |
 | Enhancing a draft | `src/shared/enhance-prompt.ts`, `src/main/chat/enhance.ts`, and `Runner.enhanceDraft` |
 | Tools and Ask/Agent mode | `toolProfile` + `readOnly` on the agent, `askTools` in `src/tools/registry.ts`, `askMode` in `src/main/chat/runner.ts`, and the Tools/Mode fields in `AgentDialog.tsx` |
@@ -107,6 +108,8 @@ docs/
 | Starter prompts | `src/shared/starters.ts` and the empty state in `ChatView.tsx` |
 | The Skills library | `src/renderer/components/skills/SkillsDialog.tsx` |
 | A composer command | `src/shared/commands.ts` and the menu in `src/renderer/components/chat/ChatView.tsx` |
+| Queue a follow-up | `src/shared/message-queue.ts`, `Runner.enqueue/updateQueued/forceSend/drainQueue`, the `chat:enqueue/update-queued/remove-queued/clear-queue/force-send/force-queued` channels, and the queue panel in `ChatView.tsx` |
+| Edit or delete a chat message | `src/shared/message-actions.ts`, `Runner.editMessage/deleteMessage`, `getMessage`/`deleteChatTurns` in `src/main/db/index.ts`, the `chat:edit-message/delete-message` channels, and `MessageRow` in `ChatView.tsx` |
 | A question card | `src/shared/question.ts`, `ask_user` in `src/tools/ask/ask.ts`, `Runner.askUser`, and `QuestionCard.tsx` |
 | Browser handoff | `src/shared/browser-handoff.ts`, `browser_needs_you` in `src/tools/browser/browser.ts`, `gateBrowser` in `src/main/browser/gate.ts`, the handoff methods on `Runner`, and `HandoffCard.tsx` |
 | Save a skill from chat | `src/shared/skill-draft.ts`, `save_skill` in `src/tools/skills/save.ts`, `src/main/skills/save.ts`, and `SkillSaveCard.tsx` |
@@ -123,9 +126,13 @@ Skills are discovered from the workspace `.skills`, `.github/skills`, `.agents/s
 
 Enhance is manual and one-shot. The renderer calls `chat.enhance` only from the Enhance button; it writes nothing to SQLite, opens no agent session, and never sends. Do not call it from `send`, `runTurn`, or a routine path.
 
+The composer stays open while a turn runs. Enter queues; a queue row shows **Send now**, **Edit**, and **Cancel**, and the header shows **Send next** and **Clear** when the queue is paused. The queue belongs to the main process, one FIFO per agent in `Runner`, capped at 20 and held in memory. It drains after a successful turn; Stop or an error pauses it. A queued item is not a SQLite message until it starts. `forceSend` and `forceQueued` abort the active turn, wait for its `turnDone` promise, then start the forced message through the normal `runTurn` path, so it becomes an ordinary user message with its own id and turn. It is not mid-turn steering. `holdDrain` prevents a queued item from starting between the abort and the forced send. The error event for a user stop carries `aborted: true`; the composer does not show it as an error. Keep the queued and forced paths on `runTurn` so every user message stays on one model.
+
+Only a user message whose turn source is `chat` can be edited or deleted; routine turns, assistant replies, and tool rows are read-only. Both refuse while the agent is running, enhancing, or forcing. `editMessage` runs the edited text through `runTurn` with a `beforeStart` hook that drops the live session, deletes that turn and every later turn, and clears the agent summary before the new turn is created; the original attachments are reused. If pre-start validation fails, `beforeStart` has not run, so the old history stays. `deleteMessage` calls `deleteChatTurns(agentId, turnId, false)`: it removes only that turn's messages and turn row, plus its inbox turn row; later turns stay. File changes cascade with a deleted turn, approvals remain as audit history, and files on disk are never reverted. The renderer reloads messages and workspace changes; there is no Undo.
+
 Jira diagnostics append to `logs/fid-coder.log` under the app data folder. Log whether the site and token are present, the agent name, tool failures, and the relevant paths; never log the token. A missing site or token, or a failed Jira tool, writes a warning that explains the browser fallback. Keep the tool result in chat generic ("Jira is unavailable."); detailed causes belong only in the log.
 
-The agent can manage this agent's routines with `routine_list` and `routine_delete`, but `routine_create` is exposed only during a `/routine` turn. The runner parses the command, rejects Ask mode, sets the latest message to the command arguments, gives the turn only `routine_create` plus a short routine hint, and restores the normal toolset afterwards. Normal chat turns cannot create routines. The tools use `ctx.agentId`, so one agent cannot see or change another agent's routines. The service caps each agent at 20 routines and rejects the same instruction and timing twice. A bare time creates a one-time routine; `RoutineDraft` validates local dates and times, and the scheduler arms a one-time job with a timer. A one-time routine is disabled before its run, and a run missed while Fid Coder was closed is marked missed and paused. Routine write tools are removed during a routine turn, so a routine cannot create or delete routines. Ask mode excludes all routine tools. The notification switch also covers an approval request or a question card during a routine turn.
+The agent can manage this agent's routines with `routine_list` and `routine_delete`, but `routine_create` is exposed only during a `/routine` turn. The runner parses the command, rejects Ask mode, sets the latest message to the command arguments, gives the turn only `routine_create` plus a short routine hint, and restores the normal toolset afterwards. Normal chat turns cannot create routines. The tools use `ctx.agentId`, so one agent cannot see or change another agent's routines. The service caps each agent at 20 routines and rejects the same instruction and timing twice. A bare time creates a one-time routine; `RoutineDraft` validates local dates and times, and the scheduler arms a one-time job with a timer. A one-time routine is disabled before its run, and a run missed while Fid Coder was closed is marked missed and paused. A repeating routine whose time passed while Fid Coder was closed does not run. Closing the window quits the app, so scheduled work stops. Pause all routines skips cron fires; a past one-time routine is still marked missed and does not run. Each run row is stored as `running` before the turn. The Routines dialog uses a **Routines / History** switch at the top of the list; the editor stays mounted while History is open so an unsaved draft survives. History can refresh and stop a run that is still going. A `running` row left after restart becomes `error: interrupted` and is not fired again. Scheduled finishes, misses, and interrupted runs land in the inbox. Snooze hides a stored row for four hours. A live approval stays until it is answered. Manual runs stay in history only. Open chat and a toast click open that agent on the single transcript. Runs and inbox rows older than 90 days are removed when the scheduler reloads. Routine write tools are removed during a routine turn, so a routine cannot create or delete routines. Ask mode excludes all routine tools. The notification switch also covers an approval request or a question card during a routine turn.
 
 `/compact` summarizes the current conversation on demand with the same Auto memory update used after 30 messages. It does not wait for ten new turns, and it runs when Automatic memory is off. The command takes no arguments, does not open the agent session, and drops the live session after a successful update or when the summary is already current, so the next message sends the summary and the recent window. An empty thread does not call the model. A failed summary leaves the previous summary and the live session in place.
 
@@ -147,7 +154,7 @@ Import a tool by its file name, for example `./browser/browser`. TypeScript reso
 
 The sidebar can pin and archive an agent. Pin sorts that agent first. Archive hides it under Archived and keeps the conversation, routines, and browser profile. Ctrl+K focuses the name search, Enter opens the first match, and the search includes archived agents. Editing an agent keeps both flags. Neither flag changes tool access.
 
-`npm test` runs the unit and integration suites. The Electron harnesses have separate scripts: `npm run test:changes`, `npm run test:features`, `npm run test:modes`, `npm run test:skills`, `npm run test:skills-reuse`, `npm run test:map`, `npm run test:enhance`, `npm run test:questions`, `npm run test:questions-live`, `npm run test:sidebar`, `npm run test:handoff`, `npm run test:handoff-live`, `npm run test:save-skill-live`, `npm run test:skill-command-live`, `npm run test:routines`, and `npm run test:routines-live`. The live ones need Copilot and spend quota; `test:changes`, `test:questions`, `test:sidebar`, `test:handoff`, and `test:routines` are deterministic. `test:modes` runs two live turns: Agent mode edits a file, Ask mode must not. See `CONTRIBUTING.md` for the test levels.
+`npm test` runs the unit and integration suites. The Electron harnesses have separate scripts: `npm run test:changes`, `npm run test:features`, `npm run test:modes`, `npm run test:skills`, `npm run test:skills-reuse`, `npm run test:map`, `npm run test:enhance`, `npm run test:questions`, `npm run test:questions-live`, `npm run test:queue`, `npm run test:queue-live`, `npm run test:message-actions`, `npm run test:message-actions-live`, `npm run test:sidebar`, `npm run test:handoff`, `npm run test:handoff-live`, `npm run test:save-skill-live`, `npm run test:skill-command-live`, `npm run test:routines`, and `npm run test:routines-live`. The live ones need Copilot and spend quota; `test:changes`, `test:questions`, `test:queue`, `test:message-actions`, `test:sidebar`, `test:handoff`, and `test:routines` are deterministic. `test:modes` runs two live turns: Agent mode edits a file, Ask mode must not. See `CONTRIBUTING.md` for the test levels.
 
 A feature is a tool file, a main handler, and a screen, in those three places. Keep Electron and React out of one shared feature folder.
 

@@ -22,8 +22,12 @@ import type {
   Routine,
   RoutineInput,
   RoutinePatch,
+  RoutineRun,
+  RoutineRunTrigger,
   TokenUsage,
 } from "../../shared/types";
+import type { StoredInboxRow } from "../../shared/inbox";
+import { RUN_LIST_LIMIT } from "../../shared/routine-runs";
 type AgentRow = {
   id: string;
   name: string;
@@ -61,6 +65,7 @@ type MessageRow = {
   content: string;
   created_at: string;
   turn_id: string | null;
+  turn_source?: string | null;
   usage: string | null;
   attachments: string | null;
 };
@@ -345,6 +350,34 @@ export class AppDatabase {
         PRIMARY KEY (agent_id, skill_id)
       );
       CREATE INDEX IF NOT EXISTS idx_agent_skills_agent ON agent_skills(agent_id, used_at);
+
+      CREATE TABLE IF NOT EXISTS routine_runs (
+        id TEXT PRIMARY KEY,
+        routine_id TEXT NOT NULL REFERENCES routines(id) ON DELETE CASCADE,
+        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        trigger TEXT NOT NULL,
+        status TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        turn_id TEXT,
+        output TEXT,
+        error TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_routine_runs_agent ON routine_runs(agent_id, started_at);
+
+      CREATE TABLE IF NOT EXISTS inbox_items (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL,
+        ref_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        read_at TEXT,
+        snooze_until TEXT,
+        UNIQUE(kind, ref_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_inbox_agent ON inbox_items(agent_id, created_at);
 
       CREATE TABLE IF NOT EXISTS workspace_maps (
         workspace_dir TEXT PRIMARY KEY,
@@ -639,9 +672,27 @@ export class AppDatabase {
 
   listMessages(agentId: string): Message[] {
     const rows = this.db
-      .prepare("SELECT * FROM messages WHERE agent_id = ? ORDER BY created_at ASC, rowid ASC")
+      .prepare(
+        `SELECT m.*, t.source AS turn_source
+         FROM messages m
+         LEFT JOIN turns t ON t.id = m.turn_id
+         WHERE m.agent_id = ?
+         ORDER BY m.created_at ASC, m.rowid ASC`,
+      )
       .all(agentId) as MessageRow[];
     return rows.map(mapMessage);
+  }
+
+  getMessage(id: string): Message | null {
+    const row = this.db
+      .prepare(
+        `SELECT m.*, t.source AS turn_source
+         FROM messages m
+         LEFT JOIN turns t ON t.id = m.turn_id
+         WHERE m.id = ?`,
+      )
+      .get(id) as MessageRow | undefined;
+    return row ? mapMessage(row) : null;
   }
 
   listRecentConversation(agentId: string, limit = 4): Message[] {
@@ -863,6 +914,38 @@ export class AppDatabase {
     this.db.prepare("DELETE FROM file_changes WHERE id = ?").run(id);
   }
 
+  deleteChatTurns(agentId: string, turnId: string, includeLater: boolean): string[] {
+    const target = this.getTurn(turnId);
+    if (!target || target.agentId !== agentId) throw new Error("Turn not found");
+    const rows = includeLater
+      ? (this.db
+          .prepare(
+            `SELECT id FROM turns
+             WHERE agent_id = ? AND rowid >= (SELECT rowid FROM turns WHERE id = ?)`,
+          )
+          .all(agentId, turnId) as Array<{ id: string }>)
+      : [{ id: turnId }];
+    const ids = rows.map((row) => row.id);
+    const removeMessages = this.db.prepare("DELETE FROM messages WHERE turn_id = ?");
+    const removeInbox = this.db.prepare(
+      "DELETE FROM inbox_items WHERE kind = 'turn' AND ref_id = ?",
+    );
+    const removeTurn = this.db.prepare("DELETE FROM turns WHERE id = ?");
+    this.db.exec("BEGIN");
+    try {
+      for (const id of ids) {
+        removeMessages.run(id);
+        removeInbox.run(id);
+        removeTurn.run(id);
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    return ids;
+  }
+
   deleteAgentChanges(agentId: string): void {
     this.db.exec("BEGIN");
     try {
@@ -1078,6 +1161,153 @@ export class AppDatabase {
       .run(new Date().toISOString(), status.slice(0, 500), nextRunAt, new Date().toISOString(), id);
   }
 
+  startRoutineRun(input: { routineId: string; agentId: string; trigger: RoutineRunTrigger }): RoutineRun {
+    const id = crypto.randomUUID();
+    const startedAt = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO routine_runs (id, routine_id, agent_id, trigger, status, started_at)
+         VALUES (?, ?, ?, ?, 'running', ?)`,
+      )
+      .run(id, input.routineId, input.agentId, input.trigger, startedAt);
+    return this.requireRoutineRun(id);
+  }
+
+  finishRoutineRun(
+    id: string,
+    patch: { status: string; turnId?: string | null; output?: string | null; error?: string | null },
+  ): RoutineRun {
+    this.db
+      .prepare(
+        `UPDATE routine_runs
+         SET status = ?, ended_at = ?, turn_id = ?, output = ?, error = ?
+         WHERE id = ?`,
+      )
+      .run(
+        patch.status.slice(0, 500),
+        new Date().toISOString(),
+        patch.turnId ?? null,
+        patch.output ?? null,
+        patch.error ? patch.error.slice(0, 500) : null,
+        id,
+      );
+    return this.requireRoutineRun(id);
+  }
+
+  getRoutineRun(id: string): RoutineRun | null {
+    const row = this.db
+      .prepare(
+        `SELECT runs.*, routines.name AS routine_name
+         FROM routine_runs runs
+         JOIN routines ON routines.id = runs.routine_id
+         WHERE runs.id = ?`,
+      )
+      .get(id) as RoutineRunRow | undefined;
+    return row ? mapRoutineRun(row) : null;
+  }
+
+  listRoutineRuns(agentId: string, limit = RUN_LIST_LIMIT): RoutineRun[] {
+    const rows = this.db
+      .prepare(
+        `SELECT runs.*, routines.name AS routine_name
+         FROM routine_runs runs
+         JOIN routines ON routines.id = runs.routine_id
+         WHERE runs.agent_id = ?
+         ORDER BY runs.started_at DESC
+         LIMIT ?`,
+      )
+      .all(agentId, clampLimit(limit, RUN_LIST_LIMIT, 100)) as RoutineRunRow[];
+    return rows.map(mapRoutineRun);
+  }
+
+  latestTurn(agentId: string): TurnRecord | null {
+    const row = this.db
+      .prepare("SELECT * FROM turns WHERE agent_id = ? ORDER BY started_at DESC LIMIT 1")
+      .get(agentId) as TurnRow | undefined;
+    return row ? mapTurn(row) : null;
+  }
+
+  reconcileRoutineRuns(skipIds: ReadonlySet<string> = new Set()): number {
+    const rows = this.db
+      .prepare("SELECT id, routine_id, agent_id FROM routine_runs WHERE status = 'running'")
+      .all() as { id: string; routine_id: string; agent_id: string }[];
+    const now = new Date().toISOString();
+    let count = 0;
+    for (const row of rows) {
+      if (skipIds.has(row.id)) continue;
+      count += 1;
+      this.db
+        .prepare(
+          `UPDATE routine_runs
+           SET status = 'error: interrupted', ended_at = ?, error = ?
+           WHERE id = ?`,
+        )
+        .run(now, "Fid Coder closed during this run.", row.id);
+      this.db
+        .prepare("UPDATE routines SET last_status = 'error: interrupted', updated_at = ? WHERE id = ? AND last_status = 'running'")
+        .run(now, row.routine_id);
+      this.addInboxItem({
+        agentId: row.agent_id,
+        kind: "routine",
+        refId: row.id,
+        title: this.getRoutine(row.routine_id)?.name ?? "Routine",
+        body: "Fid Coder closed during this run.",
+      });
+    }
+    return count;
+  }
+
+  pruneRoutineHistory(beforeIso: string): void {
+    this.db.prepare("DELETE FROM routine_runs WHERE started_at < ?").run(beforeIso);
+    this.db.prepare("DELETE FROM inbox_items WHERE created_at < ?").run(beforeIso);
+  }
+
+  addInboxItem(input: { agentId: string; kind: "routine" | "turn"; refId: string; title: string; body: string }): void {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO inbox_items (id, agent_id, kind, ref_id, title, body, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        crypto.randomUUID(),
+        input.agentId,
+        input.kind,
+        input.refId,
+        input.title.slice(0, 120),
+        input.body.slice(0, 500),
+        new Date().toISOString(),
+      );
+  }
+
+  listOpenInbox(): StoredInboxRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT i.id, i.agent_id, a.name AS agent_name, i.kind, i.title, i.body, i.created_at, i.snooze_until
+         FROM inbox_items i
+         JOIN agents a ON a.id = i.agent_id
+         WHERE i.read_at IS NULL
+         ORDER BY i.created_at DESC`,
+      )
+      .all() as InboxRow[];
+    return rows.map(mapInboxRow);
+  }
+
+  readInbox(id: string): void {
+    const result = this.db
+      .prepare("UPDATE inbox_items SET read_at = ? WHERE id = ? AND read_at IS NULL")
+      .run(new Date().toISOString(), id);
+    if (result.changes === 0 && !this.db.prepare("SELECT id FROM inbox_items WHERE id = ?").get(id)) {
+      throw new Error("That inbox item is gone.");
+    }
+  }
+
+  snoozeInbox(id: string, untilIso: string): void {
+    const result = this.db
+      .prepare("UPDATE inbox_items SET snooze_until = ? WHERE id = ? AND read_at IS NULL")
+      .run(untilIso, id);
+    if (result.changes === 0) throw new Error("That inbox item is gone.");
+  }
+
   getSetting(key: string): string | null {
     const row = this.db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value: string } | undefined;
     return row?.value ?? null;
@@ -1097,6 +1327,12 @@ export class AppDatabase {
     const routine = this.getRoutine(id);
     if (!routine) throw new Error("Routine not found");
     return routine;
+  }
+
+  private requireRoutineRun(id: string): RoutineRun {
+    const run = this.getRoutineRun(id);
+    if (!run) throw new Error("Routine run not found");
+    return run;
   }
 }
 
@@ -1129,6 +1365,7 @@ function mapMessage(row: MessageRow): Message {
     content: row.content,
     createdAt: row.created_at,
     turnId: row.turn_id ?? null,
+    turnSource: row.turn_source ?? null,
     usage: parseUsage(row.usage),
     attachments: parseMessageAttachments(row.attachments),
   };
@@ -1160,6 +1397,60 @@ function parseUsage(raw: string | null): TokenUsage | null {
   } catch {
     return null;
   }
+}
+
+type RoutineRunRow = {
+  id: string;
+  routine_id: string;
+  agent_id: string;
+  routine_name: string;
+  trigger: string;
+  status: string;
+  started_at: string;
+  ended_at: string | null;
+  turn_id: string | null;
+  output: string | null;
+  error: string | null;
+};
+
+type InboxRow = {
+  id: string;
+  agent_id: string;
+  agent_name: string;
+  kind: string;
+  title: string;
+  body: string;
+  created_at: string;
+  snooze_until: string | null;
+};
+
+function mapRoutineRun(row: RoutineRunRow): RoutineRun {
+  return {
+    id: row.id,
+    routineId: row.routine_id,
+    agentId: row.agent_id,
+    routineName: row.routine_name,
+    trigger: row.trigger === "manual" ? "manual" : "schedule",
+    status: row.status,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    turnId: row.turn_id,
+    output: row.output,
+    error: row.error,
+  };
+}
+
+function mapInboxRow(row: InboxRow): StoredInboxRow {
+  return {
+    id: row.id,
+    agentId: row.agent_id,
+    agentName: row.agent_name,
+    kind: row.kind === "turn" ? "turn" : "routine",
+    title: row.title,
+    body: row.body,
+    createdAt: row.created_at,
+    snoozeUntil: row.snooze_until,
+  };
 }
 
 function mapRoutine(row: RoutineRow): Routine {

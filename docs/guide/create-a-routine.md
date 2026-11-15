@@ -1,6 +1,17 @@
 # Create a routine
 
-A routine sends a saved instruction to an agent at a time you choose. It can run once or repeat. The result lands in the same conversation, and Fid Coder can raise a Windows notification when a run finishes, fails, is skipped, or needs approval.
+A routine sends a saved instruction to an agent at a time you choose. It can run once or repeat. The result lands in that agent's conversation. Fid Coder can raise a Windows notification, and the sidebar bell keeps approvals, failed turns, and finished runs.
+
+## Limitation
+
+Routines run only while Fid Coder is open. Closing the window quits the app, so a routine does not keep running in the tray and does not start at login.
+
+A time that passes while the app is closed is not run later.
+
+- A one-time routine is marked **Missed** and paused. Its instruction does not run.
+- A repeating routine keeps its next time. The missed slot is skipped.
+
+Leave Fid Coder open when you want a routine to run.
 
 ![The Routines dialog with a weekday morning routine selected, its instruction, next run, last-run status, and notification switch.](images/routines.png)
 
@@ -33,18 +44,32 @@ Choose **Once**, **Every day**, **Weekdays**, **Every week**, or **Custom**. Tim
 
 ![The Once option with a date and time selected and the next one-time run below the fields.](images/routines-once.png)
 
-The next run appears under the fields. Save the routine to recalculate it.
-
-A one-time routine that could not run because Fid Coder was closed is marked **Missed** and paused. Repeating routines keep their timing.
+The next run appears under the fields. Save the routine to recalculate it. See the limitation above: a slot that passes while Fid Coder is closed does not run.
 
 ## Notifications and status
 
-Leave **Windows notification** on to be notified when a routine run finishes, fails, is skipped, or needs your approval. The routine records its last run time and status: Completed, Missed, Skipped, or Failed.
+Leave **Windows notification** on to be notified when a scheduled run finishes, fails, is skipped, or is missed. Click the toast to open that agent. The desk row shows the last status.
 
-Routines run only while Fid Coder is open. If the agent is already working when a routine fires, the run is marked **Skipped: agent busy** instead of queued. A one-time routine is consumed by that skip; a repeating routine waits for its next time.
+If the agent is already working, the run is marked **Skipped**. A one-time routine is used up by that skip. A repeating routine waits for its next time.
+
+## History
+
+Choose the **History** tab at the top of the routine list. A row shows the routine, status, whether it was scheduled or manual, how long it took, and a short excerpt. **Open chat** closes the dialog. **Refresh** loads newer runs, and **Stop** is there only while a run is still going.
+
+![Run history for a finished weekday routine, with its status, trigger, duration, and excerpt.](images/routine-history.png)
+
+## Inbox
+
+The bell lists approvals, failed chat turns, and finished scheduled runs. Open a row to go to that agent. **Snooze** hides a routine or a failed turn for four hours. An approval stays until you answer it.
+
+## Tray and pause
+
+While Fid Coder is open, the tray menu can open the window, pause or resume every routine, or quit. The tooltip shows how many items are waiting. Quitting from the tray stops routines.
+
+**Settings → This PC** can pause every routine. Scheduled runs wait until you resume them. **Run now** still works. Closing the window quits the app and stops routines.
 
 ## Run once or pause
 
-Use the play button in the routine header to run it now. Save any changes first; the button stays disabled while the form is dirty. Running a one-time routine manually does not consume its next run. The switch in the header pauses or resumes the routine. A paused routine does not run until you enable it again.
+Use the play button in the routine header to run it now. Save any changes first; the button stays disabled while the form is dirty. Running a one-time routine manually does not consume its next run. The switch in the header pauses or resumes that routine.
 
-> **Tip:** A manual run does not follow the routine timing and does not send a Windows notification.
+> **Tip:** A manual run does not follow the routine timing, does not send a Windows notification, and does not enter the inbox.

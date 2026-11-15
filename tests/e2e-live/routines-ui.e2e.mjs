@@ -67,7 +67,7 @@ async function seed() {
     memoryEnabled: false,
   });
 
-  db.createRoutine(
+  const weekday = db.createRoutine(
     {
       agentId: agent.id,
       name: "Weekday sweep",
@@ -80,6 +80,20 @@ async function seed() {
     },
     nextRunIso("0 9 * * 1-5"),
   );
+  const finished = db.startRoutineRun({
+    routineId: weekday.id,
+    agentId: agent.id,
+    trigger: "schedule",
+  });
+  db.finishRoutineRun(finished.id, { status: "ok", output: "Three tickets are waiting." });
+  db.markRoutineRun(weekday.id, "ok", weekday.nextRunAt);
+  db.addInboxItem({
+    agentId: agent.id,
+    kind: "routine",
+    refId: finished.id,
+    title: "Weekday sweep",
+    body: "Completed. Three tickets are waiting.",
+  });
 
   const onceDate = futureDate(2);
   const onceRun = onceDate.toISOString();
@@ -192,16 +206,52 @@ async function main() {
     const deskText = await page.locator(".agent-desk").innerText();
     check("the desk lists both routines", /Weekday sweep/.test(deskText) && /Once reminder/.test(deskText));
     check("the desk labels the one-time routine", /Once ·/.test(deskText), deskText.replace(/\s+/g, " ").slice(0, 160));
+    check("the desk shows the last completed run", /Completed/.test(deskText), deskText.replace(/\s+/g, " ").slice(0, 200));
     await shot(page, "01-desk");
 
     await openRoutines(page);
     const navText = await page.locator(".routines-nav-list").innerText();
     check("the dialog lists the repeating routine", /Weekday sweep/.test(navText) && /Weekdays at 9:00/.test(navText));
     check("the dialog lists the one-time routine", /Once reminder/.test(navText) && /Once ·/.test(navText));
+    check(
+      "the dialog has Routines and History tabs",
+      (await page.locator(".routines-view-tab").allInnerTexts()).join(" ") === "Routines History",
+    );
     await shot(page, "02-routines-list");
+
+    const instruction = page.locator(".routines-modal").getByLabel("Instruction");
+    const originalInstruction = await instruction.inputValue();
+    await instruction.fill("Unsaved draft survives history.");
+
+    await page.locator(".routines-modal").getByRole("button", { name: "History", exact: true }).click();
+    await page.waitForSelector(".routine-history-excerpt", { timeout: 10_000 });
+    check(
+      "History does not highlight a routine",
+      (await page.locator(".routines-nav-item.is-active").count()) === 0,
+    );
+    check(
+      "history has a refresh action",
+      (await page.getByRole("button", { name: "Refresh history" }).count()) === 1,
+    );
+    const historyText = await page.locator(".routine-history").innerText();
+    check(
+      "history shows the run excerpt",
+      /Weekday sweep/.test(historyText) &&
+        /Completed/.test(historyText) &&
+        /Scheduled/.test(historyText) &&
+        /Three tickets are waiting/.test(historyText),
+      historyText.replace(/\s+/g, " ").slice(0, 180),
+    );
+    check("a finished run has no Stop button", (await page.getByRole("button", { name: "Stop" }).count()) === 0);
+    await shot(page, "08-history");
 
     await page.locator(".routines-nav-item").filter({ hasText: "Once reminder" }).click();
     await page.waitForFunction(() => document.querySelector(".routine-editor h2")?.textContent === "Once reminder");
+    check(
+      "an unsaved draft survives the History tab",
+      (await instruction.inputValue()) === "Unsaved draft survives history.",
+    );
+    await instruction.fill(originalInstruction);
     await watch();
     const frequency = await page.locator(".schedule-grid select").first().inputValue();
     const dateValue = await page.locator('.routines-modal input[type="date"]').inputValue();
@@ -254,6 +304,25 @@ async function main() {
     );
     await shot(page, "05-created");
 
+    await editor.getByLabel("Name", { exact: true }).fill("E2E reminder updated");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await page.waitForFunction(
+      () => {
+        const button = [...document.querySelectorAll(".routines-modal button")].find(
+          (item) => item.textContent?.trim() === "Save changes",
+        );
+        const active = document.querySelector(".routines-nav-item.is-active");
+        return (
+          button instanceof HTMLButtonElement &&
+          !button.disabled &&
+          Boolean(active?.textContent?.includes("E2E reminder updated"))
+        );
+      },
+      null,
+      { timeout: 20_000 },
+    );
+    check("Save returns the editor to an idle state", true);
+
     await page.getByRole("button", { name: "Delete", exact: true }).click();
     await page.getByRole("button", { name: "Delete routine" }).click();
     await page.waitForFunction(
@@ -272,6 +341,26 @@ async function main() {
     const deskAfter = await page.locator(".agent-desk").innerText();
     check("the desk keeps the seeded routines", /Weekday sweep/.test(deskAfter) && /Once reminder/.test(deskAfter));
     await shot(page, "06-after-delete");
+
+    await page.getByRole("button", { name: /Inbox/ }).click();
+    await page.waitForSelector(".inbox-modal", { timeout: 10_000 });
+    const inboxText = await page.locator(".inbox-modal").innerText();
+    check(
+      "the inbox lists the finished routine",
+      /Weekday sweep/.test(inboxText),
+      inboxText.replace(/\s+/g, " ").slice(0, 180),
+    );
+    await shot(page, "09-inbox");
+    await page.getByRole("button", { name: "Snooze" }).click();
+    await page.waitForFunction(
+      () => document.querySelector(".inbox-modal")?.textContent?.includes("Nothing is waiting."),
+      null,
+      { timeout: 10_000 },
+    );
+    check("snooze clears the finished routine", true);
+    await shot(page, "10-inbox-clear");
+    await page.getByRole("button", { name: "Close inbox" }).click();
+    await page.waitForSelector(".inbox-modal", { state: "detached", timeout: 10_000 });
 
     await page.locator(".composer-input").fill("/routine");
     await page.waitForSelector(".command-menu .command-row", { timeout: 10_000 });

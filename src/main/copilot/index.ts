@@ -524,6 +524,7 @@ export async function getCopilotStatus(): Promise<SettingsView> {
     hasGithubPat: hasSecret(secretKeys.githubPat),
     hasJiraToken: hasSecret(secretKeys.jira),
     jiraSiteUrl: "",
+    routinesPaused: false,
   };
 }
 

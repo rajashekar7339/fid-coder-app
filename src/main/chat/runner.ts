@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   COMPACT_CURRENT,
   COMPACT_DONE,
@@ -58,13 +59,16 @@ import type {
   QuestionOutcome,
   QuestionReply,
   QuestionRequest,
+  QueuedMessage,
   SkillSaveOutcome,
   SkillSaveRequest,
   ContextView,
+  Message,
   MessageAttachment,
   TokenUsage,
   WorkspaceMapView,
 } from "../../shared/types";
+import { queueProblem } from "../../shared/message-queue";
 import { jiraToolsReady } from "../../tools/jira/jira-format";
 import { askTools, routineCreateTools, toolsForAgent } from "../../tools/registry";
 import { listSkillsTool, skillFileTool, useSkillTool } from "../../tools/skills/skills";
@@ -82,7 +86,8 @@ import { createHistoryPort } from "../history/history";
 import type { CheckpointStore } from "../workspace/checkpoints";
 import { completeOnce, detach, getCopilotStatus, listCopilotModels, openSession, readAssistantText, type LiveSession } from "../copilot";
 import { selectEnhanceModel } from "./enhance";
-import type { AppDatabase } from "../db";
+import { runExcerpt } from "../../shared/routine-runs";
+import type { AppDatabase, TurnRecord } from "../db";
 import { runCodeExplore } from "../workspace/explore-session";
 import { runCodeReview } from "../workspace/review-session";
 import { architectureMapKey, buildArchitectureMap } from "../workspace/architecture-map";
@@ -210,7 +215,13 @@ const DIAGRAM_HINT =
 export class Runner {
   private sink: Sink = () => undefined;
   private readonly running = new Set<string>();
+  private inboxHook: (() => void) | null = null;
   private readonly enhancing = new Set<string>();
+  private readonly queues = new Map<string, QueuedMessage[]>();
+  private readonly holdDrain = new Set<string>();
+  private readonly aborting = new Set<string>();
+  private readonly forcing = new Set<string>();
+  private readonly turnDone = new Map<string, Promise<void>>();
   private readonly sessions = new Map<string, CachedSession>();
   private readonly activeTurns = new Map<string, string>();
   private readonly turnSources = new Map<string, "chat" | "routine">();
@@ -244,8 +255,283 @@ export class Runner {
     this.routinePort = port;
   }
 
+  setInboxHook(hook: () => void): void {
+    this.inboxHook = hook;
+  }
+
   isRunning(agentId: string): boolean {
     return this.running.has(agentId);
+  }
+
+  listQueue(agentId: string): QueuedMessage[] {
+    return [...(this.queues.get(agentId.trim()) ?? [])];
+  }
+
+  enqueue(input: {
+    agentId: string;
+    text: string;
+    attachments?: MessageAttachment[];
+  }): QueuedMessage[] {
+    const agentId = input.agentId.trim();
+    const agent = this.db.getAgent(agentId);
+    if (!agent) throw new Error("Agent not found");
+    const attachments = input.attachments ?? [];
+    const queue = this.queues.get(agent.id) ?? [];
+    const problem = queueProblem(input.text, attachments.length, queue.length);
+    if (problem) throw new Error(problem);
+    const item: QueuedMessage = {
+      id: randomUUID(),
+      agentId: agent.id,
+      text:
+        input.text.trim() ||
+        (attachments.length > 0 ? ATTACHMENT_ONLY_MESSAGE : ""),
+      attachments: [...attachments],
+      createdAt: new Date().toISOString(),
+    };
+    this.queues.set(agent.id, [...queue, item]);
+    this.sinkQueue(agent.id);
+    if (!this.running.has(agent.id) && !this.enhancing.has(agent.id)) {
+      void this.drainQueue(agent.id).catch(() => undefined);
+    }
+    return this.listQueue(agent.id);
+  }
+
+  updateQueued(agentId: string, id: string, text: string): QueuedMessage[] {
+    const key = agentId.trim();
+    const queue = this.queues.get(key);
+    if (!queue) throw new Error("That message is no longer queued.");
+    const item = queue.find((entry) => entry.id === id);
+    if (!item) throw new Error("That message is no longer queued.");
+    const nextText =
+      text.trim() ||
+      (item.attachments.length > 0 ? ATTACHMENT_ONLY_MESSAGE : "");
+    if (!nextText) throw new Error("Message is empty");
+    const next = queue.map((entry) =>
+      entry.id === id ? { ...entry, text: nextText } : entry,
+    );
+    this.queues.set(key, next);
+    this.sinkQueue(key);
+    return next;
+  }
+
+  removeQueued(agentId: string, id: string): QueuedMessage[] {
+    const key = agentId.trim();
+    const queue = this.queues.get(key);
+    if (!queue) {
+      this.sinkQueue(key);
+      return [];
+    }
+    const next = queue.filter((item) => item.id !== id);
+    if (next.length === queue.length) {
+      this.sinkQueue(key);
+      return this.listQueue(key);
+    }
+    if (next.length > 0) this.queues.set(key, next);
+    else this.queues.delete(key);
+    this.sinkQueue(key);
+    return next;
+  }
+
+  clearQueue(agentId: string): QueuedMessage[] {
+    const key = agentId.trim();
+    this.queues.delete(key);
+    this.sinkQueue(key);
+    return [];
+  }
+
+  clearAllQueues(): void {
+    this.queues.clear();
+  }
+
+  async forceSend(input: {
+    agentId: string;
+    text: string;
+    attachments?: MessageAttachment[];
+  }): Promise<void> {
+    await this.startForced(input);
+  }
+
+  async editMessage(input: {
+    agentId: string;
+    messageId: string;
+    text: string;
+  }): Promise<Agent> {
+    const agentId = input.agentId.trim();
+    const agent = this.db.getAgent(agentId);
+    if (!agent) throw new Error("Agent not found");
+    const { message, turn } = this.chatUserTurn(agentId, input.messageId);
+    if (!input.text.trim() && !(message.attachments?.length)) {
+      throw new Error("Message is empty");
+    }
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const settle = (finish: () => void) => {
+        if (settled) return;
+        settled = true;
+        finish();
+      };
+      void this.runTurn({
+        agentId,
+        text: input.text,
+        source: "chat",
+        attachments: message.attachments ?? [],
+        beforeStart: async () => {
+          await this.dropSession(agentId);
+          this.db.deleteChatTurns(agentId, turn.id, true);
+          this.db.clearMemorySummary(agentId);
+        },
+        onStarted: () => settle(resolve),
+      }).catch((error: unknown) => {
+        settle(() => reject(error instanceof Error ? error : new Error(String(error))));
+      });
+    });
+    const updated = this.db.getAgent(agentId);
+    if (!updated) throw new Error("Agent not found");
+    return updated;
+  }
+
+  async deleteMessage(input: { agentId: string; messageId: string }): Promise<Agent> {
+    const agentId = input.agentId.trim();
+    const agent = this.db.getAgent(agentId);
+    if (!agent) throw new Error("Agent not found");
+    const { turn } = this.chatUserTurn(agentId, input.messageId);
+    this.db.deleteChatTurns(agentId, turn.id, false);
+    const updated = this.db.clearMemorySummary(agentId);
+    await this.dropSession(agentId);
+    return updated;
+  }
+
+  private chatUserTurn(
+    agentId: string,
+    messageId: string,
+  ): { message: Message; turn: TurnRecord } {
+    if (this.running.has(agentId)) throw new Error("Stop the agent before changing the chat.");
+    if (this.enhancing.has(agentId)) throw new Error("Wait until the enhancement finishes.");
+    if (this.forcing.has(agentId)) throw new Error("Wait for the current message to send.");
+    const message = this.db.getMessage(messageId);
+    if (!message || message.agentId !== agentId) throw new Error("Message not found");
+    if (message.role !== "user") throw new Error("Only user messages can be changed.");
+    const turn = message.turnId ? this.db.getTurn(message.turnId) : null;
+    if (!turn || turn.agentId !== agentId) throw new Error("This message has no turn to change.");
+    if (turn.source !== "chat") throw new Error("Routine messages are read-only.");
+    return { message, turn };
+  }
+
+  async forceQueued(agentId: string, id: string): Promise<void> {
+    const key = agentId.trim();
+    const agent = this.db.getAgent(key);
+    if (!agent) throw new Error("Agent not found");
+    const item = (this.queues.get(agent.id) ?? []).find((entry) => entry.id === id);
+    if (!item) throw new Error("That message is no longer queued.");
+    await this.startForced({
+      agentId: agent.id,
+      text: item.text,
+      attachments: item.attachments,
+      queuedId: item.id,
+    });
+  }
+
+  private sinkQueue(agentId: string): void {
+    this.sink({ agentId, type: "queue", queue: this.listQueue(agentId) });
+  }
+
+  private async startForced(input: {
+    agentId: string;
+    text: string;
+    attachments?: MessageAttachment[];
+    queuedId?: string;
+  }): Promise<void> {
+    const agentId = input.agentId.trim();
+    const agent = this.db.getAgent(agentId);
+    if (!agent) throw new Error("Agent not found");
+    const attachments = input.attachments ?? [];
+    const text =
+      input.text.trim() ||
+      (attachments.length > 0 ? ATTACHMENT_ONLY_MESSAGE : "");
+    if (!text) throw new Error("Message is empty");
+    if (this.enhancing.has(agent.id)) {
+      throw new Error("Wait until the enhancement finishes.");
+    }
+    if (this.forcing.has(agent.id)) {
+      throw new Error("Wait for the current message to send.");
+    }
+
+    this.forcing.add(agent.id);
+    this.holdDrain.add(agent.id);
+    try {
+      const auth = await getCopilotStatus();
+      if (!auth.signedIn) {
+        throw new Error("Copilot is not signed in. Open Settings, sign in, then try again.");
+      }
+      const active = this.turnDone.get(agent.id);
+      if (active) {
+        await this.abort(agent.id);
+        await active;
+      }
+      this.holdDrain.delete(agent.id);
+
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const settle = (finish: () => void) => {
+          if (settled) return;
+          settled = true;
+          finish();
+        };
+        void this.runTurn({
+          agentId: agent.id,
+          text,
+          source: "chat",
+          attachments,
+          queuedId: input.queuedId,
+          onStarted: () => {
+            if (input.queuedId) this.removeQueued(agent.id, input.queuedId);
+            settle(resolve);
+          },
+        }).catch((error: unknown) => {
+          settle(() => reject(error instanceof Error ? error : new Error(String(error))));
+        });
+      });
+    } finally {
+      this.holdDrain.delete(agent.id);
+      this.forcing.delete(agent.id);
+    }
+  }
+
+  private async drainQueue(agentId: string): Promise<void> {
+    if (
+      this.running.has(agentId) ||
+      this.enhancing.has(agentId) ||
+      this.holdDrain.has(agentId)
+    ) {
+      return;
+    }
+    const next = this.queues.get(agentId)?.[0];
+    if (!next) return;
+    let claimed = false;
+    try {
+      await this.runTurn({
+        agentId,
+        text: next.text,
+        source: "chat",
+        attachments: next.attachments,
+        queuedId: next.id,
+        claim: () => {
+          claimed = true;
+          this.removeQueued(agentId, next.id);
+        },
+      });
+    } catch (error) {
+      if (!claimed) {
+        const message = explainCopilotError(
+          error instanceof Error ? error.message : String(error),
+        );
+        this.sink({ agentId, type: "error", error: message });
+      }
+    }
+  }
+
+  private throwIfStopped(agentId: string): void {
+    if (this.aborting.has(agentId)) throw new Error("Stopped by the user.");
   }
 
   async getWorkspaceMap(agentId: string): Promise<WorkspaceMapView | null> {
@@ -336,6 +622,7 @@ export class Runner {
   }
 
   async abort(agentId: string): Promise<void> {
+    if (this.running.has(agentId)) this.aborting.add(agentId);
     this.denyPendingApprovals(agentId, "Stopped by the user.");
     this.dismissPendingQuestions(agentId);
     this.dismissPendingHandoffs(agentId);
@@ -527,46 +814,41 @@ export class Runner {
     source: "chat" | "routine";
     attachments?: MessageAttachment[];
     notify?: (text: string) => void;
+    queuedId?: string;
+    claim?: () => void;
+    onStarted?: () => void;
+    beforeStart?: () => Promise<void> | void;
   }): Promise<string> {
     const text =
       input.text.trim() || (input.attachments?.length ? ATTACHMENT_ONLY_MESSAGE : "");
     if (!text) throw new Error("Message is empty");
-    const agent = this.db.getAgent(input.agentId);
+    let agent = this.db.getAgent(input.agentId);
     if (!agent) throw new Error("Agent not found");
     if (this.running.has(agent.id)) throw new Error("This agent is already working");
     if (this.enhancing.has(agent.id)) throw new Error("Wait until the enhancement finishes.");
-    const auth = await getCopilotStatus();
-    if (!auth.signedIn) {
-      throw new Error("Copilot is not signed in. Open Settings, sign in, then try again.");
-    }
-    const parsed = parseCommand(text);
-    const attachments =
-      parsed && parsed.command.id !== "skills"
-        ? { sdk: [], stored: [], prompt: "" }
-        : buildCopilotAttachments(agent, input.attachments ?? null);
 
     this.running.add(agent.id);
-    this.turnSources.set(agent.id, input.source);
-    if (input.notify) this.turnNotifiers.set(agent.id, input.notify);
-    const turnId = this.db.createTurn(agent.id, input.source);
-    this.activeTurns.set(agent.id, turnId);
-    let streamed = "";
-    deltaHolders.set(agent.id, (delta) => {
-      streamed += delta;
+    let finishTurn!: () => void;
+    const done = new Promise<void>((resolve) => {
+      finishTurn = resolve;
     });
-    turnUsage.set(agent.id, emptyUsage());
-    const visible = input.source === "routine" ? `[Routine] ${text}` : text;
-    const userMessage = this.db.addMessage(
-      agent.id,
-      "user",
-      visible,
-      turnId,
-      null,
-      attachments.stored.length > 0 ? attachments.stored : null,
-    );
-    this.sink({ agentId: agent.id, type: "user", text: visible });
+    this.turnDone.set(agent.id, done);
+
+    let failed = false;
+    let errorTurnId: string | null = null;
+    let streamed = "";
 
     try {
+      const auth = await getCopilotStatus();
+      if (!auth.signedIn) {
+        throw new Error("Copilot is not signed in. Open Settings, sign in, then try again.");
+      }
+      this.throwIfStopped(agent.id);
+      const parsed = parseCommand(text);
+      const attachments =
+        parsed && parsed.command.id !== "skills"
+          ? { sdk: [], stored: [], prompt: "" }
+          : buildCopilotAttachments(agent, input.attachments ?? null);
       if (parsed) {
         if (parsed.command.ui) {
           throw new Error(`${parsed.command.usage} is a composer command. Use it from the chat composer.`);
@@ -578,21 +860,61 @@ export class Runner {
           askMode(agent),
         );
         if (unavailable) throw new Error(unavailable);
-        if (parsed.command.id === "review") {
-          return await this.runReviewTurn(agent, parsed.args, turnId);
+        if (parsed.command.id === "compact" && parsed.args) {
+          throw new Error("Send /compact on its own.");
         }
-        if (parsed.command.id === "compact") {
-          if (parsed.args) throw new Error("Send /compact on its own.");
-          return await this.runCompactTurn(agent, userMessage.id, turnId);
+        if (parsed.command.id === "skill-save" && parsed.args) {
+          throw new Error("Send /skill-save on its own.");
         }
-        if (parsed.command.id === "skill-save") {
-          if (parsed.args) throw new Error("Send /skill-save on its own.");
-        }
-        if (parsed.command.id === "routine") {
-          if (!parsed.args) throw new Error(`Add the task and time after ${parsed.command.usage.split(" ")[0]}.`);
-          this.turnCommands.set(agent.id, "routine");
+        if (parsed.command.id === "routine" && !parsed.args) {
+          throw new Error(`Add the task and time after ${parsed.command.usage.split(" ")[0]}.`);
         }
       }
+
+      if (input.beforeStart) {
+        await input.beforeStart();
+        agent = this.db.getAgent(agent.id) ?? agent;
+      }
+
+      this.turnSources.set(agent.id, input.source);
+      if (input.notify) this.turnNotifiers.set(agent.id, input.notify);
+      const turnId = this.db.createTurn(agent.id, input.source);
+      errorTurnId = turnId;
+      this.activeTurns.set(agent.id, turnId);
+      deltaHolders.set(agent.id, (delta) => {
+        streamed += delta;
+      });
+      turnUsage.set(agent.id, emptyUsage());
+      const visible = input.source === "routine" ? `[Routine] ${text}` : text;
+      const userMessage = this.db.addMessage(
+        agent.id,
+        "user",
+        visible,
+        turnId,
+        null,
+        attachments.stored.length > 0 ? attachments.stored : null,
+      );
+      input.claim?.();
+      this.sink({
+        agentId: agent.id,
+        type: "user",
+        text: visible,
+        messageId: userMessage.id,
+        ...(input.queuedId ? { queuedId: input.queuedId } : {}),
+      });
+      input.onStarted?.();
+      this.throwIfStopped(agent.id);
+
+      if (parsed?.command.id === "review") {
+        return await this.runReviewTurn(agent, parsed.args, turnId);
+      }
+      if (parsed?.command.id === "compact") {
+        return await this.runCompactTurn(agent, userMessage.id, turnId);
+      }
+      if (parsed?.command.id === "routine") {
+        this.turnCommands.set(agent.id, "routine");
+      }
+
       let latest = text;
       if (parsed?.command.id === "routine") latest = parsed.args;
       if (parsed?.command.id === "skill-save") latest = SKILL_SAVE_COMMAND_PROMPT;
@@ -655,6 +977,7 @@ export class Runner {
         freshSession: opened.fresh,
         now: localIso(new Date()),
       });
+      this.throwIfStopped(agent.id);
       const response = await opened.live.session.sendAndWait(
         {
           prompt,
@@ -672,13 +995,42 @@ export class Runner {
       });
       return finalText;
     } catch (error) {
-      const message = explainCopilotError(error instanceof Error ? error.message : String(error));
-      const partial = streamed.trim();
-      const stored = partial ? `${partial}\n\nStopped: ${message}` : `Stopped: ${message}`;
-      this.db.addMessage(agent.id, "assistant", stored, turnId, usageOrNull(agent.id));
-      this.db.finishTurn(turnId, "error");
-      this.finalizeCheckpoints(agent.id, turnId);
-      this.sink({ agentId: agent.id, type: "error", error: message });
+      failed = true;
+      const stoppedByUser = this.aborting.has(agent.id);
+      const message = stoppedByUser
+        ? "Stopped by the user."
+        : explainCopilotError(error instanceof Error ? error.message : String(error));
+      if (errorTurnId) {
+        const partial = streamed.trim();
+        const stored = stoppedByUser
+          ? partial
+            ? `${partial}\n\nStopped.`
+            : "Stopped."
+          : partial
+            ? `${partial}\n\nStopped: ${message}`
+            : `Stopped: ${message}`;
+        this.db.addMessage(agent.id, "assistant", stored, errorTurnId, usageOrNull(agent.id));
+        this.db.finishTurn(errorTurnId, stoppedByUser ? "stopped" : "error");
+        if (!stoppedByUser && input.source === "chat") {
+          this.db.addInboxItem({
+            agentId: agent.id,
+            kind: "turn",
+            refId: errorTurnId,
+            title: "A turn failed",
+            body: runExcerpt(message),
+          });
+          this.inboxHook?.();
+        }
+        this.finalizeCheckpoints(agent.id, errorTurnId);
+        this.sink({
+          agentId: agent.id,
+          type: "error",
+          error: message,
+          ...(stoppedByUser ? { aborted: true } : {}),
+        });
+      } else if (stoppedByUser) {
+        this.sink({ agentId: agent.id, type: "error", error: message, aborted: true });
+      }
       throw new Error(message);
     } finally {
       this.denyPendingApprovals(agent.id, "The turn ended before approval.");
@@ -692,8 +1044,14 @@ export class Runner {
       this.turnSources.delete(agent.id);
       this.turnCommands.delete(agent.id);
       this.turnNotifiers.delete(agent.id);
+      this.aborting.delete(agent.id);
       if (this.skillToolsUsed.delete(agent.id)) {
         await this.dropSession(agent.id).catch(() => undefined);
+      }
+      finishTurn();
+      this.turnDone.delete(agent.id);
+      if (!failed && !this.holdDrain.has(agent.id)) {
+        void this.drainQueue(agent.id).catch(() => undefined);
       }
     }
   }
@@ -1002,6 +1360,7 @@ export class Runner {
       timer.unref?.();
       this.pendingApprovals.set(approvalId, { request, timer, resolve });
       this.sink({ agentId, type: "approval-request", approval: request });
+      this.inboxHook?.();
       this.turnNotifiers.get(agentId)?.(`Needs approval: ${input.reason}`);
     });
   }
@@ -1017,6 +1376,7 @@ export class Runner {
     clearTimeout(pending.timer);
     this.pendingApprovals.delete(approvalId);
     this.db.resolveApproval(approvalId, decision, source);
+    this.inboxHook?.();
     this.sink({
       agentId: pending.request.agentId,
       type: "approval-resolved",

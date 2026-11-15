@@ -38,7 +38,8 @@ The right column shows the selected agent's local work.
 - **Browser** shows a live preview when a browser agent opens a page. Choose Open browser to bring the real window to the front.
 - **Changes** is a one-line summary of the latest edited turn. Choose **Open changes** for the turn picker, diff, and file tree.
 - **Approvals** shows recent allow, deny, and timeout decisions. Choose History for the full audit.
-- **Routines** lists saved routines. Use the switch to pause one, or the plus to manage them.
+- **Routines** lists saved routines. Use the switch to pause one, or the plus to manage them. A routine runs only while Fid Coder is open. Closing the app skips a slot that comes due while it is closed.
+- The bell beside **New agent** opens the inbox. It lists approvals, failed turns, and finished routine runs.
 - **Workspace** shows the folder a developer agent can read, search, and edit. Browser-only agents show no workspace.
 - The desk opens automatically at 1181 px and wider. Use the panel button in the chat header to hide or show it.
 
