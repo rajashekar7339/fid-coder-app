@@ -22,6 +22,9 @@ test("parses a command and its target", () => {
   assert.equal(parseCommand("/review branch main")?.args, "branch main");
   assert.equal(parseCommand("/skills write-lean tighten the parser")?.command.id, "skills");
   assert.equal(parseCommand("/skills write-lean tighten the parser")?.args, "write-lean tighten the parser");
+  assert.equal(parseCommand("/skill-save")?.command.id, "skill-save");
+  assert.equal(parseCommand("/skill-save")?.args, "");
+  assert.equal(parseCommand("/skill-save notes")?.args, "notes");
   assert.equal(parseCommand("/routine run the tests tomorrow at 9")?.command.id, "routine");
   assert.equal(parseCommand("/routine run the tests tomorrow at 9")?.args, "run the tests tomorrow at 9");
   assert.equal(parseCommand("/compact")?.command.id, "compact");
@@ -37,12 +40,14 @@ test("filters commands by id, label, and description", () => {
   assert.equal(filterCommands("rev").some((item) => item.id === "review"), true);
   assert.equal(filterCommands("guide").some((item) => item.id === "help"), true);
   assert.equal(filterCommands("routine").some((item) => item.id === "routine"), true);
+  assert.equal(filterCommands("save").some((item) => item.id === "skill-save"), true);
   assert.equal(filterCommands("files").some((item) => item.id === "files"), true);
   assert.equal(filterCommands("compact").some((item) => item.id === "compact"), true);
   assert.equal(filterCommands("zzz").length, 0);
   assert.deepEqual(filterCommands("").map((item) => item.id), [
     "review",
     "skills",
+    "skill-save",
     "routine",
     "compact",
     "files",
@@ -61,6 +66,8 @@ test("marks workspace, profile, and agent-mode requirements", () => {
   assert.equal(command("files").hideWithoutWorkspace, true);
   assert.equal(commandAvailability(command("help"), "browser", false), null);
   assert.equal(commandAvailability(command("skills"), "browser", false), null);
+  assert.equal(commandAvailability(command("skill-save"), "browser", false, true), null);
+  assert.equal(commandAvailability(command("skill-save"), "developer", false, false), null);
   assert.equal(
     commandAvailability(command("routine"), "developer", false, true),
     "Switch to Agent mode to use this command.",

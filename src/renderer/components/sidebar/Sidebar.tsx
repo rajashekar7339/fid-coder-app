@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Archive,
+  ArchiveRestore,
+  ChevronRight,
   CircleHelp,
   MoreHorizontal,
   Pencil,
+  Pin,
+  PinOff,
   Plus,
   Search,
   Settings,
@@ -10,9 +15,10 @@ import {
   Wrench,
   X,
 } from "lucide-react";
+import { arrangeAgentList } from "../../../shared/agent-list";
 import type { CopilotUsageView } from "../../../shared/copilot-usage";
 import { formatUsageCount, formatUsageReset } from "../../../shared/copilot-usage";
-import type { Agent } from "../../../shared/types";
+import type { Agent, AgentPlacement } from "../../../shared/types";
 import { agentSubtitle, isRecentlyActive } from "../../lib/agent-display";
 import { formatActivityDay, formatFullTimestamp } from "../../lib/format";
 import { AgentAvatar } from "../agents/AgentAvatar";
@@ -31,6 +37,7 @@ type Props = {
   onSelect: (agentId: string) => void;
   onCreate: () => void;
   onEdit: (agent: Agent) => void;
+  onPlace: (agent: Agent, placement: AgentPlacement) => void;
   onDelete: (agent: Agent) => void;
   onSettings: () => void;
   onSkills: () => void;
@@ -40,7 +47,8 @@ type Props = {
 type AgentMenu = { agent: Agent; x: number; y: number };
 
 const MENU_WIDTH = 156;
-const MENU_HEIGHT = 84;
+const MENU_ITEM_HEIGHT = 31;
+const MENU_PAD = 8;
 
 function copilotLabel(presence: CopilotPresence): string {
   if (presence === "ready") return "Copilot ready";
@@ -67,11 +75,26 @@ function usageTitle(usage: CopilotUsageView): string {
   return parts.join(" · ");
 }
 
-function placeMenu(x: number, y: number): { x: number; y: number } {
+function menuHeight(agent: Agent): number {
+  return (agent.archived ? 3 : 4) * MENU_ITEM_HEIGHT + MENU_PAD;
+}
+
+function placeMenu(x: number, y: number, height: number): { x: number; y: number } {
   return {
     x: Math.max(8, Math.min(x, window.innerWidth - MENU_WIDTH - 8)),
-    y: Math.max(8, Math.min(y, window.innerHeight - MENU_HEIGHT - 8)),
+    y: Math.max(8, Math.min(y, window.innerHeight - height - 8)),
   };
+}
+
+function whenLabel(agent: Agent): string {
+  if (agent.archived) return "Archived";
+  return agent.lastActivityAt ? formatActivityDay(agent.lastActivityAt) : "New";
+}
+
+function whenTitle(agent: Agent): string | undefined {
+  if (!agent.lastActivityAt) return agent.archived ? "Archived" : undefined;
+  const stamp = formatFullTimestamp(agent.lastActivityAt);
+  return agent.archived ? `Archived · ${stamp}` : stamp;
 }
 
 export function Sidebar({
@@ -84,6 +107,7 @@ export function Sidebar({
   onSelect,
   onCreate,
   onEdit,
+  onPlace,
   onDelete,
   onSettings,
   onSkills,
@@ -91,21 +115,28 @@ export function Sidebar({
 }: Props) {
   const [query, setQuery] = useState("");
   const [menu, setMenu] = useState<AgentMenu | null>(null);
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const search = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const needle = query.trim().toLowerCase();
-  const visible = needle
-    ? agents.filter((agent) =>
-        `${agent.name} ${agent.description}`.toLowerCase().includes(needle),
-      )
-    : agents;
-  const menuAgent = menu && agents.some((agent) => agent.id === menu.agent.id) ? menu.agent : null;
+  const sawArchivedSelection = useRef(false);
+  const needle = query.trim();
+  const { listed, archived } = arrangeAgentList(agents, query);
+  const menuAgent = menu ? (agents.find((agent) => agent.id === menu.agent.id) ?? null) : null;
+  const selectedIsArchived = Boolean(
+    selectedId && agents.some((agent) => agent.id === selectedId && agent.archived),
+  );
+
+  useEffect(() => {
+    if (selectedIsArchived && !sawArchivedSelection.current) setArchiveOpen(true);
+    sawArchivedSelection.current = selectedIsArchived;
+  }, [selectedIsArchived]);
 
   useEffect(() => {
     function onShortcut(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         if (document.querySelector("[aria-modal='true']")) return;
         event.preventDefault();
+        setMenu(null);
         search.current?.focus();
         search.current?.select();
       }
@@ -134,12 +165,76 @@ export function Sidebar({
   }, [menu]);
 
   function openMenu(agent: Agent, x: number, y: number) {
-    const placed = placeMenu(x, y);
+    const placed = placeMenu(x, y, menuHeight(agent));
     setMenu({ agent, ...placed });
+  }
+
+  function changeQuery(value: string) {
+    setQuery(value);
+    setMenu(null);
   }
 
   const accountName = loginName || "Copilot";
   const checking = copilotPresence === "checking" || copilotPresence === "unknown";
+
+  function renderAgent(agent: Agent) {
+    const active = agent.id === selectedId;
+    const presence = signedIn && isRecentlyActive(agent.lastActivityAt) ? "recent" : "idle";
+    return (
+      <div
+        className={`agent-row-wrap ${menu?.agent.id === agent.id ? "has-open-menu" : ""}`}
+        key={agent.id}
+      >
+        <button
+          type="button"
+          className={`agent-row ${active ? "is-active" : ""}`}
+          aria-current={active ? "page" : undefined}
+          onClick={() => {
+            setMenu(null);
+            onSelect(agent.id);
+          }}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            openMenu(agent, event.clientX, event.clientY);
+          }}
+        >
+          <AgentAvatar agent={agent} size="md" presence={presence} />
+          <span className="agent-copy">
+            <span className="agent-name">
+              {agent.pinned ? (
+                <span className="agent-pin" title="Pinned">
+                  <Pin size={12} aria-hidden="true" />
+                </span>
+              ) : null}
+              <span className="agent-name-text">{agent.name}</span>
+            </span>
+            <span className="agent-meta">{agentSubtitle(agent)}</span>
+          </span>
+          <span className="agent-when" title={whenTitle(agent)}>
+            {whenLabel(agent)}
+          </span>
+        </button>
+        <button
+          type="button"
+          data-menu-trigger
+          className="agent-menu-trigger"
+          aria-label={`Actions for ${agent.name}`}
+          aria-haspopup="menu"
+          onClick={(event) => {
+            event.stopPropagation();
+            if (menu?.agent.id === agent.id) {
+              setMenu(null);
+              return;
+            }
+            const rect = event.currentTarget.getBoundingClientRect();
+            openMenu(agent, rect.right - MENU_WIDTH, rect.bottom + 4);
+          }}
+        >
+          <MoreHorizontal size={15} />
+        </button>
+      </div>
+    );
+  }
 
   return (
     <aside className="sidebar" aria-label="Agent sidebar">
@@ -160,11 +255,16 @@ export function Sidebar({
           value={query}
           placeholder="Search agents"
           aria-label="Search agents"
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => changeQuery(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
-              setQuery("");
+              changeQuery("");
               event.currentTarget.blur();
+            }
+            if (event.key === "Enter" && needle && listed[0]) {
+              event.preventDefault();
+              setMenu(null);
+              onSelect(listed[0].id);
             }
           }}
         />
@@ -174,7 +274,7 @@ export function Sidebar({
             className="search-clear"
             aria-label="Clear search"
             onClick={() => {
-              setQuery("");
+              changeQuery("");
               search.current?.focus();
             }}
           >
@@ -187,7 +287,7 @@ export function Sidebar({
 
       <div className="sidebar-section-label">
         <span>Agents</span>
-        <span className="count">{agents.length}</span>
+        <span className="count">{listed.length}</span>
       </div>
 
       <nav
@@ -197,68 +297,30 @@ export function Sidebar({
           if (menu) setMenu(null);
         }}
       >
-        {visible.length === 0 ? (
-          <p className="sidebar-empty">
-            {agents.length === 0 ? "No agents yet." : "No matching agents."}
-          </p>
-        ) : (
-          visible.map((agent) => {
-            const active = agent.id === selectedId;
-            const presence = signedIn && isRecentlyActive(agent.lastActivityAt) ? "recent" : "idle";
-            return (
-              <div
-                className={`agent-row-wrap ${menu?.agent.id === agent.id ? "has-open-menu" : ""}`}
-                key={agent.id}
-              >
-                <button
-                  type="button"
-                  className={`agent-row ${active ? "is-active" : ""}`}
-                  aria-current={active ? "page" : undefined}
-                  onClick={() => {
-                    setMenu(null);
-                    onSelect(agent.id);
-                  }}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    openMenu(agent, event.clientX, event.clientY);
-                  }}
-                >
-                  <AgentAvatar agent={agent} size="md" presence={presence} />
-                  <span className="agent-copy">
-                    <span className="agent-name">{agent.name}</span>
-                    <span className="agent-meta">{agentSubtitle(agent)}</span>
-                  </span>
-                  <span
-                    className="agent-when"
-                    title={
-                      agent.lastActivityAt ? formatFullTimestamp(agent.lastActivityAt) : undefined
-                    }
-                  >
-                    {agent.lastActivityAt ? formatActivityDay(agent.lastActivityAt) : "New"}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  data-menu-trigger
-                  className="agent-menu-trigger"
-                  aria-label={`Actions for ${agent.name}`}
-                  aria-haspopup="menu"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (menu?.agent.id === agent.id) {
-                      setMenu(null);
-                      return;
-                    }
-                    const rect = event.currentTarget.getBoundingClientRect();
-                    openMenu(agent, rect.right - MENU_WIDTH, rect.bottom + 4);
-                  }}
-                >
-                  <MoreHorizontal size={15} />
-                </button>
-              </div>
-            );
-          })
-        )}
+        {listed.length === 0 && needle ? <p className="sidebar-empty">No matching agents.</p> : null}
+        {listed.length === 0 && !needle && agents.length === 0 ? (
+          <p className="sidebar-empty">No agents yet.</p>
+        ) : null}
+        {listed.map(renderAgent)}
+        {archived.length > 0 ? (
+          <div className="archive-group">
+            <button
+              type="button"
+              className="sidebar-section-label is-disclosure"
+              aria-expanded={archiveOpen}
+              onClick={() => setArchiveOpen((open) => !open)}
+            >
+              <ChevronRight
+                size={12}
+                aria-hidden="true"
+                className={`disclosure-chevron ${archiveOpen ? "is-open" : ""}`}
+              />
+              <span>Archived</span>
+              <span className="count">{archived.length}</span>
+            </button>
+            {archiveOpen ? archived.map(renderAgent) : null}
+          </div>
+        ) : null}
       </nav>
 
       <button type="button" className="new-agent-row" onClick={onCreate}>
@@ -322,6 +384,48 @@ export function Sidebar({
           className="agent-menu"
           style={{ left: menu.x, top: menu.y }}
         >
+          {menuAgent.archived ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenu(null);
+                onPlace(menuAgent, { archived: false });
+              }}
+            >
+              <ArchiveRestore size={13} aria-hidden="true" />
+              Restore
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenu(null);
+                  onPlace(menuAgent, { pinned: !menuAgent.pinned });
+                }}
+              >
+                {menuAgent.pinned ? (
+                  <PinOff size={13} aria-hidden="true" />
+                ) : (
+                  <Pin size={13} aria-hidden="true" />
+                )}
+                {menuAgent.pinned ? "Unpin" : "Pin"}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenu(null);
+                  onPlace(menuAgent, { archived: true });
+                }}
+              >
+                <Archive size={13} aria-hidden="true" />
+                Archive
+              </button>
+            </>
+          )}
           <button
             type="button"
             role="menuitem"

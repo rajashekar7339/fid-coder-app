@@ -21,6 +21,14 @@ Fid Coder reads skills from:
 
 The first copy of an id wins: workspace, then your skills, then Copilot, then built-in. The library lists the winning copy and reports hidden duplicates.
 
+## Save a skill from chat
+
+Ask the agent to save a procedure you want to run again. It proposes a name, a short description, and the steps. A card shows editable name, when-to-use, and steps fields; correct anything that's off, then choose **Save** to write one `SKILL.md` into your skills folder, or **Don't save** to leave the library unchanged. The card waits about two minutes, then closes without saving. The file has no scripts. A name that matches a built-in skill is refused. If you already saved that name, the card says it replaces the installed skill and leaves any other files in that folder. Run it later with `/skills <skill-id> <task>`. Ask mode can save a skill too. The card is the confirmation.
+
+![The editable Save skill card with Name, When to use, and Steps and checks fields.](images/save-skill-card.png)
+
+Type `/skill-save` to ask for the same proposal. It reviews the whole task in the conversation, not only the last message. The card still decides whether anything is written.
+
 ## Use a skill
 
 Type `/skills <skill-id> <task>` in the composer:

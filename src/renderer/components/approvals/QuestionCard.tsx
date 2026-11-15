@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { CircleHelp, Clock3 } from "lucide-react";
+import { CircleHelp } from "lucide-react";
 import { OTHER_MAX_LENGTH } from "../../../shared/question";
 import type { QuestionReply, QuestionRequest } from "../../../shared/types";
+import { useCountdown } from "../../lib/countdown";
+import { CardHeader } from "./CardHeader";
 
 type Props = {
   question: QuestionRequest;
@@ -11,39 +13,24 @@ type Props = {
 };
 
 export function QuestionCard({ question, busy, error, onAnswer }: Props) {
-  const [seconds, setSeconds] = useState(() => secondsLeft(question.expiresAt));
+  const seconds = useCountdown(question.expiresAt);
   const [other, setOther] = useState("");
 
-  useEffect(() => {
-    setSeconds(secondsLeft(question.expiresAt));
-    setOther("");
-    const timer = window.setInterval(() => setSeconds(secondsLeft(question.expiresAt)), 1000);
-    return () => window.clearInterval(timer);
-  }, [question.expiresAt, question.id]);
+  useEffect(() => setOther(""), [question.id]);
 
   const ownAnswer = other.trim();
 
   return (
     <section className="question-card" aria-label="Question">
-      <div className="question-card-main">
-        <span className="question-card-icon">
-          <CircleHelp size={14} aria-hidden="true" />
-        </span>
-        <div className="question-card-copy">
-          <div className="question-card-line">
-            <span className="question-kicker">Question</span>
-            <span
-              className={seconds <= 20 ? "question-countdown is-urgent" : "question-countdown"}
-              aria-live="off"
-              title={`Continues with no answer in ${formatSeconds(seconds)}`}
-            >
-              <Clock3 size={10} aria-hidden="true" />
-              {formatSeconds(seconds)}
-            </span>
-          </div>
-          <p className="question-text">{question.question}</p>
-        </div>
-      </div>
+      <CardHeader
+        icon={<CircleHelp size={14} aria-hidden="true" />}
+        kicker="Question"
+        seconds={seconds}
+        urgentAt={20}
+        countdownLabel="Continues with no answer"
+      >
+        <p className="question-text">{question.question}</p>
+      </CardHeader>
 
       <div className="question-choices">
         {question.choices.map((choice, index) => (
@@ -100,14 +87,4 @@ export function QuestionCard({ question, busy, error, onAnswer }: Props) {
       </footer>
     </section>
   );
-}
-
-function secondsLeft(iso: string): number {
-  const expires = Date.parse(iso);
-  if (!Number.isFinite(expires)) return 0;
-  return Math.max(0, Math.ceil((expires - Date.now()) / 1000));
-}
-
-function formatSeconds(seconds: number): string {
-  return seconds > 0 ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}` : "now";
 }

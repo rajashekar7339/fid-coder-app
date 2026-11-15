@@ -31,6 +31,13 @@ export const COMMANDS: CommandInfo[] = [
     category: "agent",
   },
   {
+    id: "skill-save",
+    label: "Save this as a skill",
+    description: "Ask the agent to turn the procedure in this chat into a reusable skill.",
+    usage: "/skill-save",
+    category: "agent",
+  },
+  {
     id: "routine",
     label: "Create a routine",
     description: "Create a routine for this agent. Add the task and when to run it.",

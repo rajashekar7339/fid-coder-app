@@ -28,8 +28,8 @@ const SOURCES: GuideSource[] = [
     id: "the-cockpit",
     title: "The cockpit at a glance",
     group: "Start here",
-    summary: "Sidebar, conversation, Agent Desk, composer, and the shortcuts worth knowing.",
-    readMinutes: 3,
+    summary: "Search, pin, and archive agents in the sidebar, then use the conversation, Agent Desk, and shortcuts.",
+    readMinutes: 4,
     file: "the-cockpit.md",
   },
   {
@@ -37,8 +37,8 @@ const SOURCES: GuideSource[] = [
     title: "Chat with an agent",
     group: "Using Fid Coder",
     summary:
-      "Send messages, improve a draft, follow tool steps, answer a question card, read token and credit usage, switch models, stop a turn, and approve deletes, pushes, and downloads.",
-    readMinutes: 7,
+      "Send messages, improve a draft, follow tool steps, answer a question, hand the browser back for sign-in, read token and credit usage, switch models, stop a turn, and approve deletes, pushes, and downloads.",
+    readMinutes: 8,
     file: "chat-with-an-agent.md",
   },
   {
@@ -71,8 +71,8 @@ const SOURCES: GuideSource[] = [
     title: "Use skills on demand",
     group: "Using Fid Coder",
     summary:
-      "Browse or upload skills, check their versions, and use one with /skills. A used skill can be loaded again when a later message needs it.",
-    readMinutes: 5,
+      "Browse, upload, or save a skill from chat, check versions, and use one with /skills. A used skill can be loaded again when a later message needs it.",
+    readMinutes: 6,
     file: "use-skills.md",
   },
   {

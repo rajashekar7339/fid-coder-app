@@ -1,3 +1,10 @@
+import {
+  BROWSER_HANDOFF_TOOL,
+  HANDOFF_CLOSED_TEXT,
+  HANDOFF_DONE_TEXT,
+  HANDOFF_TIMEOUT_TEXT,
+  parseHandoffReason,
+} from "../../shared/browser-handoff";
 import { asRecord, optionalBoolean, requiredString } from "../args";
 import type { AppTool } from "../types";
 
@@ -68,6 +75,24 @@ export const browserTools: AppTool[] = [
         requiredString(record, "text"),
         optionalBoolean(record, "submit"),
       );
+    },
+  },
+  {
+    name: BROWSER_HANDOFF_TOOL,
+    description:
+      "Hand this agent's browser to the user for a sign-in or a captcha. Call it once and wait. Do not ask for or type a password. After the user is done, call browser_snapshot before the next click, type, or navigation.",
+    parameters: {
+      type: "object",
+      properties: {
+        reason: { type: "string", description: "Why the user needs the browser, such as a sign-in page" },
+      },
+      required: ["reason"],
+    },
+    handler: async (args, ctx) => {
+      if (!ctx.handoff) throw new Error("Handing the browser back is unavailable in this context");
+      const outcome = await ctx.handoff(parseHandoffReason(args));
+      if (outcome.source === "aborted") throw new Error(HANDOFF_CLOSED_TEXT);
+      return outcome.source === "timeout" ? HANDOFF_TIMEOUT_TEXT : HANDOFF_DONE_TEXT;
     },
   },
 ];

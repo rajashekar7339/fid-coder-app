@@ -104,6 +104,11 @@ Run the smallest set that proves the change, then the relevant end-to-end path.
 | Deterministic UI | `npm run test:skills` | Electron UI, Ask mode, starters, cached project map, the in-place citation view, navigator references, the lazy workspace tree, clean diagram labels, full-screen diagrams, library, help screenshots. No Copilot turn. |
 | Deterministic UI | `npm run test:routines` | Electron UI for one-time and repeating routines, the Once editor, creation, deletion, and the Desk list. No Copilot turn. |
 | Deterministic UI | `npm run test:questions` | Electron UI for the ask_user card: choices, own answer, skip, a resolved event, and the other-agent banner. No Copilot turn. |
+| Deterministic UI | `npm run test:sidebar` | Electron UI for pin, archive, restore, and Ctrl+K search. No Copilot turn. |
+| Deterministic UI | `npm run test:handoff` | Electron UI for the browser handoff card and the save-skill card. No Copilot turn. |
+| Live UI | `npm run test:handoff-live` | One real browser turn: navigate, call `browser_needs_you`, Done, fresh snapshot, and report the page title. Needs Copilot. |
+| Live UI | `npm run test:save-skill-live` | One real turn that calls `save_skill`; Save writes the skill and the library lists it. Needs Copilot. |
+| Live UI | `npm run test:skill-command-live` | Two real setup turns, then `/skill-save`; the draft must cover both steps and the saved file keeps them. Needs Copilot. |
 | Live UI | `npm run test:questions-live` | One real Ask-mode turn that calls `ask_user`; answers the card and checks the turn continues with that answer. Needs Copilot. |
 | Live UI | `npm run test:skills-reuse` | A real skill turn and reuse on a later turn. Needs Copilot. |
 | Live UI | `npm run test:routines-live` | A real turn that asks the agent to create a one-time routine. Needs Copilot. |

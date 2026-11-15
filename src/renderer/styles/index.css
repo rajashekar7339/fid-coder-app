@@ -471,6 +471,11 @@ kbd {
   background: #171b11;
 }
 
+.switch:disabled.is-on {
+  opacity: 1;
+  cursor: default;
+}
+
 .model-picker {
   display: inline-flex;
   align-items: center;
@@ -806,6 +811,28 @@ select option {
   letter-spacing: 0;
 }
 
+.sidebar-section-label.is-disclosure {
+  width: 100%;
+  margin: 8px 0 4px;
+  padding: 5px 10px 7px;
+  border-radius: 7px;
+  text-align: left;
+}
+
+.sidebar-section-label.is-disclosure:hover {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+}
+
+.disclosure-chevron {
+  flex: none;
+  transition: transform 120ms ease;
+}
+
+.disclosure-chevron.is-open {
+  transform: rotate(90deg);
+}
+
 .agent-list {
   min-height: 0;
   flex: 0 1 auto;
@@ -869,15 +896,29 @@ select option {
 }
 
 .agent-name {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
   overflow: hidden;
   color: var(--ink);
   font-size: 13.2px;
   font-weight: 550;
   letter-spacing: -0.005em;
   line-height: 1.1;
+}
+
+.agent-name-text {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.agent-pin {
+  flex: none;
+  display: inline-flex;
+  color: var(--muted);
 }
 
 .agent-row.is-active .agent-name {
@@ -913,7 +954,7 @@ select option {
 
 .agent-row-wrap:hover .agent-when,
 .agent-row-wrap:focus-within .agent-when {
-  padding-right: 24px;
+  padding-right: 36px;
 }
 
 .agent-menu-trigger {
@@ -4138,6 +4179,72 @@ select option {
   padding: 8px 12px 9px;
   border-top: 1px solid var(--line);
   background: rgba(0, 0, 0, 0.08);
+}
+
+.handoff-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin: 0 12px 8px 45px;
+  color: var(--ink);
+  font-size: 12.5px;
+}
+
+.skill-save-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 8px 45px;
+}
+
+.skill-save-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.skill-save-field > span {
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 8.6px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.skill-save-input {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--code);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.skill-save-input:disabled {
+  opacity: 0.72;
+}
+
+.skill-save-description-input {
+  min-height: 44px;
+  resize: vertical;
+}
+
+.skill-save-steps-input {
+  min-height: 120px;
+  max-height: 220px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.skill-save-replaces {
+  margin: 0 12px 8px 45px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .confirm-body {

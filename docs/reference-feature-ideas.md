@@ -67,12 +67,15 @@ Rakazo lists each run and lets you stop one that is still going. The same histor
 
 ### 7. Pin, archive, and Ctrl+K
 
-Rakazo's sidebar can pin, archive, and jump to a bot. Fid Coder's list is flat.
+**Status:** Implemented.
+
+The agent menu can pin or archive. Pinned agents stay at the top of the list and keep a pin on the row. Archived agents leave the list and stay under **Archived**, with the conversation, routines, and browser profile kept. Restore brings an agent back, and a pin survives the round trip. **Ctrl+K** focuses the search. Enter opens the first match. Escape clears it. The search matches the name and the short description, including archived agents. An open dialog keeps **Ctrl+K**. There are no custom sections and no drag-reorder.
 
 - **Advantage:** old agents leave the list without being deleted.
-- **Drawback:** archive is another place to look.
+- **Drawback:** archive is another place to look. Search and the Archived row both reach it.
 - **Risk:** low.
-- **Smallest slice:** Pin, Archive, and a name search. Skip sections and drag-reorder until the list is long.
+- **Smallest slice:** this is the slice that shipped.
+- **Tests:** unit ordering and search, the database round trip, and `npm run test:sidebar` for the menu, search, and archive row.
 
 ### 8. Instruction history
 
@@ -121,21 +124,27 @@ code_puppy can background a long command and kill it. `shell_run` holds the turn
 
 ### 13. Hand the browser back for sign-in
 
-Rakazo lets you watch the bot's screen, take it over to sign in, and hand it back. Clicks are refused while you have it. Fid Coder already opens a headed browser and a preview.
+**Status:** Implemented.
+
+The agent calls `browser_needs_you` with a short reason. A **Needs you** card appears. **I have the browser** brings the window forward and stays on. Clicks, typing, navigation, and snapshots are refused while the card is open. **Done** hands it back. The next click, type, or navigation waits for a fresh `browser_snapshot`. A ten-minute timeout continues the turn, tells the agent not to type a password, and still requires that snapshot. Stop closes the card. The card is not stored. It is on Ask mode and on the Browser and All tools profiles. It is not on Developer Agent mode, a routine run, the `/routine` create turn, or the review subagent.
 
 - **Advantage:** a login or a captcha does not require pasting a password into chat.
-- **Drawback:** the browser window and the chat can disagree about who is in control.
-- **Risk:** the bot clicks while you are typing.
-- **Smallest slice:** a "Needs you" card, a take-over switch that blocks browser tools, and Done. After Done, the next action starts with a fresh snapshot.
+- **Drawback:** the browser window and the chat can disagree about who is in control. The switch only focuses the window. Done is the hand-back.
+- **Risk:** the bot clicks while you are typing. Browser tools stay blocked for the whole time the card is open.
+- **Smallest slice:** this is the slice that shipped.
+- **Tests:** unit rules for the held browser and the fresh snapshot, the runner round trip, `npm run test:handoff` for the card, and `npm run test:handoff-live` for one real browser turn.
 
 ### 14. Save this as a skill
 
-Rakazo can write a skill after a task you want repeated. You can already upload one.
+**Status:** Implemented.
+
+The agent calls `save_skill` only when you ask, with a name, a description, and the steps. A card shows editable name, when-to-use, and steps fields; correct anything that's off before Save. **Save** writes one `SKILL.md` into the app skills folder. **Don't save**, a two-minute timeout, and Stop write nothing. Secrets and fenced scripts are refused before the card. A built-in skill name is refused. Replacing an installed skill overwrites `SKILL.md` and leaves other files in that folder. Ask mode can save one. The card is the confirmation. `/skill-save` sends the same proposal request, reviews the whole task rather than only the last message, and never writes without the card. It is not on a routine run, the `/routine` create turn, or the review subagent.
 
 - **Advantage:** a procedure you just finished becomes reusable.
-- **Drawback:** a bad skill gets reused later.
-- **Risk:** the agent saves secrets or scripts into the skill.
-- **Smallest slice:** only when you ask, name plus description plus steps, into the app skills folder, with an approval card, and no scripts.
+- **Drawback:** a bad skill gets reused later. You see the steps before they are saved.
+- **Risk:** the agent saves secrets or scripts into the skill. Those are refused before the card, and the file contains no scripts.
+- **Smallest slice:** this is the slice that shipped.
+- **Tests:** unit draft rules, the runner round trip, `npm run test:handoff` for the card, `npm run test:save-skill-live` for one real turn that writes the file, and `npm run test:skill-command-live` for a multi-turn `/skill-save`.
 
 ### 15. A toast when a turn finishes and the window is unfocused
 

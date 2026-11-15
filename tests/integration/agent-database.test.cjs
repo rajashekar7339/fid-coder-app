@@ -167,6 +167,7 @@ test("new databases seed agents on Auto", () => {
     assert.equal(agents.find((agent) => agent.name === "JIRA Agent")?.toolProfile, "browser");
     assert.equal(agents.find((agent) => agent.name === "GIT PR Review")?.toolProfile, "developer");
     assert.ok(agents.every((agent) => agent.lastActivityAt === null));
+    assert.ok(agents.every((agent) => agent.pinned === false && agent.archived === false));
   } finally {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });
@@ -247,6 +248,8 @@ test("an older database with a skill_ids column still loads and updates agents",
     const agent = db.getAgent(id);
     assert.equal(agent.name, "Old skills");
     assert.equal(agent.skillIds, undefined);
+    assert.equal(agent.pinned, false);
+    assert.equal(agent.archived, false);
     const updated = db.updateAgent(id, {
       name: agent.name,
       systemPrompt: agent.systemPrompt,
@@ -256,6 +259,61 @@ test("an older database with a skill_ids column still loads and updates agents",
       memoryEnabled: agent.memoryEnabled,
     });
     assert.equal(updated.name, "Old skills");
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("pin and archive keep the agent, survive an edit, and sort pinned first", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-place-"));
+  const db = new AppDatabase(path.join(dir, "app.sqlite"));
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const input = (name) => ({
+    name,
+    description: "",
+    systemPrompt: "Reply briefly.",
+    workspaceDir: null,
+    model: AUTO_MODEL_ID,
+    toolProfile: "browser",
+    readOnly: true,
+    memoryEnabled: false,
+  });
+  try {
+    const pinned = db.createAgent(input("Zebra"));
+    await wait(40);
+    const older = db.createAgent(input("Alpha"));
+    await wait(40);
+    const newer = db.createAgent(input("Middling"));
+    assert.ok(newer.updatedAt > older.updatedAt);
+    assert.equal(pinned.pinned, false);
+    assert.equal(pinned.archived, false);
+
+    const marked = db.placeAgent(pinned.id, { pinned: true });
+    assert.equal(marked.pinned, true);
+    assert.equal(marked.updatedAt, pinned.updatedAt);
+    const namesOf = () =>
+      db
+        .listAgents()
+        .filter((agent) => agent.name === "Zebra" || agent.name === "Alpha" || agent.name === "Middling")
+        .map((agent) => agent.name);
+    assert.deepEqual(namesOf(), ["Zebra", "Middling", "Alpha"]);
+
+    const hidden = db.placeAgent(newer.id, { archived: true });
+    assert.equal(hidden.archived, true);
+    assert.equal(hidden.pinned, false);
+    const edited = db.updateAgent(hidden.id, { ...input("Middling"), description: "Kept" });
+    assert.equal(edited.archived, true);
+    assert.equal(edited.description, "Kept");
+    assert.deepEqual(namesOf(), ["Zebra", "Alpha", "Middling"]);
+
+    const restored = db.placeAgent(hidden.id, { archived: false });
+    assert.equal(restored.archived, false);
+    assert.equal(restored.pinned, false);
+    const stillPinned = db.placeAgent(pinned.id, { archived: true });
+    assert.equal(stillPinned.pinned, true);
+    assert.equal(stillPinned.archived, true);
+    assert.throws(() => db.placeAgent("missing-agent", { pinned: true }), /Agent not found/);
   } finally {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });

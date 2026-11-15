@@ -1,7 +1,16 @@
 import type { HistoryPort } from "../shared/history";
 import type { AskUserRequest } from "../shared/question";
 import type { RoutineDraft } from "../shared/routine-schedule";
-import type { ApprovalKind, ApprovalOutcome, QuestionOutcome, Routine, SkillFile } from "../shared/types";
+import type { SkillDraft } from "../shared/skill-draft";
+import type {
+  ApprovalKind,
+  ApprovalOutcome,
+  BrowserHandoffOutcome,
+  QuestionOutcome,
+  Routine,
+  SkillFile,
+  SkillSaveOutcome,
+} from "../shared/types";
 
 export interface BrowserControl {
   navigate(agentId: string, url: string): Promise<string>;
@@ -58,6 +67,8 @@ export type ToolContext = {
   checkpoint?: CheckpointPort;
   requestApproval?: (request: ApprovalToolRequest) => Promise<ApprovalOutcome>;
   askUser?: (request: AskUserRequest) => Promise<QuestionOutcome>;
+  handoff?: (reason: string) => Promise<BrowserHandoffOutcome>;
+  saveSkill?: (draft: SkillDraft) => Promise<SkillSaveOutcome>;
   history?: HistoryPort;
   routines?: RoutinePort;
   log?: (message: string) => void;
