@@ -355,6 +355,8 @@ export function ChatView({
   const [messageActionBusy, setMessageActionBusy] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
+  const commandMenu = useRef<HTMLDivElement>(null);
+  const skillMenu = useRef<HTMLDivElement>(null);
   const mapButton = useRef<HTMLButtonElement>(null);
   const pinned = useRef(true);
   const generation = useRef(0);
@@ -467,8 +469,24 @@ export function ChatView({
   }, [commandQuery, commandsOpen]);
 
   useEffect(() => {
+    if (!commandsOpen) return;
+    const row = commandMenu.current?.querySelector<HTMLElement>(
+      '[role="option"][aria-selected="true"]',
+    );
+    row?.scrollIntoView({ block: "nearest" });
+  }, [commandsOpen, commandIndex, commandMatches.length, commandQuery]);
+
+  useEffect(() => {
     setSkillPickerIndex(0);
   }, [pickerQuery, skillPickerOpen]);
+
+  useEffect(() => {
+    if (!skillPickerOpen) return;
+    const row = skillMenu.current?.querySelector<HTMLElement>(
+      '[role="option"][aria-selected="true"]',
+    );
+    row?.scrollIntoView({ block: "nearest" });
+  }, [skillPickerOpen, skillPickerIndex, skillMatches.length, pickerQuery]);
 
   useEffect(() => {
     setSkillPickerClosed(false);
@@ -1502,7 +1520,13 @@ export function ChatView({
       >
         <div className="composer">
           {commandsOpen ? (
-            <div id="composer-commands" className="command-menu" role="listbox" aria-label="Commands">
+            <div
+              id="composer-commands"
+              ref={commandMenu}
+              className="command-menu"
+              role="listbox"
+              aria-label="Commands"
+            >
               <div className="command-menu-head">
                 <span>Commands</span>
                 <span>type / to filter</span>
@@ -1541,7 +1565,13 @@ export function ChatView({
             </div>
           ) : null}
           {skillPickerOpen ? (
-            <div id="composer-skills" className="command-menu skill-menu" role="listbox" aria-label="Skills">
+            <div
+              id="composer-skills"
+              ref={skillMenu}
+              className="command-menu skill-menu"
+              role="listbox"
+              aria-label="Skills"
+            >
               <div className="command-menu-head">
                 <span>Skills</span>
                 <span>{skillCatalogState === "ready" ? `${skillMatches.length} found` : "loading"}</span>

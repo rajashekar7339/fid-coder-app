@@ -517,6 +517,26 @@ async function main() {
       ["/review", "/skills", "/compact", "/help"].every((id) => commandMenu.includes(id)),
       commandMenu.replace(/\s+/g, " ").slice(0, 120),
     );
+    for (let index = 0; index < 6; index += 1) {
+      await page.locator(".composer-input").press("ArrowDown");
+    }
+    const commandScrolls = await page
+      .waitForFunction(
+        () => {
+          const menu = document.querySelector(".command-menu");
+          const active = menu?.querySelector('[role="option"][aria-selected="true"]');
+          if (!(menu instanceof HTMLElement) || !(active instanceof HTMLElement)) return false;
+          const menuRect = menu.getBoundingClientRect();
+          const rowRect = active.getBoundingClientRect();
+          return rowRect.top >= menuRect.top - 1 && rowRect.bottom <= menuRect.bottom + 1;
+        },
+        null,
+        { timeout: 2000 },
+      )
+      .then(() => true)
+      .catch(() => false);
+    check("down arrow scrolls the command menu", commandScrolls);
+
     await page.locator(".composer-input").fill("/skills");
     await page.waitForSelector(".command-menu", { timeout: 10_000 });
     await page.locator(".composer-input").press("Enter");
@@ -534,6 +554,28 @@ async function main() {
       picker.replace(/\s+/g, " ").slice(0, 180),
     );
     check("skill picker shows versions", /v2\.0\.0/.test(picker));
+    for (let index = 0; index < 8; index += 1) {
+      await page.locator(".composer-input").press("ArrowDown");
+    }
+    const skillPickerScrolls = await page
+      .waitForFunction(
+        () => {
+          const menu = document.querySelector(".skill-menu");
+          const active = menu?.querySelector('[role="option"][aria-selected="true"]');
+          if (!(menu instanceof HTMLElement) || !(active instanceof HTMLElement)) return false;
+          const menuRect = menu.getBoundingClientRect();
+          const rowRect = active.getBoundingClientRect();
+          return rowRect.top >= menuRect.top - 1 && rowRect.bottom <= menuRect.bottom + 1;
+        },
+        null,
+        { timeout: 2000 },
+      )
+      .then(() => true)
+      .catch(() => false);
+    check("down arrow scrolls the skill picker", skillPickerScrolls);
+    await page.locator(".composer-input").fill("");
+    await page.locator(".composer-input").fill("/skills ");
+    await page.waitForSelector(".skill-menu", { timeout: 10_000 });
     await page.locator(".composer-input").press("Enter");
     const picked = await composerValue(page);
     check("selecting a skill fills the command", picked.startsWith("/skills ") && !picked.endsWith("/skills "), picked);
