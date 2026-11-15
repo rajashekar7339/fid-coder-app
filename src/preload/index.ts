@@ -14,9 +14,11 @@ import type {
   SkillSaveRequest,
   ChatEvent,
   MessageAttachment,
+  QueuedMessage,
   RoutineInput,
   RoutinePatch,
 } from "../shared/types";
+import type { AppPresence } from "../shared/app-settings";
 
 // Sandboxed preloads cannot require sibling files, so these names are inlined.
 // They match src/shared/channels.ts.
@@ -29,6 +31,15 @@ const channels = {
   agentsPlace: "agents:place",
   messagesList: "messages:list",
   chatSend: "chat:send",
+  chatEnqueue: "chat:enqueue",
+  chatQueue: "chat:queue",
+  chatUpdateQueued: "chat:update-queued",
+  chatRemoveQueued: "chat:remove-queued",
+  chatClearQueue: "chat:clear-queue",
+  chatForceSend: "chat:force-send",
+  chatForceQueued: "chat:force-queued",
+  chatEditMessage: "chat:edit-message",
+  chatDeleteMessage: "chat:delete-message",
   chatRunning: "chat:running",
   chatAbort: "chat:abort",
   chatEnhance: "chat:enhance",
@@ -64,6 +75,15 @@ const channels = {
   routinesUpdate: "routines:update",
   routinesDelete: "routines:delete",
   routinesRun: "routines:run",
+  routinesHistory: "routines:history",
+  routinesStop: "routines:stop",
+  appPresence: "app:presence",
+  appPresenceSet: "app:presence-set",
+  appOpenAgent: "app:open-agent",
+  inboxList: "inbox:list",
+  inboxRead: "inbox:read",
+  inboxSnooze: "inbox:snooze",
+  inboxChanged: "inbox:changed",
   settingsGet: "settings:get",
   settingsUsage: "settings:usage",
   settingsSignOut: "settings:sign-out",
@@ -84,7 +104,23 @@ const channels = {
 } as const;
 
 const listeners = new Map<number, (event: IpcRendererEvent, payload: ChatEvent) => void>();
+const pushListeners = new Map<number, (event: IpcRendererEvent, ...args: unknown[]) => void>();
 let nextListener = 1;
+
+function listen(channel: string, callback: (...args: unknown[]) => void): number {
+  const id = nextListener++;
+  const listener = (_event: IpcRendererEvent, ...args: unknown[]) => callback(...args);
+  pushListeners.set(id, listener);
+  ipcRenderer.on(channel, listener);
+  return id;
+}
+
+function unlisten(channel: string, id: number): void {
+  const listener = pushListeners.get(id);
+  if (!listener) return;
+  ipcRenderer.removeListener(channel, listener);
+  pushListeners.delete(id);
+}
 
 const api: FidApi = {
   agents: {
@@ -101,6 +137,24 @@ const api: FidApi = {
   chat: {
     send: (agentId: string, text: string, attachments?: MessageAttachment[]) =>
       ipcRenderer.invoke(channels.chatSend, agentId, text, attachments ?? []),
+    enqueue: (agentId: string, text: string, attachments?: MessageAttachment[]): Promise<QueuedMessage[]> =>
+      ipcRenderer.invoke(channels.chatEnqueue, agentId, text, attachments ?? []),
+    queue: (agentId: string): Promise<QueuedMessage[]> =>
+      ipcRenderer.invoke(channels.chatQueue, agentId),
+    updateQueued: (agentId: string, id: string, text: string): Promise<QueuedMessage[]> =>
+      ipcRenderer.invoke(channels.chatUpdateQueued, agentId, id, text),
+    removeQueued: (agentId: string, id: string): Promise<QueuedMessage[]> =>
+      ipcRenderer.invoke(channels.chatRemoveQueued, agentId, id),
+    clearQueue: (agentId: string): Promise<QueuedMessage[]> =>
+      ipcRenderer.invoke(channels.chatClearQueue, agentId),
+    forceSend: (agentId: string, text: string, attachments?: MessageAttachment[]) =>
+      ipcRenderer.invoke(channels.chatForceSend, agentId, text, attachments ?? []),
+    forceQueued: (agentId: string, id: string) =>
+      ipcRenderer.invoke(channels.chatForceQueued, agentId, id),
+    editMessage: (agentId: string, messageId: string, text: string) =>
+      ipcRenderer.invoke(channels.chatEditMessage, agentId, messageId, text),
+    deleteMessage: (agentId: string, messageId: string) =>
+      ipcRenderer.invoke(channels.chatDeleteMessage, agentId, messageId),
     running: (agentId: string) => ipcRenderer.invoke(channels.chatRunning, agentId),
     abort: (agentId: string) => ipcRenderer.invoke(channels.chatAbort, agentId),
     enhance: (agentId: string, text: string) => ipcRenderer.invoke(channels.chatEnhance, agentId, text),
@@ -196,6 +250,21 @@ const api: FidApi = {
     update: (id: string, patch: RoutinePatch) => ipcRenderer.invoke(channels.routinesUpdate, id, patch),
     delete: (id: string) => ipcRenderer.invoke(channels.routinesDelete, id),
     run: (id: string) => ipcRenderer.invoke(channels.routinesRun, id),
+    history: (agentId: string) => ipcRenderer.invoke(channels.routinesHistory, agentId),
+    stop: (runId: string) => ipcRenderer.invoke(channels.routinesStop, runId),
+  },
+  app: {
+    presence: () => ipcRenderer.invoke(channels.appPresence),
+    setPresence: (patch: Partial<AppPresence>) => ipcRenderer.invoke(channels.appPresenceSet, patch),
+    onOpenAgent: (callback: (agentId: string) => void) => listen(channels.appOpenAgent, (agentId) => callback(String(agentId ?? ""))),
+    offOpenAgent: (id: number) => unlisten(channels.appOpenAgent, id),
+  },
+  inbox: {
+    list: () => ipcRenderer.invoke(channels.inboxList),
+    read: (id: string) => ipcRenderer.invoke(channels.inboxRead, id),
+    snooze: (id: string) => ipcRenderer.invoke(channels.inboxSnooze, id),
+    onChanged: (callback: () => void) => listen(channels.inboxChanged, () => callback()),
+    offChanged: (id: number) => unlisten(channels.inboxChanged, id),
   },
   settings: {
     get: (options?: { refreshAuth?: boolean }) => ipcRenderer.invoke(channels.settingsGet, options),

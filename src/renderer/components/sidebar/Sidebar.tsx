@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
+  Bell,
   ChevronRight,
   CircleHelp,
   MoreHorizontal,
@@ -42,6 +43,8 @@ type Props = {
   onSettings: () => void;
   onSkills: () => void;
   onHelp: () => void;
+  inboxCount: number;
+  onInbox: () => void;
 };
 
 type AgentMenu = { agent: Agent; x: number; y: number };
@@ -112,6 +115,8 @@ export function Sidebar({
   onSettings,
   onSkills,
   onHelp,
+  inboxCount,
+  onInbox,
 }: Props) {
   const [query, setQuery] = useState("");
   const [menu, setMenu] = useState<AgentMenu | null>(null);
@@ -243,9 +248,20 @@ export function Sidebar({
         <span className="wordmark">
           fid <span>coder</span>
         </span>
-        <button className="icon-button" type="button" aria-label="New agent" onClick={onCreate}>
-          <Plus size={16} />
-        </button>
+        <span className="brand-actions">
+          <button
+            className="icon-button inbox-button"
+            type="button"
+            aria-label={inboxCount > 0 ? `Inbox, ${inboxCount} waiting` : "Inbox"}
+            onClick={onInbox}
+          >
+            <Bell size={16} />
+            {inboxCount > 0 ? <span className="inbox-count">{inboxCount > 9 ? "9+" : inboxCount}</span> : null}
+          </button>
+          <button className="icon-button" type="button" aria-label="New agent" onClick={onCreate}>
+            <Plus size={16} />
+          </button>
+        </span>
       </header>
 
       <div className="sidebar-search">

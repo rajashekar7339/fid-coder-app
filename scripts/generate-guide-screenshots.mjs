@@ -6,6 +6,11 @@
 // Requirements: `npm install` and a free port 5173. The script launches its
 // own Vite server and Electron instance, seeds demo data in a temporary
 // userData directory, and overwrites the images in docs/guide/images.
+//
+// queue-while-running.png is captured by `npm run test:queue-live`; it needs a
+// real running turn, so this seeded-data script cannot produce it.
+// message-actions.png is captured by `npm run test:message-actions`; it needs
+// chat turns and the inline editor, so this seeded-data script cannot produce it.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -129,6 +134,13 @@ try {
   await page.locator(".routines-nav-item").filter({ hasText: "Afternoon reminder" }).click();
   await page.waitForTimeout(300);
   await save(page.locator(".routines-modal"), "routines-once.png");
+  await page
+    .locator(".routines-modal")
+    .getByRole("button", { name: "History", exact: true })
+    .click();
+  await page.waitForSelector(".routine-history-row", { timeout: 10000 });
+  await page.waitForTimeout(300);
+  await save(page.locator(".routines-modal"), "routine-history.png");
   await page.getByRole("button", { name: "Close routines" }).click();
   await page.waitForTimeout(300);
 
@@ -312,8 +324,9 @@ async function seedDemoData(page) {
     updatedAt,
   );
 
+  const morningId = randomUUID();
   insertRoutine.run(
-    randomUUID(),
+    morningId,
     jira.id,
     "Morning ticket sweep",
     "Check my assigned Jira tickets and summarize the top three.",
@@ -326,6 +339,20 @@ async function seedDemoData(page) {
     createdAt,
     updatedAt,
   );
+  database
+    .prepare(
+      `INSERT INTO routine_runs (
+        id, routine_id, agent_id, trigger, status, started_at, ended_at, turn_id, output, error
+      ) VALUES (?, ?, ?, 'schedule', 'ok', ?, ?, NULL, ?, NULL)`,
+    )
+    .run(
+      randomUUID(),
+      morningId,
+      jira.id,
+      at(24 * 60 + 2),
+      at(24 * 60 + 1),
+      "Three tickets are waiting.",
+    );
   insertRoutine.run(
     randomUUID(),
     jira.id,

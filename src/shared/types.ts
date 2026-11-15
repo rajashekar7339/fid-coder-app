@@ -71,8 +71,23 @@ export type Message = {
   content: string;
   createdAt: string;
   turnId?: string | null;
+  turnSource?: string | null;
   usage?: TokenUsage | null;
   attachments?: MessageAttachment[] | null;
+};
+
+/**
+ * A message waiting for the running turn. `id` is only the queue entry.
+ * When it starts, it goes through the normal runTurn path and becomes a
+ * stored Message with its own id and turn. That keeps the future
+ * edit/delete-message work on one message model.
+ */
+export type QueuedMessage = {
+  id: string;
+  agentId: string;
+  text: string;
+  attachments: MessageAttachment[];
+  createdAt: string;
 };
 
 export type Routine = {
@@ -90,6 +105,22 @@ export type Routine = {
   lastStatus: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type RoutineRunTrigger = "schedule" | "manual";
+
+export type RoutineRun = {
+  id: string;
+  routineId: string;
+  agentId: string;
+  routineName: string;
+  trigger: RoutineRunTrigger;
+  status: string;
+  startedAt: string;
+  endedAt: string | null;
+  turnId: string | null;
+  output: string | null;
+  error: string | null;
 };
 
 export type FileChangeKind = "create" | "update";
@@ -320,7 +351,14 @@ export type SkillSaveOutcome = {
 };
 
 export type ChatEvent =
-  | { agentId: string; type: "user"; text: string }
+  | {
+      agentId: string;
+      type: "user";
+      text: string;
+      messageId?: string;
+      queuedId?: string;
+    }
+  | { agentId: string; type: "queue"; queue: QueuedMessage[] }
   | { agentId: string; type: "text"; text: string }
   | { agentId: string; type: "tool-start"; toolName: string; text?: string }
   | { agentId: string; type: "tool-end"; toolName: string; ok: boolean; text?: string }
@@ -358,7 +396,7 @@ export type ChatEvent =
       saved: boolean;
     }
   | { agentId: string; type: "done"; text: string }
-  | { agentId: string; type: "error"; error: string };
+  | { agentId: string; type: "error"; error: string; aborted?: boolean };
 
 export type SettingsView = {
   cliFound: boolean;
@@ -370,6 +408,7 @@ export type SettingsView = {
   hasGithubPat: boolean;
   hasJiraToken: boolean;
   jiraSiteUrl: string;
+  routinesPaused: boolean;
 };
 
 export type AgentInput = {

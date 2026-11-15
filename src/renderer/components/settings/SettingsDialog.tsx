@@ -7,6 +7,7 @@ import {
   Lock,
   LogOut,
   RefreshCw,
+  Power,
   ShieldCheck,
   Sparkles,
   Ticket,
@@ -14,13 +15,15 @@ import {
   X,
 } from "lucide-react";
 import { formatUsageCount, formatUsageReset, type CopilotUsageView } from "../../../shared/copilot-usage";
+import type { AppPresence } from "../../../shared/app-settings";
 import type { ApprovalRule, SettingsView } from "../../../shared/types";
 import { errorText, fid } from "../../lib/fid";
 import { Modal } from "../ui/Modal";
+import { Switch } from "../ui/Switch";
 import { UsageBar, usageLevel } from "../ui/UsageBar";
 
 export type SignInNote = { tone: "progress" | "ok" | "error"; text: string };
-export type SettingsSection = "copilot" | "github" | "jira" | "safety";
+export type SettingsSection = "copilot" | "github" | "jira" | "safety" | "app";
 
 type Props = {
   settings: SettingsView | null;
@@ -74,10 +77,18 @@ const SECTIONS: Array<{
     subtitle: "Saved allow and deny rules for sensitive shell commands. Deny rules always win.",
     Icon: ShieldCheck,
   },
+  {
+    id: "app",
+    label: "This PC",
+    title: "This PC",
+    subtitle: "Pause scheduled work. Closing Fid Coder stops routines.",
+    Icon: Power,
+  },
 ];
 
-const ACCOUNT_SECTIONS = SECTIONS.filter((item) => item.id !== "safety");
+const ACCOUNT_SECTIONS = SECTIONS.filter((item) => item.id !== "safety" && item.id !== "app");
 const SAFETY_SECTION = SECTIONS.find((item) => item.id === "safety")!;
+const APP_SECTION = SECTIONS.find((item) => item.id === "app")!;
 
 export function SettingsDialog({
   settings,
@@ -207,6 +218,17 @@ export function SettingsDialog({
               {SAFETY_SECTION.label}
             </button>
           </div>
+          <div className="settings-nav-head settings-nav-head-spaced">This PC</div>
+          <div className="settings-nav-list">
+            <button
+              type="button"
+              className={`settings-nav-item ${section === "app" ? "is-active" : ""}`}
+              onClick={() => onSectionChange("app")}
+            >
+              <APP_SECTION.Icon size={14} aria-hidden="true" />
+              {APP_SECTION.label}
+            </button>
+          </div>
           <div className="settings-nav-foot">Credentials stay on this machine.</div>
         </nav>
 
@@ -243,6 +265,17 @@ export function SettingsDialog({
                   }, "GitHub token saved.")
                 }
                 onClear={() => void run(() => fid().settings.clearGithubPat(), "GitHub token removed.")}
+              />
+            ) : null}
+
+            {section === "app" ? (
+              <AppSection
+                settings={settings}
+                busy={busy}
+                onChange={async (patch) => {
+                  await fid().app.setPresence(patch);
+                  await onRefresh();
+                }}
               />
             ) : null}
 
@@ -788,6 +821,33 @@ function JiraSection({
         <span className="field-note">
           Jira warnings are written to <code>logs\fid-coder.log</code> in the app data folder.
         </span>
+      </div>
+    </div>
+  );
+}
+
+function AppSection({
+  settings,
+  busy,
+  onChange,
+}: {
+  settings: SettingsView | null;
+  busy: boolean;
+  onChange: (patch: Partial<AppPresence>) => Promise<void>;
+}) {
+  return (
+    <div className="settings-app">
+      <div className="inline-row">
+        <div className="inline-row-copy">
+          <span>Pause all routines</span>
+          <span>Scheduled runs wait until you resume them. Closing Fid Coder stops routines.</span>
+        </div>
+        <Switch
+          checked={settings?.routinesPaused === true}
+          disabled={busy}
+          label="Pause all routines"
+          onChange={(checked) => void onChange({ routinesPaused: checked })}
+        />
       </div>
     </div>
   );

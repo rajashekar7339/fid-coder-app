@@ -1,6 +1,6 @@
 # Fid Coder
 
-Fid Coder is a Windows desktop app for local AI agents. Each agent chats through GitHub Copilot, uses tools for files, shell, git, Jira, and a local browser, and can run saved routines once or repeatedly. Messages can carry local file uploads and line ranges referenced from the read-only workspace browser. Ask mode gives an agent a read-only set of tools: workspace reads and git for code questions, or Jira reads and page reading for Browser &amp; Jira agents. Agents, transcripts, file checkpoints, and settings stay on this machine.
+Fid Coder is a Windows desktop app for local AI agents. Each agent chats through GitHub Copilot, uses tools for files, shell, git, Jira, and a local browser, and can run saved routines once or repeatedly while the app is open. A routine does not run after Fid Coder closes, and a missed slot is not caught up. Messages can carry local file uploads and line ranges referenced from the read-only workspace browser. Ask mode gives an agent a read-only set of tools: workspace reads and git for code questions, or Jira reads and page reading for Browser &amp; Jira agents. Agents, transcripts, file checkpoints, and settings stay on this machine.
 
 ## Requirements
 
@@ -39,6 +39,10 @@ npm run dev
 | `npm run test:skills-reuse` | Live harness for using a skill once and reloading it on a later turn. Needs Copilot and two turns. |
 | `npm run test:map` | Live harness for building the read-only project map and reopening its cache. Needs Copilot and one turn. |
 | `npm run test:enhance` | Live harness for Enhance Prompt: one real rewrite, Undo, skips, and no-send checks. Needs Copilot. |
+| `npm run test:queue` | Deterministic Electron harness for the queued-message panel: visible row actions, edit, cancel, Send next, and Clear. |
+| `npm run test:queue-live` | Live harness for queueing during a turn, auto-drain, Send now, and keeping the remaining queue. Needs Copilot. |
+| `npm run test:message-actions` | Deterministic Electron harness for editing and deleting user messages: inline editor, routine read-only, delete confirmation, and later turns kept. |
+| `npm run test:message-actions-live` | Live harness for editing a message with rewind and rerun, then deleting the edited turn. Needs Copilot. |
 | `npm run dist:win` | Build the portable Windows app into `release/` |
 
 ## Project layout
@@ -65,7 +69,7 @@ The app stores its SQLite database at `%USERPROFILE%\.fid_coder_app\fid-coder.sq
 ## Documentation
 
 - `docs/guide/` — end-user guide
-- `docs/feature-enhancements.md` — planned feature roadmap and sequencing
+- `docs/features.md` — feature backlog, with shipped items marked DONE
 - `docs/memory.md` — how an agent's transcript and rolling summary work
 - `docs/build-exe.md` — packaging notes
 - `docs/archive/` — original POC planning notes, kept for history

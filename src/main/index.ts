@@ -15,6 +15,8 @@ import { ensureWindowsToastShortcut } from "./routines/notify";
 import { hasSecret, getSecret, secretKeys } from "./secrets";
 import { logInfo, logJiraStatus, logWarn } from "./log";
 import { channels } from "../shared/channels";
+import { currentInbox } from "./routines/inbox";
+import { createAppTray, setInboxBadge } from "./routines/tray";
 
 app.setName("fid-coder");
 nativeTheme.themeSource = "dark";
@@ -37,11 +39,35 @@ if (!gotLock) {
   let runner: Runner | null = null;
   const browser = new BrowserManager();
   let shuttingDown = false;
+  let inboxCount = 0;
+  let tray: { update: () => void; destroy: () => void } | null = null;
+
+  function showMainWindow(): void {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+
+  function publishInbox(): void {
+    if (!db || !runner) return;
+    inboxCount = currentInbox(db, runner.listPendingApprovals()).unread;
+    setInboxBadge(mainWindow, inboxCount);
+    tray?.update();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(channels.inboxChanged);
+    }
+  }
+
+  function openAgent(agentId: string): void {
+    showMainWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(channels.appOpenAgent, agentId);
+    }
+  }
 
   app.on("second-instance", () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
+    showMainWindow();
   });
 
   app.whenReady().then(() => {
@@ -52,6 +78,8 @@ if (!gotLock) {
     scheduler = new Scheduler(db, activeRunner);
     const routines = new RoutineService(db, scheduler);
     activeRunner.setRoutinePort(routines);
+    activeRunner.setInboxHook(() => publishInbox());
+    scheduler.setHooks({ onInbox: () => publishInbox(), onOpenAgent: openAgent });
     activeRunner.setSink((event) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send(channels.chatEvent, event);
@@ -65,6 +93,7 @@ if (!gotLock) {
       browser,
       checkpoints,
       getWindow: () => mainWindow,
+      noteInbox: () => publishInbox(),
     });
     ensureWindowsToastShortcut();
     logInfo(`Fid Coder started. appData=${userData}`);
@@ -87,6 +116,18 @@ if (!gotLock) {
       { force: true },
     );
     scheduler.reload();
+    const activeScheduler = scheduler;
+    tray = createAppTray({
+      isPaused: () => activeScheduler.isPaused(),
+      waiting: () => inboxCount,
+      onOpen: () => showMainWindow(),
+      onTogglePause: () => {
+        activeScheduler.setPaused(!activeScheduler.isPaused());
+        tray?.update();
+      },
+      onQuit: () => app.quit(),
+    });
+    publishInbox();
     mainWindow = createWindow();
   });
 
@@ -102,11 +143,14 @@ if (!gotLock) {
   });
 
   async function shutdown(): Promise<void> {
+    runner?.clearAllQueues();
     runner?.denyAllApprovals("The app closed before approval.");
     runner?.dismissAllQuestions();
     runner?.dismissAllHandoffs();
     runner?.dismissAllSkillSaves();
     scheduler?.stop();
+    tray?.destroy();
+    tray = null;
     await browser.closeAll();
     await stopClient();
     db?.close();
@@ -131,7 +175,9 @@ function createWindow(): BrowserWindow {
     },
   });
 
-  window.once("ready-to-show", () => window.show());
+  window.once("ready-to-show", () => {
+    window.show();
+  });
 
   if (app.isPackaged) {
     void window.loadFile(path.join(__dirname, "../renderer/index.html"));

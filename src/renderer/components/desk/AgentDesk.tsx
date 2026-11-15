@@ -26,6 +26,7 @@ import type {
 import { errorText, fid } from "../../lib/fid";
 import { formatNextRun, formatRelativeTime } from "../../lib/format";
 import { routineScheduleLabel } from "../../../shared/routine-schedule";
+import { routineStatusLabel } from "../../../shared/routine-runs";
 import { ApprovalHistoryDialog } from "../approvals/ApprovalHistoryDialog";
 import { ContextDialog } from "./ContextDialog";
 import { Switch } from "../ui/Switch";
@@ -367,6 +368,11 @@ export function AgentDesk({
                             ? ""
                             : " · Paused"}
                       </span>
+                      {routine.lastRunAt ? (
+                        <span className="routine-meta">
+                          {routineStatusLabel(routine.lastStatus)} · {formatRelativeTime(routine.lastRunAt)}
+                        </span>
+                      ) : null}
                     </div>
                     <Switch
                       checked={routine.enabled}

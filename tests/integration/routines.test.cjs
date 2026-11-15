@@ -8,7 +8,9 @@ const test = require("node:test");
 const { DatabaseSync } = require("node:sqlite");
 const { AppDatabase } = require("../../dist/main/db/index.js");
 const { Scheduler } = require("../../dist/main/routines/scheduler.js");
+const { currentInbox } = require("../../dist/main/routines/inbox.js");
 const { RoutineService } = require("../../dist/main/routines/service.js");
+const { snoozeUntilIso } = require("../../dist/shared/routine-runs.js");
 const { routineTools } = require("../../dist/tools/routines/routines.js");
 const { askTools, routineCreateTools, toolsForAgent } = require("../../dist/tools/registry.js");
 const { MAX_ROUTINES_PER_AGENT } = require("../../dist/shared/routine-schedule.js");
@@ -250,6 +252,11 @@ test("a one-time routine fires, disables itself, and records the run", async () 
     assert.equal(after.nextRunAt, null);
     assert.equal(after.lastStatus, "ok");
     assert.ok(after.lastRunAt);
+    const runs = db.listRoutineRuns(agent.id);
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0].status, "ok");
+    assert.equal(runs[0].trigger, "schedule");
+    assert.equal(db.listOpenInbox().length, 1);
   } finally {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });
@@ -285,6 +292,13 @@ test("a missed one-time routine is marked and disabled on reload", () => {
     assert.equal(after.enabled, false);
     assert.equal(after.nextRunAt, null);
     assert.match(after.lastStatus, /^missed/);
+    const runs = db.listRoutineRuns(agent.id);
+    assert.equal(runs.length, 1);
+    assert.match(runs[0].status, /^missed/);
+    const open = db.listOpenInbox();
+    assert.equal(open.length, 1);
+    db.snoozeInbox(open[0].id, snoozeUntilIso(Date.now()));
+    assert.equal(currentInbox(db, []).unread, 0);
   } finally {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });
@@ -339,6 +353,273 @@ test("existing routine rows gain the one-time columns", () => {
     assert.equal(routine.runAt, null);
   } finally {
     db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function settle() {
+  return new Promise((resolve) => setTimeout(resolve, 30));
+}
+
+function pastIso() {
+  return new Date(Date.now() - 3_600_000).toISOString();
+}
+
+function futureIso() {
+  return new Date(Date.now() + 86_400_000).toISOString();
+}
+
+function repeatingRoutine(db, agent, name, nextRunAt) {
+  return db.createRoutine(
+    {
+      agentId: agent.id,
+      name,
+      prompt: `Run ${name}.`,
+      cron: "0 9 * * 1-5",
+      once: false,
+      runAt: null,
+      enabled: true,
+      notify: false,
+    },
+    nextRunAt,
+  );
+}
+
+test("a repeating routine that was due while Fid Coder was closed does not run", async () => {
+  const { dir, db } = tempDatabase();
+  try {
+    const agent = createAgent(db);
+    const routine = repeatingRoutine(db, agent, "Weekday sweep", pastIso());
+    let calls = 0;
+    const scheduler = new Scheduler(db, {
+      isRunning: () => false,
+      runTurn: async () => {
+        calls += 1;
+        return "Three tickets are waiting.";
+      },
+    });
+    scheduler.reload();
+    await settle();
+    scheduler.reload();
+    await settle();
+    assert.equal(calls, 0);
+    assert.ok(Date.parse(db.getRoutine(routine.id).nextRunAt) <= Date.now());
+    assert.equal(db.listRoutineRuns(agent.id).length, 0);
+    assert.equal(db.listOpenInbox().length, 0);
+    scheduler.stop();
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("pause all does not run a due routine, and a past one-time routine is marked missed", async () => {
+  const { dir, db } = tempDatabase();
+  try {
+    const agent = createAgent(db);
+    const repeating = repeatingRoutine(db, agent, "Weekday sweep", pastIso());
+    const missedAt = pastIso();
+    const once = db.createRoutine(
+      {
+        agentId: agent.id,
+        name: "Missed while paused",
+        prompt: "Say hello.",
+        cron: "0 9 1 1 *",
+        once: true,
+        runAt: missedAt,
+        enabled: true,
+        notify: false,
+      },
+      missedAt,
+    );
+    db.setSetting("routines_paused", "1");
+    let calls = 0;
+    const scheduler = new Scheduler(db, {
+      isRunning: () => false,
+      runTurn: async () => {
+        calls += 1;
+        return "no";
+      },
+    });
+    scheduler.reload();
+    await settle();
+    assert.equal(calls, 0);
+    assert.ok(Date.parse(db.getRoutine(repeating.id).nextRunAt) <= Date.now());
+    assert.match(db.getRoutine(once.id).lastStatus, /^missed/);
+    assert.equal(db.getRoutine(once.id).enabled, false);
+    scheduler.stop();
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a running row left from the last process is interrupted and not fired again", async () => {
+  const { dir, db } = tempDatabase();
+  try {
+    const agent = createAgent(db);
+    const routine = repeatingRoutine(db, agent, "Weekday sweep", futureIso());
+    db.markRoutineRun(routine.id, "running", routine.nextRunAt);
+    const run = db.startRoutineRun({ routineId: routine.id, agentId: agent.id, trigger: "schedule" });
+    let calls = 0;
+    const scheduler = new Scheduler(db, {
+      isRunning: () => false,
+      runTurn: async () => {
+        calls += 1;
+        return "no";
+      },
+    });
+    scheduler.reload();
+    await settle();
+    assert.equal(calls, 0);
+    assert.equal(db.getRoutineRun(run.id).status, "error: interrupted");
+    assert.equal(db.getRoutine(routine.id).lastStatus, "error: interrupted");
+    assert.equal(db.listOpenInbox().length, 1);
+    scheduler.stop();
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("stop ends an in-flight manual run and an orphan running row", async () => {
+  const { dir, db } = tempDatabase();
+  try {
+    const agent = createAgent(db);
+    const routine = repeatingRoutine(db, agent, "Weekday sweep", futureIso());
+    let release = () => {};
+    let abortCalls = 0;
+    const scheduler = new Scheduler(db, {
+      isRunning: () => false,
+      runTurn: () =>
+        new Promise((resolve) => {
+          release = () => resolve("halted");
+        }),
+      abort: async () => {
+        abortCalls += 1;
+        release();
+      },
+    });
+    const pending = scheduler.runNow(routine.id);
+    await settle();
+    const live = db.listRoutineRuns(agent.id)[0];
+    assert.equal(live.status, "running");
+    scheduler.reload();
+    assert.equal(db.getRoutineRun(live.id).status, "running");
+    await scheduler.stopRun(live.id);
+    assert.equal(abortCalls, 1);
+    assert.equal(db.getRoutineRun(live.id).status, "stopped");
+    assert.equal(db.listOpenInbox().length, 0);
+    await pending;
+
+    const orphan = db.startRoutineRun({ routineId: routine.id, agentId: agent.id, trigger: "schedule" });
+    await scheduler.stopRun(orphan.id);
+    assert.equal(abortCalls, 1);
+    assert.equal(db.getRoutineRun(orphan.id).status, "stopped");
+    assert.equal(db.getRoutine(routine.id).lastStatus, "stopped");
+    assert.equal(db.listOpenInbox().length, 1);
+    scheduler.stop();
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a failed abort does not leave the run marked stopped", async () => {
+  const { dir, db } = tempDatabase();
+  try {
+    const agent = createAgent(db);
+    const routine = repeatingRoutine(db, agent, "Weekday sweep", futureIso());
+    let release = () => {};
+    const scheduler = new Scheduler(db, {
+      isRunning: () => false,
+      runTurn: () =>
+        new Promise((resolve) => {
+          release = () => resolve("finished normally");
+        }),
+      abort: async () => {
+        throw new Error("abort failed");
+      },
+    });
+    const pending = scheduler.runNow(routine.id);
+    await settle();
+    const live = db.listRoutineRuns(agent.id)[0];
+    await assert.rejects(() => scheduler.stopRun(live.id), /abort failed/);
+    release();
+    await pending;
+    assert.equal(db.getRoutineRun(live.id).status, "ok");
+    scheduler.stop();
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a manual run is recorded and does not enter the inbox", async () => {
+  const { dir, db } = tempDatabase();
+  try {
+    const agent = createAgent(db);
+    const routine = repeatingRoutine(db, agent, "Weekday sweep", futureIso());
+    const scheduler = new Scheduler(db, {
+      isRunning: () => false,
+      runTurn: async () => "hello",
+    });
+    await scheduler.runNow(routine.id);
+    const runs = db.listRoutineRuns(agent.id);
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0].trigger, "manual");
+    assert.equal(runs[0].status, "ok");
+    assert.equal(db.listOpenInbox().length, 0);
+    scheduler.stop();
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("reload drops routine runs and inbox rows older than 90 days", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-routines-"));
+  const file = path.join(dir, "app.sqlite");
+  let db = new AppDatabase(file);
+  try {
+    const agent = createAgent(db);
+    const routine = repeatingRoutine(db, agent, "Weekday sweep", futureIso());
+    const oldRun = db.startRoutineRun({ routineId: routine.id, agentId: agent.id, trigger: "schedule" });
+    db.finishRoutineRun(oldRun.id, { status: "ok", output: "old" });
+    db.addInboxItem({
+      agentId: agent.id,
+      kind: "routine",
+      refId: oldRun.id,
+      title: "Weekday sweep",
+      body: "old",
+    });
+    const recent = db.startRoutineRun({ routineId: routine.id, agentId: agent.id, trigger: "manual" });
+    db.finishRoutineRun(recent.id, { status: "ok", output: "recent" });
+    db.close();
+    db = null;
+
+    const raw = new DatabaseSync(file);
+    raw.prepare("UPDATE routine_runs SET started_at = ? WHERE id = ?").run("2000-01-01T00:00:00.000Z", oldRun.id);
+    raw.prepare("UPDATE inbox_items SET created_at = ? WHERE ref_id = ?").run("2000-01-01T00:00:00.000Z", oldRun.id);
+    raw.close();
+
+    const reopened = new AppDatabase(file);
+    try {
+      const scheduler = new Scheduler(reopened, {
+        isRunning: () => false,
+        runTurn: async () => "no",
+      });
+      scheduler.reload();
+      const runs = reopened.listRoutineRuns(agent.id);
+      assert.equal(runs.length, 1);
+      assert.equal(runs[0].id, recent.id);
+      assert.equal(reopened.listOpenInbox().length, 0);
+      scheduler.stop();
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    db?.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

@@ -20,9 +20,11 @@ import type {
   FileDiff,
   Message,
   MessageAttachment,
+  QueuedMessage,
   Routine,
   RoutineInput,
   RoutinePatch,
+  RoutineRun,
   SettingsView,
   SkillCatalog,
   SkillContent,
@@ -34,6 +36,8 @@ import type {
   WorkspaceMapView,
   WorkspaceRuleFile,
 } from "./types";
+import type { AppPresence } from "./app-settings";
+import type { InboxView } from "./inbox";
 import type { CopilotUsageResult } from "./copilot-usage";
 import type { EnhanceResult } from "./enhance-prompt";
 
@@ -51,6 +55,23 @@ export interface FidApi {
   };
   chat: {
     send: (agentId: string, text: string, attachments?: MessageAttachment[]) => Promise<void>;
+    enqueue: (
+      agentId: string,
+      text: string,
+      attachments?: MessageAttachment[],
+    ) => Promise<QueuedMessage[]>;
+    queue: (agentId: string) => Promise<QueuedMessage[]>;
+    updateQueued: (
+      agentId: string,
+      id: string,
+      text: string,
+    ) => Promise<QueuedMessage[]>;
+    removeQueued: (agentId: string, id: string) => Promise<QueuedMessage[]>;
+    clearQueue: (agentId: string) => Promise<QueuedMessage[]>;
+    forceSend: (agentId: string, text: string, attachments?: MessageAttachment[]) => Promise<void>;
+    forceQueued: (agentId: string, id: string) => Promise<void>;
+    editMessage: (agentId: string, messageId: string, text: string) => Promise<Agent>;
+    deleteMessage: (agentId: string, messageId: string) => Promise<Agent>;
     running: (agentId: string) => Promise<boolean>;
     abort: (agentId: string) => Promise<void>;
     enhance: (agentId: string, text: string) => Promise<EnhanceResult>;
@@ -114,6 +135,21 @@ export interface FidApi {
     update: (id: string, patch: RoutinePatch) => Promise<Routine>;
     delete: (id: string) => Promise<void>;
     run: (id: string) => Promise<Routine>;
+    history: (agentId: string) => Promise<RoutineRun[]>;
+    stop: (runId: string) => Promise<void>;
+  };
+  app: {
+    presence: () => Promise<AppPresence>;
+    setPresence: (patch: Partial<AppPresence>) => Promise<AppPresence>;
+    onOpenAgent: (callback: (agentId: string) => void) => number;
+    offOpenAgent: (id: number) => void;
+  };
+  inbox: {
+    list: () => Promise<InboxView>;
+    read: (id: string) => Promise<InboxView>;
+    snooze: (id: string) => Promise<InboxView>;
+    onChanged: (callback: () => void) => number;
+    offChanged: (id: number) => void;
   };
   settings: {
     get: (options?: { refreshAuth?: boolean }) => Promise<SettingsView>;
