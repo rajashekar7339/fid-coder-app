@@ -275,10 +275,14 @@ export async function openSession(input: {
       name: tool.name,
       description: tool.description,
       parameters: tool.parameters,
-      // Copilot CLI ships apply_patch. Session setup fails unless this flag
-      // replaces that built-in. Keep the object schema so the model still
-      // sends path, old_string, and new_string.
-      ...(tool.name === "apply_patch" ? { overridesBuiltInTool: true } : {}),
+      // Copilot CLI ships apply_patch and ask_user. Session setup fails unless
+      // apply_patch is replaced, and an ask_user without this flag goes to the
+      // built-in handler, which waits for a user-input hook Fid does not use.
+      // Keep apply_patch's object schema so the model still sends path,
+      // old_string, and new_string.
+      ...(tool.name === "apply_patch" || tool.name === "ask_user"
+        ? { overridesBuiltInTool: true }
+        : {}),
       skipPermission: true,
       defer: "never",
       handler: async (args: unknown) => {

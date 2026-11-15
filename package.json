@@ -22,6 +22,8 @@
     "test:routines-live": "npm run build:node && node tests/e2e-live/routines-live.e2e.mjs",
     "test:model-switch": "npm run build:node && electron tests/e2e-live/model-switch.e2e.cjs",
     "test:changes": "npm run build:node && node tests/e2e-live/changes-ui.e2e.mjs",
+    "test:questions": "npm run build:node && node tests/e2e-live/question-card.e2e.mjs",
+    "test:questions-live": "npm run build:node && node tests/e2e-live/question-card-live.e2e.mjs",
     "start": "electron .",
     "test:skills-reuse": "npm run build:node && node tests/e2e-live/skills-reuse.e2e.mjs",
     "test:map": "npm run build:node && node tests/e2e-live/project-map.e2e.mjs",

@@ -39,6 +39,14 @@ test("review_code forwards the target to the read-only reviewer", async () => {
   assert.equal(result, "report");
 });
 
+test("ask_user is on every chat profile and not on the review subagent", () => {
+  for (const profile of ["browser", "developer", "all"]) {
+    assert.equal(toolsForAgent(profile).some((tool) => tool.name === "ask_user"), true, profile);
+  }
+  assert.equal(askTools().some((tool) => tool.name === "ask_user"), true);
+  assert.equal(reviewTools().some((tool) => tool.name === "ask_user"), false);
+});
+
 test("Ask mode exposes every read-only tool and no writes or actions", () => {
   const names = askTools().map((tool) => tool.name);
   for (const name of [

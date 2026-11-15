@@ -3,6 +3,7 @@ import path from "path";
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { channels } from "../../shared/channels";
 import { isApprovalAction } from "../../shared/approval";
+import { parseQuestionReply } from "../../shared/question";
 import { normalizeModelId } from "../../shared/model";
 import { skillVersionLabel } from "../../shared/skills";
 import { normalizeToolProfile } from "../../shared/tool-profile";
@@ -104,6 +105,12 @@ export function registerIpc(services: AppServices): void {
     if (!isApprovalAction(action)) throw new Error("Unknown approval action");
     return runner.resolveApproval(String(approvalId ?? ""), action);
   });
+  ipcMain.handle(channels.chatQuestion, (_event, questionId: string, reply: unknown) =>
+    runner.resolveQuestion(String(questionId ?? ""), parseQuestionReply(reply)),
+  );
+  ipcMain.handle(channels.questionsPending, (_event, agentId?: string) =>
+    runner.listPendingQuestions(agentId ? String(agentId) : undefined),
+  );
   ipcMain.handle(channels.approvalsPending, (_event, agentId?: string) =>
     runner.listPendingApprovals(agentId ? String(agentId) : undefined),
   );

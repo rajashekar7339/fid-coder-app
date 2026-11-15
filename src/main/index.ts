@@ -103,6 +103,7 @@ if (!gotLock) {
 
   async function shutdown(): Promise<void> {
     runner?.denyAllApprovals("The app closed before approval.");
+    runner?.dismissAllQuestions();
     scheduler?.stop();
     await browser.closeAll();
     await stopClient();

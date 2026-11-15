@@ -6,6 +6,8 @@ import type {
   ApprovalRecord,
   ApprovalRequest,
   ApprovalRule,
+  QuestionReply,
+  QuestionRequest,
   ChatEvent,
   MessageAttachment,
   RoutineInput,
@@ -27,6 +29,8 @@ const channels = {
   chatEnhance: "chat:enhance",
   chatEvent: "chat:event",
   chatApproval: "chat:approval",
+  chatQuestion: "chat:question",
+  questionsPending: "questions:pending",
   approvalsPending: "approvals:pending",
   approvalsHistory: "approvals:history",
   approvalsRules: "approvals:rules",
@@ -102,6 +106,12 @@ const api: FidApi = {
       ipcRenderer.removeListener(channels.chatEvent, listener);
       listeners.delete(id);
     },
+  },
+  questions: {
+    answer: (questionId: string, reply: QuestionReply) =>
+      ipcRenderer.invoke(channels.chatQuestion, questionId, reply),
+    pending: (agentId?: string): Promise<QuestionRequest[]> =>
+      ipcRenderer.invoke(channels.questionsPending, agentId),
   },
   approvals: {
     decide: (approvalId: string, action: ApprovalAction) =>

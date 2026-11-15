@@ -9,6 +9,7 @@ import {
   CalendarX,
   Check,
   ChevronDown,
+  CircleHelp,
   Clock3,
   Copy,
   FileText,
@@ -36,6 +37,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import { QuestionCard } from "../approvals/QuestionCard";
 import type { Citation } from "../../../shared/citations";
 import {
   ATTACHMENT_ONLY_MESSAGE,
@@ -60,6 +62,8 @@ import type {
   Agent,
   ApprovalAction,
   ApprovalRequest,
+  QuestionReply,
+  QuestionRequest,
   ChangeSet,
   ChangesOpenRequest,
   ChatEvent,
@@ -105,6 +109,10 @@ type Props = {
   approvalBusy: boolean;
   approvalError: string | null;
   onApprovalDecision: (action: ApprovalAction) => void;
+  question: QuestionRequest | null;
+  questionBusy: boolean;
+  questionError: string | null;
+  onQuestionAnswer: (reply: QuestionReply) => void;
   onStartSignIn: () => void;
   onRetryModels: () => void;
   onToggleDesk: () => void;
@@ -126,6 +134,7 @@ const TOOL_META: Record<string, ToolMeta> = {
   browser_click: { label: "Clicked an element", active: "Clicking an element", Icon: MousePointerClick },
   browser_type: { label: "Typed into a field", active: "Typing into a field", Icon: Keyboard },
   shell_run: { label: "Ran a shell command", active: "Running a command", Icon: Terminal },
+  ask_user: { label: "Asked a question", active: "Waiting for an answer", Icon: CircleHelp },
   list_dir: { label: "Listed a folder", active: "Listing a folder", Icon: Folder },
   glob_files: { label: "Found files", active: "Finding files", Icon: Folder },
   search_text: { label: "Searched the code", active: "Searching the code", Icon: ScanSearch },
@@ -256,6 +265,10 @@ export function ChatView({
   approvalBusy,
   approvalError,
   onApprovalDecision,
+  question,
+  questionBusy,
+  questionError,
+  onQuestionAnswer,
   onStartSignIn,
   onRetryModels,
   onToggleDesk,
@@ -618,7 +631,7 @@ export function ChatView({
     const element = scroller.current;
     if (!element || !pinned.current) return;
     element.scrollTop = element.scrollHeight;
-  }, [projected.messages, projected.thinking, projected.pendingToolId, approval?.id, draft, changeSets]);
+  }, [projected.messages, projected.thinking, projected.pendingToolId, approval?.id, question?.id, draft, changeSets]);
 
   useEffect(() => {
     const element = scroller.current;
@@ -840,7 +853,7 @@ export function ChatView({
     }
   }
 
-  const empty = projected.messages.length === 0 && !projected.thinking && !approval;
+  const empty = projected.messages.length === 0 && !projected.thinking && !approval && !question;
   const items = groupToolCalls(projected.messages);
   const latestChange = changeSets[0] ?? null;
   const latestTotals = changeTotals(latestChange);
@@ -1075,6 +1088,14 @@ export function ChatView({
                 </Fragment>
               );
             })}
+            {question ? (
+              <QuestionCard
+                question={question}
+                busy={questionBusy}
+                error={questionError}
+                onAnswer={onQuestionAnswer}
+              />
+            ) : null}
             {approval ? (
               <ApprovalCard
                 approval={approval}
@@ -1083,7 +1104,9 @@ export function ChatView({
                 onDecide={onApprovalDecision}
               />
             ) : null}
-            {projected.pendingToolId || approval ? null : projected.thinking ? <TypingRow agent={agent} /> : null}
+            {projected.pendingToolId || approval || question ? null : projected.thinking ? (
+              <TypingRow agent={agent} />
+            ) : null}
           </div>
         )}
       </div>

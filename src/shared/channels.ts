@@ -11,6 +11,8 @@ export const channels = {
   chatEnhance: "chat:enhance",
   chatEvent: "chat:event",
   chatApproval: "chat:approval",
+  chatQuestion: "chat:question",
+  questionsPending: "questions:pending",
   approvalsPending: "approvals:pending",
   approvalsHistory: "approvals:history",
   approvalsRules: "approvals:rules",

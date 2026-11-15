@@ -5,6 +5,8 @@ import type {
   ApprovalRecord,
   ApprovalRequest,
   ApprovalRule,
+  QuestionReply,
+  QuestionRequest,
   AttachmentPick,
   BrowserPreview,
   ChangeSet,
@@ -49,6 +51,10 @@ export interface FidApi {
     enhance: (agentId: string, text: string) => Promise<EnhanceResult>;
     onEvent: (callback: (event: ChatEvent) => void) => number;
     offEvent: (id: number) => void;
+  };
+  questions: {
+    answer: (questionId: string, reply: QuestionReply) => Promise<boolean>;
+    pending: (agentId?: string) => Promise<QuestionRequest[]>;
   };
   approvals: {
     decide: (approvalId: string, action: ApprovalAction) => Promise<boolean>;

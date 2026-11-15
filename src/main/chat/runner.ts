@@ -23,6 +23,12 @@ import {
 } from "../../shared/enhance-prompt";
 import { AUTO_MODEL_ID } from "../../shared/model";
 import { approvalActionDecision, approvalActionRemembers, normalizeApprovalMatch } from "../../shared/approval";
+import {
+  OTHER_MAX_LENGTH,
+  QUESTION_HINT,
+  QUESTION_TIMEOUT_MS,
+  type AskUserRequest,
+} from "../../shared/question";
 import { commandAvailability, parseCommand } from "../../shared/commands";
 import { ROUTINE_COMMAND_HINT, ROUTINE_WRITE_TOOL_NAMES } from "../../shared/routine-schedule";
 import type {
@@ -33,6 +39,9 @@ import type {
   ApprovalRequest,
   ApprovalSource,
   ChatEvent,
+  QuestionOutcome,
+  QuestionReply,
+  QuestionRequest,
   ContextView,
   MessageAttachment,
   TokenUsage,
@@ -105,6 +114,12 @@ type PendingApproval = {
   resolve: (outcome: ApprovalOutcome) => void;
 };
 
+type PendingQuestion = {
+  request: QuestionRequest;
+  timer: ReturnType<typeof setTimeout>;
+  resolve: (outcome: QuestionOutcome) => void;
+};
+
 const TURN_TIMEOUT_MS = 8 * 60 * 1000;
 const APPROVAL_TIMEOUT_MS = 2 * 60 * 1000;
 const deltaHolders = new Map<string, (delta: string) => void>();
@@ -171,6 +186,7 @@ export class Runner {
   private readonly jiraTokenWarned = new Set<string>();
   private readonly turnNotifiers = new Map<string, (text: string) => void>();
   private readonly pendingApprovals = new Map<string, PendingApproval>();
+  private readonly pendingQuestions = new Map<string, PendingQuestion>();
   private readonly skillToolsUsed = new Set<string>();
   private readonly skillContexts = new Map<
     string,
@@ -266,6 +282,7 @@ export class Runner {
 
   async dropSession(agentId: string): Promise<void> {
     this.denyPendingApprovals(agentId, "The session was closed.");
+    this.dismissPendingQuestions(agentId);
     const cached = this.sessions.get(agentId);
     if (!cached) return;
     this.sessions.delete(agentId);
@@ -276,10 +293,12 @@ export class Runner {
   async dropAllSessions(): Promise<void> {
     for (const id of [...this.sessions.keys()]) await this.dropSession(id);
     this.denyAllApprovals("All sessions were closed.");
+    this.dismissAllQuestions();
   }
 
   async abort(agentId: string): Promise<void> {
     this.denyPendingApprovals(agentId, "Stopped by the user.");
+    this.dismissPendingQuestions(agentId);
     await this.sessions.get(agentId)?.live.session.abort?.();
   }
 
@@ -327,6 +346,48 @@ export class Runner {
   denyAllApprovals(reason: string): void {
     for (const approvalId of [...this.pendingApprovals.keys()]) {
       this.settleApproval(approvalId, "deny", "aborted", reason);
+    }
+  }
+
+  listPendingQuestions(agentId?: string): QuestionRequest[] {
+    return [...this.pendingQuestions.values()]
+      .map((pending) => pending.request)
+      .filter((request) => !agentId || request.agentId === agentId)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  }
+
+  resolveQuestion(questionId: string, reply: QuestionReply): boolean {
+    const pending = this.pendingQuestions.get(questionId);
+    if (!pending) return false;
+    if (reply.kind === "skip") {
+      this.settleQuestion(questionId, { answered: false, source: "user", text: null, via: null });
+      return true;
+    }
+    if (reply.kind === "choice") {
+      const label = pending.request.choices[reply.index];
+      if (!label) throw new Error("That choice is not on this question.");
+      this.settleQuestion(questionId, { answered: true, source: "user", text: label, via: "choice" });
+      return true;
+    }
+    const text = reply.text.trim().replace(/\s+/g, " ");
+    if (!text) throw new Error("Type an answer, or choose Skip.");
+    if (text.length > OTHER_MAX_LENGTH) throw new Error("That answer is too long.");
+    this.settleQuestion(questionId, { answered: true, source: "user", text, via: "other" });
+    return true;
+  }
+
+  dismissAllQuestions(): void {
+    for (const questionId of [...this.pendingQuestions.keys()]) {
+      this.settleQuestion(questionId, { answered: false, source: "aborted", text: null, via: null });
+    }
+  }
+
+  private dismissPendingQuestions(agentId: string): void {
+    for (const questionId of [...this.pendingQuestions.keys()]) {
+      const pending = this.pendingQuestions.get(questionId);
+      if (pending?.request.agentId === agentId) {
+        this.settleQuestion(questionId, { answered: false, source: "aborted", text: null, via: null });
+      }
     }
   }
 
@@ -470,6 +531,7 @@ export class Runner {
       throw new Error(message);
     } finally {
       this.denyPendingApprovals(agent.id, "The turn ended before approval.");
+      this.dismissPendingQuestions(agent.id);
       this.activeTurns.delete(agent.id);
       deltaHolders.delete(agent.id);
       turnUsage.delete(agent.id);
@@ -690,6 +752,7 @@ export class Runner {
               capture: (file, previous) => this.checkpoints.capture(agentId, turnId, file, previous),
             },
       requestApproval: (request) => this.requestApproval(agentId, request),
+      askUser: (request) => this.askUser(agentId, request),
       history: createHistoryPort(this.db, agentId),
       routines: this.routinePort ?? undefined,
       log: (message) => logWarn(message),
@@ -802,6 +865,49 @@ export class Runner {
       reason,
     });
     pending.resolve({ approved: decision === "allow", decision, source, reason });
+  }
+
+  private askUser(agentId: string, input: AskUserRequest): Promise<QuestionOutcome> {
+    const agent = this.db.getAgent(agentId);
+    if (!agent) throw new Error("Agent not found");
+    if ([...this.pendingQuestions.values()].some((pending) => pending.request.agentId === agentId)) {
+      throw new Error("A question is already waiting. Wait for the answer before asking another.");
+    }
+    const questionId = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+    const request: QuestionRequest = {
+      id: questionId,
+      agentId,
+      agentName: agent.name,
+      question: input.question,
+      choices: input.choices,
+      createdAt,
+      expiresAt: new Date(Date.now() + QUESTION_TIMEOUT_MS).toISOString(),
+    };
+    return new Promise<QuestionOutcome>((resolve) => {
+      const timer = setTimeout(() => {
+        this.settleQuestion(questionId, { answered: false, source: "timeout", text: null, via: null });
+      }, QUESTION_TIMEOUT_MS);
+      timer.unref?.();
+      this.pendingQuestions.set(questionId, { request, timer, resolve });
+      this.sink({ agentId, type: "question-request", question: request });
+      const note = input.question.length > 120 ? `${input.question.slice(0, 117)}...` : input.question;
+      this.turnNotifiers.get(agentId)?.(`Needs an answer: ${note}`);
+    });
+  }
+
+  private settleQuestion(questionId: string, outcome: QuestionOutcome): void {
+    const pending = this.pendingQuestions.get(questionId);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this.pendingQuestions.delete(questionId);
+    this.sink({
+      agentId: pending.request.agentId,
+      type: "question-resolved",
+      questionId,
+      source: outcome.source,
+    });
+    pending.resolve(outcome);
   }
 
   async previewContext(agentId: string): Promise<ContextView> {
@@ -917,6 +1023,7 @@ export class Runner {
         "Browser tools control a headed browser on this Windows machine. This agent has its own persistent profile. Call browser_snapshot before browser_click or browser_type.",
       );
     }
+    if (this.turnCommands.get(agent.id) !== "routine") lines.push(QUESTION_HINT);
     return { text: lines.join("\n\n"), brief, rules };
   }
 

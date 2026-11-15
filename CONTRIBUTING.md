@@ -103,6 +103,8 @@ Run the smallest set that proves the change, then the relevant end-to-end path.
 | Deterministic UI | `npm run test:changes` | Seeded changes card, Workspace panel, changed list, lazy file tree, citation bridge, file revert, and turn revert. No Copilot turn. |
 | Deterministic UI | `npm run test:skills` | Electron UI, Ask mode, starters, cached project map, the in-place citation view, navigator references, the lazy workspace tree, clean diagram labels, full-screen diagrams, library, help screenshots. No Copilot turn. |
 | Deterministic UI | `npm run test:routines` | Electron UI for one-time and repeating routines, the Once editor, creation, deletion, and the Desk list. No Copilot turn. |
+| Deterministic UI | `npm run test:questions` | Electron UI for the ask_user card: choices, own answer, skip, a resolved event, and the other-agent banner. No Copilot turn. |
+| Live UI | `npm run test:questions-live` | One real Ask-mode turn that calls `ask_user`; answers the card and checks the turn continues with that answer. Needs Copilot. |
 | Live UI | `npm run test:skills-reuse` | A real skill turn and reuse on a later turn. Needs Copilot. |
 | Live UI | `npm run test:routines-live` | A real turn that asks the agent to create a one-time routine. Needs Copilot. |
 | Live UI | `npm run test:map` | One real project-map build, read-only workspace check, and cached reopen. Needs Copilot. |

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, ShieldAlert, X } from "lucide-react";
+import { CircleHelp, Plus, ShieldAlert, X } from "lucide-react";
 import { COPILOT_USAGE_REFRESH_MS, type CopilotUsageView } from "../shared/copilot-usage";
 import { addAttachments } from "../shared/attachments";
 import type {
   Agent,
   ApprovalAction,
   ApprovalRequest,
+  QuestionReply,
+  QuestionRequest,
   ChangeSet,
   ChangesOpenRequest,
   CopilotModel,
@@ -64,6 +66,9 @@ export function App() {
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
   const [decidingApproval, setDecidingApproval] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [pendingQuestions, setPendingQuestions] = useState<QuestionRequest[]>([]);
+  const [answeringQuestion, setAnsweringQuestion] = useState(false);
+  const [questionError, setQuestionError] = useState<string | null>(null);
   const [skillSeed, setSkillSeed] = useState<string | null>(null);
   const [skillsRevision, setSkillsRevision] = useState(0);
   const [pendingAttachments, setPendingAttachments] = useState<MessageAttachment[]>([]);
@@ -230,10 +235,25 @@ export function App() {
         setDecidingApproval(false);
         setPendingApprovals((current) => current.filter((item) => item.id !== event.approvalId));
       }
+      if (event.type === "question-request") {
+        setQuestionError(null);
+        setPendingQuestions((current) => {
+          if (current.some((item) => item.id === event.question.id)) return current;
+          return [...current, event.question].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+        });
+      }
+      if (event.type === "question-resolved") {
+        setAnsweringQuestion(false);
+        setPendingQuestions((current) => current.filter((item) => item.id !== event.questionId));
+      }
     });
     void fid()
       .approvals.pending()
       .then((list) => setPendingApprovals(list))
+      .catch(() => undefined);
+    void fid()
+      .questions.pending()
+      .then((list) => setPendingQuestions(list))
       .catch(() => undefined);
     return () => fid().chat.offEvent(id);
   }, []);
@@ -330,6 +350,22 @@ export function App() {
   async function toggleRoutine(routine: Routine) {
     await fid().routines.update(routine.id, { enabled: !routine.enabled });
     await Promise.all([refreshRoutines(), refreshAgents()]);
+  }
+
+  async function answerQuestion(reply: QuestionReply) {
+    if (!question || answeringQuestion) return;
+    const questionId = question.id;
+    setAnsweringQuestion(true);
+    setQuestionError(null);
+    try {
+      const accepted = await fid().questions.answer(questionId, reply);
+      if (!accepted) setQuestionError("That question already closed.");
+      setPendingQuestions((current) => current.filter((item) => item.id !== questionId));
+    } catch (caught) {
+      setQuestionError(errorText(caught));
+    } finally {
+      setAnsweringQuestion(false);
+    }
   }
 
   async function decideApproval(action: ApprovalAction) {
@@ -495,8 +531,11 @@ export function App() {
 
   const selected = agents.find((agent) => agent.id === agentId) ?? null;
   const approval = pendingApprovals.find((item) => item.agentId === agentId) ?? null;
+  const question = pendingQuestions.find((item) => item.agentId === agentId) ?? null;
   const otherApprovals = pendingApprovals.filter((item) => item.agentId !== agentId);
+  const otherQuestions = pendingQuestions.filter((item) => item.agentId !== agentId);
   const otherApproval = otherApprovals[0] ?? null;
+  const otherQuestion = otherQuestions[0] ?? null;
   const editing = dialog?.kind === "edit" ? (agents.find((agent) => agent.id === dialog.agentId) ?? null) : null;
   const copilotPresence: CopilotPresence = settings?.signedIn
     ? "ready"
@@ -544,6 +583,20 @@ export function App() {
               </button>
             </div>
           ) : null}
+          {otherQuestion ? (
+            <button
+              type="button"
+              className="approval-notice"
+              onClick={() => setAgentId(otherQuestion.agentId)}
+            >
+              <CircleHelp size={13} aria-hidden="true" />
+              <span>
+                Answer needed for {otherQuestion.agentName}
+                {otherQuestions.length > 1 ? ` +${otherQuestions.length - 1}` : ""}
+              </span>
+              <b>Open</b>
+            </button>
+          ) : null}
           {otherApproval ? (
             <button
               type="button"
@@ -580,6 +633,10 @@ export function App() {
               approvalBusy={decidingApproval}
               approvalError={approvalError}
               onApprovalDecision={(action) => void decideApproval(action)}
+              question={question}
+              questionBusy={answeringQuestion}
+              questionError={questionError}
+              onQuestionAnswer={(reply) => void answerQuestion(reply)}
               onStartSignIn={startSignInFromChat}
               onRetryModels={() => void refreshModels()}
               onToggleDesk={toggleDesk}

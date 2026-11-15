@@ -248,6 +248,32 @@ export type ApprovalRuleInput = {
   cwd: string;
 };
 
+export type QuestionSource = "user" | "timeout" | "aborted";
+
+export type QuestionVia = "choice" | "other";
+
+export type QuestionRequest = {
+  id: string;
+  agentId: string;
+  agentName: string;
+  question: string;
+  choices: string[];
+  createdAt: string;
+  expiresAt: string;
+};
+
+export type QuestionReply =
+  | { kind: "choice"; index: number }
+  | { kind: "other"; text: string }
+  | { kind: "skip" };
+
+export type QuestionOutcome = {
+  answered: boolean;
+  source: QuestionSource;
+  text: string | null;
+  via: QuestionVia | null;
+};
+
 export type ChatEvent =
   | { agentId: string; type: "user"; text: string }
   | { agentId: string; type: "text"; text: string }
@@ -262,6 +288,13 @@ export type ChatEvent =
       decision: ApprovalDecision;
       source: ApprovalSource;
       reason: string;
+    }
+  | { agentId: string; type: "question-request"; question: QuestionRequest }
+  | {
+      agentId: string;
+      type: "question-resolved";
+      questionId: string;
+      source: QuestionSource;
     }
   | { agentId: string; type: "done"; text: string }
   | { agentId: string; type: "error"; error: string };

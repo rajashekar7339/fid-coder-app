@@ -37,8 +37,8 @@ const SOURCES: GuideSource[] = [
     title: "Chat with an agent",
     group: "Using Fid Coder",
     summary:
-      "Send messages, improve a draft, follow tool steps, read token and credit usage, switch models, stop a turn, and approve deletes, pushes, and downloads.",
-    readMinutes: 6,
+      "Send messages, improve a draft, follow tool steps, answer a question card, read token and credit usage, switch models, stop a turn, and approve deletes, pushes, and downloads.",
+    readMinutes: 7,
     file: "chat-with-an-agent.md",
   },
   {

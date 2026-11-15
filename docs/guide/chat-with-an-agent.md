@@ -85,6 +85,12 @@ The shell tool pauses before a delete, a git push, or a download. A compact appr
 
 **Always allow** and **Always deny** save a rule for that exact command and folder. Deny rules win over allow rules. Ending the turn or ignoring the countdown rejects the command. Every request and decision appears in the Agent Desk approvals history, and saved rules are under **Settings → Safety**.
 
+## Answer a question
+
+When the agent needs a preference it cannot look up, it asks one question in the conversation. The card lists two to four choices. Pick one, or type your own answer and choose **Answer**. **Skip**, or waiting about two minutes, lets the agent continue with no answer. It should not ask again in that turn.
+
+Stopping the turn, or closing Fid Coder, closes the card. The card is not saved. Ask mode can ask too. A routine that creates another routine cannot, and a scheduled run that nobody answers continues after the countdown. If another agent is waiting, a bar at the top of the chat opens that agent.
+
 ## Recall an older issue
 
 Ask the agent what you worked on earlier, or name the issue. It can search the saved conversation by text or date, read only the matching turn, load a small date window, or read the first message. The full transcript stays on this PC; the agent loads what it needs instead of replaying the whole conversation.
