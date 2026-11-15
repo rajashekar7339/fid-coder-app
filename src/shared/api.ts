@@ -1,10 +1,16 @@
+import type { SkillDraftInput } from "./skill-draft";
 import type {
   Agent,
   AgentInput,
+  AgentPlacement,
   ApprovalAction,
   ApprovalRecord,
   ApprovalRequest,
   ApprovalRule,
+  BrowserHandoffRequest,
+  QuestionReply,
+  QuestionRequest,
+  SkillSaveRequest,
   AttachmentPick,
   BrowserPreview,
   ChangeSet,
@@ -38,6 +44,7 @@ export interface FidApi {
     update: (id: string, input: AgentInput) => Promise<Agent>;
     clearMemory: (id: string) => Promise<Agent>;
     delete: (id: string) => Promise<void>;
+    place: (id: string, placement: AgentPlacement) => Promise<Agent>;
   };
   messages: {
     list: (agentId: string) => Promise<Message[]>;
@@ -49,6 +56,19 @@ export interface FidApi {
     enhance: (agentId: string, text: string) => Promise<EnhanceResult>;
     onEvent: (callback: (event: ChatEvent) => void) => number;
     offEvent: (id: number) => void;
+  };
+  questions: {
+    answer: (questionId: string, reply: QuestionReply) => Promise<boolean>;
+    pending: (agentId?: string) => Promise<QuestionRequest[]>;
+  };
+  handoffs: {
+    done: (handoffId: string) => Promise<boolean>;
+    takeover: (handoffId: string) => Promise<boolean>;
+    pending: (agentId?: string) => Promise<BrowserHandoffRequest[]>;
+  };
+  skillSaves: {
+    decide: (requestId: string, allow: boolean, draft?: SkillDraftInput) => Promise<boolean>;
+    pending: (agentId?: string) => Promise<SkillSaveRequest[]>;
   };
   approvals: {
     decide: (approvalId: string, action: ApprovalAction) => Promise<boolean>;

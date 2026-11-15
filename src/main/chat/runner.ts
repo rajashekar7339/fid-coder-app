@@ -23,6 +23,26 @@ import {
 } from "../../shared/enhance-prompt";
 import { AUTO_MODEL_ID } from "../../shared/model";
 import { approvalActionDecision, approvalActionRemembers, normalizeApprovalMatch } from "../../shared/approval";
+import {
+  BROWSER_HANDOFF_TOOL,
+  HANDOFF_HINT,
+  HANDOFF_TIMEOUT_MS,
+} from "../../shared/browser-handoff";
+import {
+  OTHER_MAX_LENGTH,
+  QUESTION_HINT,
+  QUESTION_TIMEOUT_MS,
+  type AskUserRequest,
+} from "../../shared/question";
+import {
+  SAVE_SKILL_TOOL,
+  SKILL_SAVE_COMMAND_PROMPT,
+  SKILL_SAVE_HINT,
+  SKILL_SAVE_MESSAGE_WINDOW,
+  SKILL_SAVE_TIMEOUT_MS,
+  SKILL_SAVE_TRANSCRIPT_CHARS,
+  type SkillDraft,
+} from "../../shared/skill-draft";
 import { commandAvailability, parseCommand } from "../../shared/commands";
 import { ROUTINE_COMMAND_HINT, ROUTINE_WRITE_TOOL_NAMES } from "../../shared/routine-schedule";
 import type {
@@ -32,7 +52,14 @@ import type {
   ApprovalOutcome,
   ApprovalRequest,
   ApprovalSource,
+  BrowserHandoffOutcome,
+  BrowserHandoffRequest,
   ChatEvent,
+  QuestionOutcome,
+  QuestionReply,
+  QuestionRequest,
+  SkillSaveOutcome,
+  SkillSaveRequest,
   ContextView,
   MessageAttachment,
   TokenUsage,
@@ -49,6 +76,7 @@ import type {
   SkillActivation,
   ToolContext,
 } from "../../tools/types";
+import { gateBrowser } from "../browser/gate";
 import type { BrowserManager } from "../browser/browser-manager";
 import { createHistoryPort } from "../history/history";
 import type { CheckpointStore } from "../workspace/checkpoints";
@@ -67,6 +95,7 @@ import {
   skillRoots,
   type LoadedSkill,
 } from "../skills";
+import { prepareSkillSave, writeSkillFile } from "../skills/save";
 import { ATTACHMENT_ONLY_MESSAGE } from "../../shared/attachments";
 import { availableSkillsPrompt, skillTurnPrompt, usedSkillsPrompt } from "../../shared/skills";
 import { workspaceBrief } from "../workspace/workspace-brief";
@@ -103,6 +132,24 @@ type PendingApproval = {
   request: ApprovalRequest;
   timer: ReturnType<typeof setTimeout>;
   resolve: (outcome: ApprovalOutcome) => void;
+};
+
+type PendingQuestion = {
+  request: QuestionRequest;
+  timer: ReturnType<typeof setTimeout>;
+  resolve: (outcome: QuestionOutcome) => void;
+};
+
+type PendingHandoff = {
+  request: BrowserHandoffRequest;
+  timer: ReturnType<typeof setTimeout>;
+  resolve: (outcome: BrowserHandoffOutcome) => void;
+};
+
+type PendingSkillSave = {
+  request: SkillSaveRequest;
+  timer: ReturnType<typeof setTimeout>;
+  resolve: (outcome: SkillSaveOutcome) => void;
 };
 
 const TURN_TIMEOUT_MS = 8 * 60 * 1000;
@@ -171,6 +218,10 @@ export class Runner {
   private readonly jiraTokenWarned = new Set<string>();
   private readonly turnNotifiers = new Map<string, (text: string) => void>();
   private readonly pendingApprovals = new Map<string, PendingApproval>();
+  private readonly pendingQuestions = new Map<string, PendingQuestion>();
+  private readonly pendingHandoffs = new Map<string, PendingHandoff>();
+  private readonly pendingSkillSaves = new Map<string, PendingSkillSave>();
+  private readonly needsSnapshot = new Set<string>();
   private readonly skillToolsUsed = new Set<string>();
   private readonly skillContexts = new Map<
     string,
@@ -266,6 +317,9 @@ export class Runner {
 
   async dropSession(agentId: string): Promise<void> {
     this.denyPendingApprovals(agentId, "The session was closed.");
+    this.dismissPendingQuestions(agentId);
+    this.dismissPendingHandoffs(agentId);
+    this.dismissPendingSkillSaves(agentId);
     const cached = this.sessions.get(agentId);
     if (!cached) return;
     this.sessions.delete(agentId);
@@ -276,10 +330,16 @@ export class Runner {
   async dropAllSessions(): Promise<void> {
     for (const id of [...this.sessions.keys()]) await this.dropSession(id);
     this.denyAllApprovals("All sessions were closed.");
+    this.dismissAllQuestions();
+    this.dismissAllHandoffs();
+    this.dismissAllSkillSaves();
   }
 
   async abort(agentId: string): Promise<void> {
     this.denyPendingApprovals(agentId, "Stopped by the user.");
+    this.dismissPendingQuestions(agentId);
+    this.dismissPendingHandoffs(agentId);
+    this.dismissPendingSkillSaves(agentId);
     await this.sessions.get(agentId)?.live.session.abort?.();
   }
 
@@ -327,6 +387,137 @@ export class Runner {
   denyAllApprovals(reason: string): void {
     for (const approvalId of [...this.pendingApprovals.keys()]) {
       this.settleApproval(approvalId, "deny", "aborted", reason);
+    }
+  }
+
+  listPendingQuestions(agentId?: string): QuestionRequest[] {
+    return [...this.pendingQuestions.values()]
+      .map((pending) => pending.request)
+      .filter((request) => !agentId || request.agentId === agentId)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  }
+
+  resolveQuestion(questionId: string, reply: QuestionReply): boolean {
+    const pending = this.pendingQuestions.get(questionId);
+    if (!pending) return false;
+    if (reply.kind === "skip") {
+      this.settleQuestion(questionId, { answered: false, source: "user", text: null, via: null });
+      return true;
+    }
+    if (reply.kind === "choice") {
+      const label = pending.request.choices[reply.index];
+      if (!label) throw new Error("That choice is not on this question.");
+      this.settleQuestion(questionId, { answered: true, source: "user", text: label, via: "choice" });
+      return true;
+    }
+    const text = reply.text.trim().replace(/\s+/g, " ");
+    if (!text) throw new Error("Type an answer, or choose Skip.");
+    if (text.length > OTHER_MAX_LENGTH) throw new Error("That answer is too long.");
+    this.settleQuestion(questionId, { answered: true, source: "user", text, via: "other" });
+    return true;
+  }
+
+  dismissAllQuestions(): void {
+    for (const questionId of [...this.pendingQuestions.keys()]) {
+      this.settleQuestion(questionId, { answered: false, source: "aborted", text: null, via: null });
+    }
+  }
+
+  private dismissPendingQuestions(agentId: string): void {
+    for (const questionId of [...this.pendingQuestions.keys()]) {
+      const pending = this.pendingQuestions.get(questionId);
+      if (pending?.request.agentId === agentId) {
+        this.settleQuestion(questionId, { answered: false, source: "aborted", text: null, via: null });
+      }
+    }
+  }
+
+  listPendingHandoffs(agentId?: string): BrowserHandoffRequest[] {
+    return [...this.pendingHandoffs.values()]
+      .map((pending) => pending.request)
+      .filter((request) => !agentId || request.agentId === agentId)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  }
+
+  async takeoverHandoff(handoffId: string): Promise<boolean> {
+    const pending = this.pendingHandoffs.get(handoffId);
+    if (!pending) throw new Error("That handoff already closed.");
+    pending.request = { ...pending.request, takenOver: true };
+    this.sink({ agentId: pending.request.agentId, type: "handoff-updated", handoff: pending.request });
+    try {
+      return (await this.browser.focus?.(pending.request.agentId)) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  completeHandoff(handoffId: string): boolean {
+    if (!this.pendingHandoffs.has(handoffId)) return false;
+    this.settleHandoff(handoffId, { done: true, source: "user" });
+    return true;
+  }
+
+  dismissAllHandoffs(): void {
+    for (const handoffId of [...this.pendingHandoffs.keys()]) {
+      this.settleHandoff(handoffId, { done: false, source: "aborted" });
+    }
+  }
+
+  private dismissPendingHandoffs(agentId: string): void {
+    for (const handoffId of [...this.pendingHandoffs.keys()]) {
+      const pending = this.pendingHandoffs.get(handoffId);
+      if (pending?.request.agentId === agentId) {
+        this.settleHandoff(handoffId, { done: false, source: "aborted" });
+      }
+    }
+  }
+
+  listPendingSkillSaves(agentId?: string): SkillSaveRequest[] {
+    return [...this.pendingSkillSaves.values()]
+      .map((pending) => pending.request)
+      .filter((request) => !agentId || request.agentId === agentId)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  }
+
+  decideSkillSave(requestId: string, allow: boolean, draft?: SkillDraft): boolean {
+    const pending = this.pendingSkillSaves.get(requestId);
+    if (!pending) return false;
+    if (!allow) {
+      this.settleSkillSave(requestId, {
+        saved: false,
+        source: "user",
+        skillId: pending.request.skillId,
+      });
+      return true;
+    }
+    const next =
+      draft ?? {
+        id: pending.request.skillId,
+        name: pending.request.name,
+        description: pending.request.description,
+        steps: pending.request.steps,
+      };
+    writeSkillFile(next);
+    this.settleSkillSave(requestId, { saved: true, source: "user", skillId: next.id });
+    return true;
+  }
+
+  dismissAllSkillSaves(): void {
+    for (const requestId of [...this.pendingSkillSaves.keys()]) {
+      this.settleSkillSave(requestId, {
+        saved: false,
+        source: "aborted",
+        skillId: this.pendingSkillSaves.get(requestId)?.request.skillId ?? "",
+      });
+    }
+  }
+
+  private dismissPendingSkillSaves(agentId: string): void {
+    for (const requestId of [...this.pendingSkillSaves.keys()]) {
+      const pending = this.pendingSkillSaves.get(requestId);
+      if (pending?.request.agentId === agentId) {
+        this.settleSkillSave(requestId, { saved: false, source: "aborted", skillId: pending.request.skillId });
+      }
     }
   }
 
@@ -394,6 +585,9 @@ export class Runner {
           if (parsed.args) throw new Error("Send /compact on its own.");
           return await this.runCompactTurn(agent, userMessage.id, turnId);
         }
+        if (parsed.command.id === "skill-save") {
+          if (parsed.args) throw new Error("Send /skill-save on its own.");
+        }
         if (parsed.command.id === "routine") {
           if (!parsed.args) throw new Error(`Add the task and time after ${parsed.command.usage.split(" ")[0]}.`);
           this.turnCommands.set(agent.id, "routine");
@@ -401,6 +595,7 @@ export class Runner {
       }
       let latest = text;
       if (parsed?.command.id === "routine") latest = parsed.args;
+      if (parsed?.command.id === "skill-save") latest = SKILL_SAVE_COMMAND_PROMPT;
       let skillPrompt: string | null = null;
       let activeSkill: SkillActivation | null = null;
       let usedSkills = this.usedSkillsFor(agent);
@@ -426,19 +621,36 @@ export class Runner {
       if (skillPrompt) systemParts.push(skillPrompt);
       const systemMessage = systemParts.join("\n\n");
       const opened = await this.sessionFor(agent, systemMessage, activeSkill, availableSkills);
-      const prior = this.db
+      const allPrior = this.db
         .listMessages(agent.id)
-        .filter((message) => message.id !== userMessage.id)
+        .filter((message) => message.id !== userMessage.id);
+      const prior = allPrior
         .slice(-messageWindow(Boolean(agent.memorySummary.trim())))
         .map((message) => ({
           role: message.role,
           content: message.content,
           createdAt: localIso(message.createdAt),
         }));
+      const skillSaveRecap =
+        parsed?.command.id === "skill-save"
+          ? allPrior
+              .filter((message) => message.role === "user" || message.role === "assistant")
+              .slice(-SKILL_SAVE_MESSAGE_WINDOW)
+              .map(
+                (message) =>
+                  `${message.createdAt ? `[${localIso(message.createdAt)}] ` : ""}${message.role}: ${message.content}`,
+              )
+              .join("\n\n")
+              .slice(-SKILL_SAVE_TRANSCRIPT_CHARS)
+          : "";
+      const latestForPrompt =
+        parsed?.command.id === "skill-save"
+          ? `${latest}\n\nConversation to review (oldest first; capture the whole task, not just the last exchange):\n${skillSaveRecap}`
+          : latest;
       const prompt = buildSessionPrompt({
         summary: agent.memorySummary,
         prior,
-        latest: attachments.prompt ? `${attachments.prompt}\n\n${latest}` : latest,
+        latest: attachments.prompt ? `${attachments.prompt}\n\n${latestForPrompt}` : latestForPrompt,
         routine: input.source === "routine",
         freshSession: opened.fresh,
         now: localIso(new Date()),
@@ -470,6 +682,9 @@ export class Runner {
       throw new Error(message);
     } finally {
       this.denyPendingApprovals(agent.id, "The turn ended before approval.");
+      this.dismissPendingQuestions(agent.id);
+      this.dismissPendingHandoffs(agent.id);
+      this.dismissPendingSkillSaves(agent.id);
       this.activeTurns.delete(agent.id);
       deltaHolders.delete(agent.id);
       turnUsage.delete(agent.id);
@@ -671,7 +886,13 @@ export class Runner {
       onSkillUsed: (id) => this.db.markSkillUsed(agentId, id),
       model: agent.model,
       turnId: turnId ?? undefined,
-      browser: this.browser,
+      browser: gateBrowser(this.browser, {
+        held: (id) => [...this.pendingHandoffs.values()].some((pending) => pending.request.agentId === id),
+        needsSnapshot: (id) => this.needsSnapshot.has(id),
+        noteSnapshot: (id) => {
+          this.needsSnapshot.delete(id);
+        },
+      }),
       githubPat: workspaceTools && hasSecret(secretKeys.githubPat) ? getSecret(secretKeys.githubPat) : null,
       jiraToken: this.jiraTokenFor(agentId),
       jiraSite: this.db.getSetting("jira_site_url"),
@@ -690,6 +911,9 @@ export class Runner {
               capture: (file, previous) => this.checkpoints.capture(agentId, turnId, file, previous),
             },
       requestApproval: (request) => this.requestApproval(agentId, request),
+      askUser: (request) => this.askUser(agentId, request),
+      handoff: (reason) => this.handoff(agentId, reason),
+      saveSkill: (draft) => this.saveSkill(agentId, draft),
       history: createHistoryPort(this.db, agentId),
       routines: this.routinePort ?? undefined,
       log: (message) => logWarn(message),
@@ -802,6 +1026,141 @@ export class Runner {
       reason,
     });
     pending.resolve({ approved: decision === "allow", decision, source, reason });
+  }
+
+  private askUser(agentId: string, input: AskUserRequest): Promise<QuestionOutcome> {
+    const agent = this.db.getAgent(agentId);
+    if (!agent) throw new Error("Agent not found");
+    if ([...this.pendingQuestions.values()].some((pending) => pending.request.agentId === agentId)) {
+      throw new Error("A question is already waiting. Wait for the answer before asking another.");
+    }
+    const questionId = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+    const request: QuestionRequest = {
+      id: questionId,
+      agentId,
+      agentName: agent.name,
+      question: input.question,
+      choices: input.choices,
+      createdAt,
+      expiresAt: new Date(Date.now() + QUESTION_TIMEOUT_MS).toISOString(),
+    };
+    return new Promise<QuestionOutcome>((resolve) => {
+      const timer = setTimeout(() => {
+        this.settleQuestion(questionId, { answered: false, source: "timeout", text: null, via: null });
+      }, QUESTION_TIMEOUT_MS);
+      timer.unref?.();
+      this.pendingQuestions.set(questionId, { request, timer, resolve });
+      this.sink({ agentId, type: "question-request", question: request });
+      const note = input.question.length > 120 ? `${input.question.slice(0, 117)}...` : input.question;
+      this.turnNotifiers.get(agentId)?.(`Needs an answer: ${note}`);
+    });
+  }
+
+  private settleQuestion(questionId: string, outcome: QuestionOutcome): void {
+    const pending = this.pendingQuestions.get(questionId);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this.pendingQuestions.delete(questionId);
+    this.sink({
+      agentId: pending.request.agentId,
+      type: "question-resolved",
+      questionId,
+      source: outcome.source,
+    });
+    pending.resolve(outcome);
+  }
+
+  private handoff(agentId: string, reason: string): Promise<BrowserHandoffOutcome> {
+    const agent = this.db.getAgent(agentId);
+    if (!agent) throw new Error("Agent not found");
+    if ([...this.pendingHandoffs.values()].some((pending) => pending.request.agentId === agentId)) {
+      throw new Error("The browser is already waiting for you.");
+    }
+    const handoffId = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+    const request: BrowserHandoffRequest = {
+      id: handoffId,
+      agentId,
+      agentName: agent.name,
+      reason,
+      takenOver: false,
+      createdAt,
+      expiresAt: new Date(Date.now() + HANDOFF_TIMEOUT_MS).toISOString(),
+    };
+    return new Promise<BrowserHandoffOutcome>((resolve) => {
+      const timer = setTimeout(() => {
+        this.settleHandoff(handoffId, { done: false, source: "timeout" });
+      }, HANDOFF_TIMEOUT_MS);
+      timer.unref?.();
+      this.pendingHandoffs.set(handoffId, { request, timer, resolve });
+      this.sink({ agentId, type: "handoff-request", handoff: request });
+      const note = reason.length > 120 ? `${reason.slice(0, 117)}...` : reason;
+      this.turnNotifiers.get(agentId)?.(`Needs you in the browser: ${note}`);
+    });
+  }
+
+  private settleHandoff(handoffId: string, outcome: BrowserHandoffOutcome): void {
+    const pending = this.pendingHandoffs.get(handoffId);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this.pendingHandoffs.delete(handoffId);
+    this.needsSnapshot.add(pending.request.agentId);
+    this.sink({
+      agentId: pending.request.agentId,
+      type: "handoff-resolved",
+      handoffId,
+      source: outcome.source,
+    });
+    pending.resolve(outcome);
+  }
+
+  private saveSkill(agentId: string, draft: SkillDraft): Promise<SkillSaveOutcome> {
+    const agent = this.db.getAgent(agentId);
+    if (!agent) throw new Error("Agent not found");
+    if ([...this.pendingSkillSaves.values()].some((pending) => pending.request.agentId === agentId)) {
+      throw new Error("A skill is already waiting to be saved.");
+    }
+    const plan = prepareSkillSave(draft);
+    const requestId = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+    const request: SkillSaveRequest = {
+      id: requestId,
+      agentId,
+      agentName: agent.name,
+      skillId: draft.id,
+      name: draft.name,
+      description: draft.description,
+      steps: draft.steps,
+      replaces: plan.replaces,
+      createdAt,
+      expiresAt: new Date(Date.now() + SKILL_SAVE_TIMEOUT_MS).toISOString(),
+    };
+    return new Promise<SkillSaveOutcome>((resolve) => {
+      const timer = setTimeout(() => {
+        this.settleSkillSave(requestId, { saved: false, source: "timeout", skillId: draft.id });
+      }, SKILL_SAVE_TIMEOUT_MS);
+      timer.unref?.();
+      this.pendingSkillSaves.set(requestId, { request, timer, resolve });
+      this.sink({ agentId, type: "skill-save-request", request });
+      const note = draft.name.length > 120 ? `${draft.name.slice(0, 117)}...` : draft.name;
+      this.turnNotifiers.get(agentId)?.(`Save skill: ${note}`);
+    });
+  }
+
+  private settleSkillSave(requestId: string, outcome: SkillSaveOutcome): void {
+    const pending = this.pendingSkillSaves.get(requestId);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this.pendingSkillSaves.delete(requestId);
+    this.sink({
+      agentId: pending.request.agentId,
+      type: "skill-save-resolved",
+      requestId,
+      source: outcome.source,
+      saved: outcome.saved,
+    });
+    pending.resolve(outcome);
   }
 
   async previewContext(agentId: string): Promise<ContextView> {
@@ -917,6 +1276,11 @@ export class Runner {
         "Browser tools control a headed browser on this Windows machine. This agent has its own persistent profile. Call browser_snapshot before browser_click or browser_type.",
       );
     }
+    const routineRun = this.turnSources.get(agent.id) === "routine";
+    const routineCreate = this.turnCommands.get(agent.id) === "routine";
+    if ((browser || browserRead) && !routineRun && !routineCreate) lines.push(HANDOFF_HINT);
+    if (!routineRun && !routineCreate) lines.push(SKILL_SAVE_HINT);
+    if (!routineCreate) lines.push(QUESTION_HINT);
     return { text: lines.join("\n\n"), brief, rules };
   }
 
@@ -942,7 +1306,12 @@ export class Runner {
       tools = tools.filter((tool) => !tool.name.startsWith("jira_"));
     }
     if (this.turnSources.get(agent.id) === "routine") {
-      tools = tools.filter((tool) => !ROUTINE_WRITE_TOOL_NAMES.has(tool.name));
+      tools = tools.filter(
+        (tool) =>
+          !ROUTINE_WRITE_TOOL_NAMES.has(tool.name) &&
+          tool.name !== BROWSER_HANDOFF_TOOL &&
+          tool.name !== SAVE_SKILL_TOOL,
+      );
     }
     return tools;
   }

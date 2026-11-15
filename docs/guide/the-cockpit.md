@@ -6,13 +6,15 @@ Fid Coder is one window with three working areas. The sidebar chooses an agent, 
 
 ## Sidebar
 
-The sidebar lists every agent on this machine.
+The sidebar lists the agents on this machine. Archived agents stay out of that list until you open them.
 
-- Search with **Ctrl+K**, then press Escape to clear the search.
+- Press **Ctrl+K**, type a name, and press Enter to open the first match. Escape clears the search. The search also matches the short description and includes archived agents.
 - Select **+** at the top or **New agent** below the list to create an agent.
-- Open the menu on an agent row to edit or delete it. Deleting an agent also removes its conversation, routines, and browser profile.
-- The date on the right is the last activity: **Today**, **Yesterday**, or the calendar date. Hover it for the full timestamp. A green dot means the agent was active in the last 15 minutes.
+- Open the menu on an agent row to pin, archive, edit, or delete it. **Pin** keeps the agent at the top and shows a pin on the row. **Archive** hides it under **Archived** and keeps the conversation, routines, and browser profile. **Restore** brings it back, including a pin it already had. Deleting an agent removes the conversation, routines, and browser profile.
+- The date on the right is the last activity: **Today**, **Yesterday**, or the calendar date. Hover it for the full timestamp. A green dot means the agent was active in the last 15 minutes. An archived row says **Archived** in that spot.
 - **Skills** at the bottom of the sidebar opens the global library. Use **Upload skill** there to add a folder with `SKILL.md`.
+
+![The sidebar with an expanded Archived section and an archived agent selected.](images/sidebar-archived.png)
 
 ## Conversation
 

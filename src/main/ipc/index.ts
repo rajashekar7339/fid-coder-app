@@ -3,6 +3,9 @@ import path from "path";
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { channels } from "../../shared/channels";
 import { isApprovalAction } from "../../shared/approval";
+import { parseAgentPlacement } from "../../shared/agent-list";
+import { parseQuestionReply } from "../../shared/question";
+import { parseSkillDraft } from "../../shared/skill-draft";
 import { normalizeModelId } from "../../shared/model";
 import { skillVersionLabel } from "../../shared/skills";
 import { normalizeToolProfile } from "../../shared/tool-profile";
@@ -69,6 +72,9 @@ export function registerIpc(services: AppServices): void {
     await runner.dropSession(agent.id);
     return agent;
   });
+  ipcMain.handle(channels.agentsPlace, (_event, id: string, placement: unknown) =>
+    db.placeAgent(String(id ?? ""), parseAgentPlacement(placement)),
+  );
   ipcMain.handle(channels.agentsDelete, async (_event, id: string) => {
     await runner.dropSession(id);
     try {
@@ -104,6 +110,29 @@ export function registerIpc(services: AppServices): void {
     if (!isApprovalAction(action)) throw new Error("Unknown approval action");
     return runner.resolveApproval(String(approvalId ?? ""), action);
   });
+  ipcMain.handle(channels.chatQuestion, (_event, questionId: string, reply: unknown) =>
+    runner.resolveQuestion(String(questionId ?? ""), parseQuestionReply(reply)),
+  );
+  ipcMain.handle(channels.questionsPending, (_event, agentId?: string) =>
+    runner.listPendingQuestions(agentId ? String(agentId) : undefined),
+  );
+  ipcMain.handle(channels.browserHandoffDone, (_event, handoffId: string) =>
+    runner.completeHandoff(String(handoffId ?? "")),
+  );
+  ipcMain.handle(channels.browserHandoffTakeover, (_event, handoffId: string) =>
+    runner.takeoverHandoff(String(handoffId ?? "")),
+  );
+  ipcMain.handle(channels.browserHandoffsPending, (_event, agentId?: string) =>
+    runner.listPendingHandoffs(agentId ? String(agentId) : undefined),
+  );
+  ipcMain.handle(channels.skillsSaveDecide, (_event, requestId: string, allow: unknown, draft: unknown) => {
+    if (typeof allow !== "boolean") throw new Error("Missing decision");
+    const parsed = allow && draft !== undefined ? parseSkillDraft(draft) : undefined;
+    return runner.decideSkillSave(String(requestId ?? ""), allow, parsed);
+  });
+  ipcMain.handle(channels.skillsSavePending, (_event, agentId?: string) =>
+    runner.listPendingSkillSaves(agentId ? String(agentId) : undefined),
+  );
   ipcMain.handle(channels.approvalsPending, (_event, agentId?: string) =>
     runner.listPendingApprovals(agentId ? String(agentId) : undefined),
   );

@@ -9,6 +9,7 @@ import {
   CalendarX,
   Check,
   ChevronDown,
+  CircleHelp,
   Clock3,
   Copy,
   FileText,
@@ -18,12 +19,14 @@ import {
   Globe2,
   Keyboard,
   Loader2,
+  LogIn,
   Map as MapIcon,
   MousePointerClick,
   Network,
   PanelRight,
   Paperclip,
   Pin,
+  Save,
   ScanSearch,
   ShieldCheck,
   Slash,
@@ -36,6 +39,10 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import { HandoffCard } from "../approvals/HandoffCard";
+import { QuestionCard } from "../approvals/QuestionCard";
+import { SkillSaveCard } from "../approvals/SkillSaveCard";
+import type { SkillDraftInput } from "../../../shared/skill-draft";
 import type { Citation } from "../../../shared/citations";
 import {
   ATTACHMENT_ONLY_MESSAGE,
@@ -60,6 +67,10 @@ import type {
   Agent,
   ApprovalAction,
   ApprovalRequest,
+  BrowserHandoffRequest,
+  QuestionReply,
+  QuestionRequest,
+  SkillSaveRequest,
   ChangeSet,
   ChangesOpenRequest,
   ChatEvent,
@@ -105,6 +116,19 @@ type Props = {
   approvalBusy: boolean;
   approvalError: string | null;
   onApprovalDecision: (action: ApprovalAction) => void;
+  handoff: BrowserHandoffRequest | null;
+  handoffBusy: boolean;
+  handoffError: string | null;
+  onHandoffTakeover: () => void;
+  onHandoffDone: () => void;
+  skillSave: SkillSaveRequest | null;
+  skillSaveBusy: boolean;
+  skillSaveError: string | null;
+  onSkillSaveDecide: (allow: boolean, draft?: SkillDraftInput) => void;
+  question: QuestionRequest | null;
+  questionBusy: boolean;
+  questionError: string | null;
+  onQuestionAnswer: (reply: QuestionReply) => void;
   onStartSignIn: () => void;
   onRetryModels: () => void;
   onToggleDesk: () => void;
@@ -125,7 +149,10 @@ const TOOL_META: Record<string, ToolMeta> = {
   browser_snapshot: { label: "Read the page", active: "Reading the page", Icon: ScanSearch },
   browser_click: { label: "Clicked an element", active: "Clicking an element", Icon: MousePointerClick },
   browser_type: { label: "Typed into a field", active: "Typing into a field", Icon: Keyboard },
+  browser_needs_you: { label: "Handed the browser back", active: "Waiting for you in the browser", Icon: LogIn },
+  save_skill: { label: "Saved a skill", active: "Waiting to save a skill", Icon: Save },
   shell_run: { label: "Ran a shell command", active: "Running a command", Icon: Terminal },
+  ask_user: { label: "Asked a question", active: "Waiting for an answer", Icon: CircleHelp },
   list_dir: { label: "Listed a folder", active: "Listing a folder", Icon: Folder },
   glob_files: { label: "Found files", active: "Finding files", Icon: Folder },
   search_text: { label: "Searched the code", active: "Searching the code", Icon: ScanSearch },
@@ -256,6 +283,19 @@ export function ChatView({
   approvalBusy,
   approvalError,
   onApprovalDecision,
+  handoff,
+  handoffBusy,
+  handoffError,
+  onHandoffTakeover,
+  onHandoffDone,
+  skillSave,
+  skillSaveBusy,
+  skillSaveError,
+  onSkillSaveDecide,
+  question,
+  questionBusy,
+  questionError,
+  onQuestionAnswer,
   onStartSignIn,
   onRetryModels,
   onToggleDesk,
@@ -618,7 +658,17 @@ export function ChatView({
     const element = scroller.current;
     if (!element || !pinned.current) return;
     element.scrollTop = element.scrollHeight;
-  }, [projected.messages, projected.thinking, projected.pendingToolId, approval?.id, draft, changeSets]);
+  }, [
+    projected.messages,
+    projected.thinking,
+    projected.pendingToolId,
+    approval?.id,
+    question?.id,
+    handoff?.id,
+    skillSave?.id,
+    draft,
+    changeSets,
+  ]);
 
   useEffect(() => {
     const element = scroller.current;
@@ -840,7 +890,7 @@ export function ChatView({
     }
   }
 
-  const empty = projected.messages.length === 0 && !projected.thinking && !approval;
+  const empty = projected.messages.length === 0 && !projected.thinking && !approval && !question && !handoff && !skillSave;
   const items = groupToolCalls(projected.messages);
   const latestChange = changeSets[0] ?? null;
   const latestTotals = changeTotals(latestChange);
@@ -1075,6 +1125,31 @@ export function ChatView({
                 </Fragment>
               );
             })}
+            {handoff ? (
+              <HandoffCard
+                handoff={handoff}
+                busy={handoffBusy}
+                error={handoffError}
+                onTakeover={onHandoffTakeover}
+                onDone={onHandoffDone}
+              />
+            ) : null}
+            {skillSave ? (
+              <SkillSaveCard
+                request={skillSave}
+                busy={skillSaveBusy}
+                error={skillSaveError}
+                onDecide={onSkillSaveDecide}
+              />
+            ) : null}
+            {question ? (
+              <QuestionCard
+                question={question}
+                busy={questionBusy}
+                error={questionError}
+                onAnswer={onQuestionAnswer}
+              />
+            ) : null}
             {approval ? (
               <ApprovalCard
                 approval={approval}
@@ -1083,7 +1158,9 @@ export function ChatView({
                 onDecide={onApprovalDecision}
               />
             ) : null}
-            {projected.pendingToolId || approval ? null : projected.thinking ? <TypingRow agent={agent} /> : null}
+            {projected.pendingToolId || approval || question || handoff || skillSave ? null : projected.thinking ? (
+              <TypingRow agent={agent} />
+            ) : null}
           </div>
         )}
       </div>

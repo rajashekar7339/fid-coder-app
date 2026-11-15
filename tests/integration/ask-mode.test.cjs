@@ -49,7 +49,7 @@ test("Ask mode registers every read-only tool and Agent mode uses the profile", 
     const runner = new Runner(db, {}, { finalizeTurn: () => undefined });
     const view = await runner.previewContext(agent.id);
     assert.equal(view.readOnly, true);
-    for (const name of ["list_dir", "glob_files", "search_text", "file_read", "read_many", "git_status", "git_diff", "git_log", "browser_navigate", "browser_snapshot", "explore_code"]) {
+    for (const name of ["list_dir", "glob_files", "search_text", "file_read", "read_many", "git_status", "git_diff", "git_log", "browser_navigate", "browser_snapshot", "explore_code", "ask_user", "browser_needs_you", "save_skill"]) {
       assert.equal(view.tools.includes(name), true, name);
     }
     for (const name of ["file_write", "apply_patch", "shell_run", "browser_click", "browser_type"]) {
@@ -77,10 +77,11 @@ test("Ask mode registers every read-only tool and Agent mode uses the profile", 
     });
     const code = await runner.previewContext(agent.id);
     assert.equal(code.readOnly, false);
-    for (const name of ["file_write", "apply_patch", "shell_run", "review_code"]) {
+    for (const name of ["file_write", "apply_patch", "shell_run", "review_code", "ask_user", "save_skill"]) {
       assert.equal(code.tools.includes(name), true, name);
     }
     assert.equal(code.tools.includes("browser_navigate"), false);
+    assert.equal(code.tools.includes("browser_needs_you"), false);
     assert.match(code.systemMessage, /Edit an existing file with apply_patch/);
     assert.doesNotMatch(code.systemMessage, /You are in Ask mode/);
 
@@ -110,7 +111,7 @@ test("Ask mode registers every read-only tool and Agent mode uses the profile", 
     });
     const browserView = await runner.previewContext(browserAgent.id);
     assert.equal(browserView.readOnly, true);
-    for (const name of ["browser_navigate", "browser_snapshot", "history_first", "file_read", "search_text", "git_status"]) {
+    for (const name of ["browser_navigate", "browser_snapshot", "history_first", "file_read", "search_text", "git_status", "ask_user", "browser_needs_you", "save_skill"]) {
       assert.equal(browserView.tools.includes(name), true, name);
     }
     for (const name of ["browser_click", "browser_type", "file_write", "shell_run"]) {
@@ -129,7 +130,7 @@ test("Ask mode registers every read-only tool and Agent mode uses the profile", 
       memoryEnabled: false,
     });
     const allAskView = await runner.previewContext(allAsk.id);
-    for (const name of ["file_read", "read_many", "git_status", "browser_navigate", "browser_snapshot", "explore_code"]) {
+    for (const name of ["file_read", "read_many", "git_status", "browser_navigate", "browser_snapshot", "explore_code", "browser_needs_you", "save_skill"]) {
       assert.equal(allAskView.tools.includes(name), true, name);
     }
     for (const name of ["file_write", "apply_patch", "shell_run", "browser_click", "browser_type"]) {
@@ -147,7 +148,7 @@ test("Ask mode registers every read-only tool and Agent mode uses the profile", 
       memoryEnabled: false,
     });
     const allAgentView = await runner.previewContext(allAsk.id);
-    for (const name of ["file_write", "apply_patch", "shell_run", "browser_navigate", "browser_click", "browser_type"]) {
+    for (const name of ["file_write", "apply_patch", "shell_run", "browser_navigate", "browser_click", "browser_type", "browser_needs_you", "save_skill"]) {
       assert.equal(allAgentView.tools.includes(name), true, name);
     }
     assert.doesNotMatch(allAgentView.systemMessage, /You are in Ask mode/);
@@ -162,7 +163,7 @@ test("Ask mode registers every read-only tool and Agent mode uses the profile", 
       memoryEnabled: false,
     });
     const browserAgentView = await runner.previewContext(browserFullAgent.id);
-    for (const name of ["browser_navigate", "browser_snapshot", "browser_click", "browser_type"]) {
+    for (const name of ["browser_navigate", "browser_snapshot", "browser_click", "browser_type", "ask_user", "browser_needs_you", "save_skill"]) {
       assert.equal(browserAgentView.tools.includes(name), true, name);
     }
     for (const name of ["file_write", "apply_patch", "shell_run"]) {

@@ -1,11 +1,17 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type { FidApi } from "../shared/api";
+import type { SkillDraftInput } from "../shared/skill-draft";
 import type {
   AgentInput,
+  AgentPlacement,
   ApprovalAction,
   ApprovalRecord,
   ApprovalRequest,
   ApprovalRule,
+  BrowserHandoffRequest,
+  QuestionReply,
+  QuestionRequest,
+  SkillSaveRequest,
   ChatEvent,
   MessageAttachment,
   RoutineInput,
@@ -20,6 +26,7 @@ const channels = {
   agentsUpdate: "agents:update",
   agentsClearMemory: "agents:clear-memory",
   agentsDelete: "agents:delete",
+  agentsPlace: "agents:place",
   messagesList: "messages:list",
   chatSend: "chat:send",
   chatRunning: "chat:running",
@@ -27,12 +34,17 @@ const channels = {
   chatEnhance: "chat:enhance",
   chatEvent: "chat:event",
   chatApproval: "chat:approval",
+  chatQuestion: "chat:question",
+  questionsPending: "questions:pending",
   approvalsPending: "approvals:pending",
   approvalsHistory: "approvals:history",
   approvalsRules: "approvals:rules",
   approvalsDeleteRule: "approvals:delete-rule",
   browserPreview: "browser:preview",
   browserFocus: "browser:focus",
+  browserHandoffDone: "browser:handoff-done",
+  browserHandoffTakeover: "browser:handoff-takeover",
+  browserHandoffsPending: "browser:handoffs-pending",
   changesLatest: "changes:latest",
   changesList: "changes:list",
   changesDiff: "changes:diff",
@@ -67,6 +79,8 @@ const channels = {
   skillsList: "skills:list",
   skillsRead: "skills:read",
   skillsInstall: "skills:install",
+  skillsSaveDecide: "skills:save-decide",
+  skillsSavePending: "skills:save-pending",
 } as const;
 
 const listeners = new Map<number, (event: IpcRendererEvent, payload: ChatEvent) => void>();
@@ -79,6 +93,7 @@ const api: FidApi = {
     update: (id: string, input: AgentInput) => ipcRenderer.invoke(channels.agentsUpdate, id, input),
     clearMemory: (id: string) => ipcRenderer.invoke(channels.agentsClearMemory, id),
     delete: (id: string) => ipcRenderer.invoke(channels.agentsDelete, id),
+    place: (id: string, placement: AgentPlacement) => ipcRenderer.invoke(channels.agentsPlace, id, placement),
   },
   messages: {
     list: (agentId: string) => ipcRenderer.invoke(channels.messagesList, agentId),
@@ -102,6 +117,24 @@ const api: FidApi = {
       ipcRenderer.removeListener(channels.chatEvent, listener);
       listeners.delete(id);
     },
+  },
+  questions: {
+    answer: (questionId: string, reply: QuestionReply) =>
+      ipcRenderer.invoke(channels.chatQuestion, questionId, reply),
+    pending: (agentId?: string): Promise<QuestionRequest[]> =>
+      ipcRenderer.invoke(channels.questionsPending, agentId),
+  },
+  handoffs: {
+    done: (handoffId: string) => ipcRenderer.invoke(channels.browserHandoffDone, handoffId),
+    takeover: (handoffId: string) => ipcRenderer.invoke(channels.browserHandoffTakeover, handoffId),
+    pending: (agentId?: string): Promise<BrowserHandoffRequest[]> =>
+      ipcRenderer.invoke(channels.browserHandoffsPending, agentId),
+  },
+  skillSaves: {
+    decide: (requestId: string, allow: boolean, draft?: SkillDraftInput) =>
+      ipcRenderer.invoke(channels.skillsSaveDecide, requestId, allow, draft),
+    pending: (agentId?: string): Promise<SkillSaveRequest[]> =>
+      ipcRenderer.invoke(channels.skillsSavePending, agentId),
   },
   approvals: {
     decide: (approvalId: string, action: ApprovalAction) =>

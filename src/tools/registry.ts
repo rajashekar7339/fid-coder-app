@@ -1,4 +1,5 @@
 import type { AgentToolProfile } from "../shared/types";
+import { askUserTool } from "./ask/ask";
 import { browserTools } from "./browser/browser";
 import { exploreCodeTool } from "./explore/explore-code";
 import { exploreTools } from "./explore/explore";
@@ -8,6 +9,7 @@ import { historyTools } from "./history/history";
 import { jiraTools } from "./jira/jira";
 import { reviewCodeTool } from "./review/review";
 import { routineTools } from "./routines/routines";
+import { saveSkillTool } from "./skills/save";
 import { shellTools } from "./shell/shell";
 import type { AppTool } from "./types";
 
@@ -35,6 +37,9 @@ const askReadNames = new Set([
   "history_turn",
   "history_context",
   "explore_code",
+  "ask_user",
+  "browser_needs_you",
+  "save_skill",
 ]);
 
 export function readOnlyTools(): AppTool[] {
@@ -57,6 +62,8 @@ export function routineCreateTools(): AppTool[] {
 
 export function allTools(): AppTool[] {
   return [
+    askUserTool,
+    saveSkillTool,
     ...browserTools,
     ...jiraTools,
     ...shellTools,
@@ -72,10 +79,12 @@ export function allTools(): AppTool[] {
 
 export function toolsForAgent(profile: AgentToolProfile): AppTool[] {
   if (profile === "browser") {
-    return [...browserTools, ...jiraTools, ...historyTools, ...routineManagementTools];
+    return [askUserTool, saveSkillTool, ...browserTools, ...jiraTools, ...historyTools, ...routineManagementTools];
   }
   if (profile === "developer") {
     return [
+      askUserTool,
+      saveSkillTool,
       ...shellTools,
       ...exploreTools,
       ...fileTools,

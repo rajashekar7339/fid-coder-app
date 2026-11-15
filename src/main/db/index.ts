@@ -8,6 +8,7 @@ import { parseMessageAttachments } from "../../shared/attachments";
 import type {
   Agent,
   AgentInput,
+  AgentPlacement,
   ApprovalDecision,
   ApprovalKind,
   ApprovalRecord,
@@ -34,6 +35,8 @@ type AgentRow = {
   read_only: number | null;
   memory_summary: string | null;
   memory_enabled: number;
+  pinned: number | null;
+  archived: number | null;
   last_activity_at: string | null;
   next_routine_at: string | null;
   created_at: string;
@@ -233,6 +236,8 @@ export class AppDatabase {
         memory_summary TEXT NOT NULL DEFAULT '',
         memory_turn_count INTEGER NOT NULL DEFAULT 0,
         memory_enabled INTEGER NOT NULL DEFAULT 1,
+        pinned INTEGER NOT NULL DEFAULT 0,
+        archived INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -359,6 +364,7 @@ export class AppDatabase {
     this.ensureMessageAttachmentsColumn();
     const addedToolProfile = this.ensureAgentToolProfileColumn();
     this.ensureAgentReadOnlyColumn();
+    this.ensureAgentPlacementColumns();
     this.ensureRoutineOnceColumns();
     const now = new Date().toISOString();
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(JIRA_NAME, now, OLD_JIRA_NAME);
@@ -418,6 +424,17 @@ export class AppDatabase {
     const columns = this.db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
     if (columns.some((column) => column.name === "read_only")) return;
     this.db.exec("ALTER TABLE agents ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0");
+  }
+
+  private ensureAgentPlacementColumns(): void {
+    const columns = this.db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+    const names = new Set(columns.map((column) => column.name));
+    if (!names.has("pinned")) {
+      this.db.exec("ALTER TABLE agents ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
+    }
+    if (!names.has("archived")) {
+      this.db.exec("ALTER TABLE agents ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
+    }
   }
 
   private ensureRoutineOnceColumns(): void {
@@ -484,7 +501,9 @@ export class AppDatabase {
 
   listAgents(): Agent[] {
     const rows = this.db
-      .prepare(`${AGENT_SELECT} ORDER BY COALESCE(last_activity_at, a.updated_at) DESC, a.name COLLATE NOCASE`)
+      .prepare(
+        `${AGENT_SELECT} ORDER BY a.archived ASC, a.pinned DESC, COALESCE(last_activity_at, a.updated_at) DESC, a.name COLLATE NOCASE`,
+      )
       .all() as AgentRow[];
     return rows.map(mapAgent);
   }
@@ -541,6 +560,16 @@ export class AppDatabase {
         now,
         id,
       );
+    if (result.changes === 0) throw new Error("Agent not found");
+    return this.requireAgent(id);
+  }
+
+  placeAgent(id: string, placement: AgentPlacement): Agent {
+    const pinned = placement.pinned === undefined ? null : placement.pinned ? 1 : 0;
+    const archived = placement.archived === undefined ? null : placement.archived ? 1 : 0;
+    const result = this.db
+      .prepare("UPDATE agents SET pinned = COALESCE(?, pinned), archived = COALESCE(?, archived) WHERE id = ?")
+      .run(pinned, archived, id);
     if (result.changes === 0) throw new Error("Agent not found");
     return this.requireAgent(id);
   }
@@ -1083,6 +1112,8 @@ function mapAgent(row: AgentRow): Agent {
     readOnly: row.read_only === 1,
     memorySummary: row.memory_summary ?? "",
     memoryEnabled: row.memory_enabled !== 0,
+    pinned: row.pinned === 1,
+    archived: row.archived === 1,
     lastActivityAt: row.last_activity_at,
     nextRoutineAt: row.next_routine_at,
     createdAt: row.created_at,

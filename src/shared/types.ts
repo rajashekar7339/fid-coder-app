@@ -13,10 +13,17 @@ export type Agent = {
   readOnly: boolean;
   memorySummary: string;
   memoryEnabled: boolean;
+  pinned: boolean;
+  archived: boolean;
   lastActivityAt: string | null;
   nextRoutineAt: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type AgentPlacement = {
+  pinned?: boolean;
+  archived?: boolean;
 };
 
 export type CopilotModel = {
@@ -248,6 +255,70 @@ export type ApprovalRuleInput = {
   cwd: string;
 };
 
+export type QuestionSource = "user" | "timeout" | "aborted";
+
+export type QuestionVia = "choice" | "other";
+
+export type QuestionRequest = {
+  id: string;
+  agentId: string;
+  agentName: string;
+  question: string;
+  choices: string[];
+  createdAt: string;
+  expiresAt: string;
+};
+
+export type QuestionReply =
+  | { kind: "choice"; index: number }
+  | { kind: "other"; text: string }
+  | { kind: "skip" };
+
+export type QuestionOutcome = {
+  answered: boolean;
+  source: QuestionSource;
+  text: string | null;
+  via: QuestionVia | null;
+};
+
+export type BrowserHandoffSource = "user" | "timeout" | "aborted";
+
+export type BrowserHandoffRequest = {
+  id: string;
+  agentId: string;
+  agentName: string;
+  reason: string;
+  takenOver: boolean;
+  createdAt: string;
+  expiresAt: string;
+};
+
+export type BrowserHandoffOutcome = {
+  done: boolean;
+  source: BrowserHandoffSource;
+};
+
+export type SkillSaveSource = "user" | "timeout" | "aborted";
+
+export type SkillSaveRequest = {
+  id: string;
+  agentId: string;
+  agentName: string;
+  skillId: string;
+  name: string;
+  description: string;
+  steps: string;
+  replaces: boolean;
+  createdAt: string;
+  expiresAt: string;
+};
+
+export type SkillSaveOutcome = {
+  saved: boolean;
+  source: SkillSaveSource;
+  skillId: string;
+};
+
 export type ChatEvent =
   | { agentId: string; type: "user"; text: string }
   | { agentId: string; type: "text"; text: string }
@@ -262,6 +333,29 @@ export type ChatEvent =
       decision: ApprovalDecision;
       source: ApprovalSource;
       reason: string;
+    }
+  | { agentId: string; type: "question-request"; question: QuestionRequest }
+  | {
+      agentId: string;
+      type: "question-resolved";
+      questionId: string;
+      source: QuestionSource;
+    }
+  | { agentId: string; type: "handoff-request"; handoff: BrowserHandoffRequest }
+  | { agentId: string; type: "handoff-updated"; handoff: BrowserHandoffRequest }
+  | {
+      agentId: string;
+      type: "handoff-resolved";
+      handoffId: string;
+      source: BrowserHandoffSource;
+    }
+  | { agentId: string; type: "skill-save-request"; request: SkillSaveRequest }
+  | {
+      agentId: string;
+      type: "skill-save-resolved";
+      requestId: string;
+      source: SkillSaveSource;
+      saved: boolean;
     }
   | { agentId: string; type: "done"; text: string }
   | { agentId: string; type: "error"; error: string };

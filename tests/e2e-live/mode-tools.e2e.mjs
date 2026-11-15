@@ -312,7 +312,7 @@ async function main() {
     const agentView = await preview(page, created.id);
     check(
       "Agent mode registers the full All tools profile",
-      hasTools(agentView, ["file_write", "apply_patch", "shell_run", "browser_navigate", "browser_click", "browser_type"]),
+      hasTools(agentView, ["file_write", "apply_patch", "shell_run", "browser_navigate", "browser_click", "browser_type", "browser_needs_you", "save_skill"]),
       agentView.tools.join(", "),
     );
     check(
@@ -350,31 +350,31 @@ async function main() {
     const allAgentView = await preview(page, matrix.allAgent);
     check(
       "Matrix: All tools + Agent mode is full access",
-      hasTools(allAgentView, ["file_write", "apply_patch", "shell_run", "browser_navigate", "browser_click", "browser_type"]),
+      hasTools(allAgentView, ["file_write", "apply_patch", "shell_run", "browser_navigate", "browser_click", "browser_type", "browser_needs_you", "save_skill"]),
     );
     const allAskView = await preview(page, matrix.allAsk);
     check(
       "Matrix: All tools + Ask mode is read-only",
-      hasTools(allAskView, ["file_read", "search_text", "browser_navigate", "browser_snapshot"]) &&
+      hasTools(allAskView, ["file_read", "search_text", "browser_navigate", "browser_snapshot", "browser_needs_you", "save_skill"]) &&
         lacksTools(allAskView, ["file_write", "apply_patch", "shell_run", "browser_click", "browser_type"]),
     );
     const browserAgentView = await preview(page, matrix.browserAgent);
     check(
       "Matrix: Browser + Agent mode can click and type",
-      hasTools(browserAgentView, ["browser_navigate", "browser_snapshot", "browser_click", "browser_type"]) &&
+      hasTools(browserAgentView, ["browser_navigate", "browser_snapshot", "browser_click", "browser_type", "browser_needs_you", "save_skill"]) &&
         lacksTools(browserAgentView, ["file_write", "shell_run"]),
     );
     const browserAskView = await preview(page, matrix.browserAsk);
     check(
       "Matrix: Browser + Ask mode ignores the profile and reads everything",
-      hasTools(browserAskView, ["browser_navigate", "browser_snapshot", "file_read", "search_text", "git_status"]) &&
+      hasTools(browserAskView, ["browser_navigate", "browser_snapshot", "file_read", "search_text", "git_status", "browser_needs_you", "save_skill"]) &&
         lacksTools(browserAskView, ["browser_click", "browser_type", "file_write", "shell_run"]),
     );
     const developerAgentView = await preview(page, matrix.developerAgent);
     check(
       "Matrix: Developer + Agent mode writes and runs shell",
-      hasTools(developerAgentView, ["file_write", "apply_patch", "shell_run"]) &&
-        lacksTools(developerAgentView, ["browser_navigate", "browser_click"]),
+      hasTools(developerAgentView, ["file_write", "apply_patch", "shell_run", "save_skill"]) &&
+        lacksTools(developerAgentView, ["browser_navigate", "browser_click", "browser_needs_you"]),
     );
     check(
       "Matrix: every Ask mode has the read-only hint",
@@ -435,7 +435,7 @@ async function main() {
     const askView = await preview(page, created.id);
     check(
       "Ask mode filters All tools down to read-only tools",
-      hasTools(askView, ["file_read", "search_text", "git_status", "browser_navigate", "browser_snapshot"]) &&
+      hasTools(askView, ["file_read", "search_text", "git_status", "browser_navigate", "browser_snapshot", "browser_needs_you", "save_skill"]) &&
         lacksTools(askView, ["file_write", "apply_patch", "shell_run", "browser_click", "browser_type"]),
       askView.tools.join(", "),
     );

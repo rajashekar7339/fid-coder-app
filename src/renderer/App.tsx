@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, ShieldAlert, X } from "lucide-react";
+import { CircleHelp, LogIn, Plus, Save, ShieldAlert, X } from "lucide-react";
 import { COPILOT_USAGE_REFRESH_MS, type CopilotUsageView } from "../shared/copilot-usage";
 import { addAttachments } from "../shared/attachments";
+import type { SkillDraftInput } from "../shared/skill-draft";
 import type {
   Agent,
+  AgentPlacement,
   ApprovalAction,
   ApprovalRequest,
+  BrowserHandoffRequest,
+  QuestionReply,
+  QuestionRequest,
+  SkillSaveRequest,
   ChangeSet,
   ChangesOpenRequest,
   CopilotModel,
@@ -64,6 +70,15 @@ export function App() {
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
   const [decidingApproval, setDecidingApproval] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [pendingQuestions, setPendingQuestions] = useState<QuestionRequest[]>([]);
+  const [answeringQuestion, setAnsweringQuestion] = useState(false);
+  const [questionError, setQuestionError] = useState<string | null>(null);
+  const [pendingHandoffs, setPendingHandoffs] = useState<BrowserHandoffRequest[]>([]);
+  const [handoffBusy, setHandoffBusy] = useState(false);
+  const [handoffError, setHandoffError] = useState<string | null>(null);
+  const [pendingSkillSaves, setPendingSkillSaves] = useState<SkillSaveRequest[]>([]);
+  const [savingSkill, setSavingSkill] = useState(false);
+  const [skillSaveError, setSkillSaveError] = useState<string | null>(null);
   const [skillSeed, setSkillSeed] = useState<string | null>(null);
   const [skillsRevision, setSkillsRevision] = useState(0);
   const [pendingAttachments, setPendingAttachments] = useState<MessageAttachment[]>([]);
@@ -230,10 +245,61 @@ export function App() {
         setDecidingApproval(false);
         setPendingApprovals((current) => current.filter((item) => item.id !== event.approvalId));
       }
+      if (event.type === "question-request") {
+        setQuestionError(null);
+        setPendingQuestions((current) => {
+          if (current.some((item) => item.id === event.question.id)) return current;
+          return [...current, event.question].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+        });
+      }
+      if (event.type === "question-resolved") {
+        setAnsweringQuestion(false);
+        setPendingQuestions((current) => current.filter((item) => item.id !== event.questionId));
+      }
+      if (event.type === "handoff-request") {
+        setHandoffError(null);
+        setPendingHandoffs((current) => {
+          if (current.some((item) => item.id === event.handoff.id)) return current;
+          return [...current, event.handoff].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+        });
+      }
+      if (event.type === "handoff-updated") {
+        setPendingHandoffs((current) =>
+          current.map((item) => (item.id === event.handoff.id ? event.handoff : item)),
+        );
+      }
+      if (event.type === "handoff-resolved") {
+        setHandoffBusy(false);
+        setPendingHandoffs((current) => current.filter((item) => item.id !== event.handoffId));
+      }
+      if (event.type === "skill-save-request") {
+        setSkillSaveError(null);
+        setPendingSkillSaves((current) => {
+          if (current.some((item) => item.id === event.request.id)) return current;
+          return [...current, event.request].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+        });
+      }
+      if (event.type === "skill-save-resolved") {
+        setSavingSkill(false);
+        setPendingSkillSaves((current) => current.filter((item) => item.id !== event.requestId));
+        if (event.saved) setSkillsRevision((current) => current + 1);
+      }
     });
     void fid()
       .approvals.pending()
       .then((list) => setPendingApprovals(list))
+      .catch(() => undefined);
+    void fid()
+      .questions.pending()
+      .then((list) => setPendingQuestions(list))
+      .catch(() => undefined);
+    void fid()
+      .handoffs.pending()
+      .then((list) => setPendingHandoffs(list))
+      .catch(() => undefined);
+    void fid()
+      .skillSaves.pending()
+      .then((list) => setPendingSkillSaves(list))
       .catch(() => undefined);
     return () => fid().chat.offEvent(id);
   }, []);
@@ -330,6 +396,72 @@ export function App() {
   async function toggleRoutine(routine: Routine) {
     await fid().routines.update(routine.id, { enabled: !routine.enabled });
     await Promise.all([refreshRoutines(), refreshAgents()]);
+  }
+
+  async function takeoverHandoff() {
+    if (!handoff || handoffBusy || handoff.takenOver) return;
+    const handoffId = handoff.id;
+    setHandoffBusy(true);
+    setHandoffError(null);
+    setPendingHandoffs((current) =>
+      current.map((item) => (item.id === handoffId ? { ...item, takenOver: true } : item)),
+    );
+    try {
+      const open = await fid().handoffs.takeover(handoffId);
+      if (!open) setHandoffError("The browser window is not open yet.");
+    } catch (caught) {
+      setHandoffError(errorText(caught));
+    } finally {
+      setHandoffBusy(false);
+    }
+  }
+
+  async function completeHandoff() {
+    if (!handoff || handoffBusy) return;
+    const handoffId = handoff.id;
+    setHandoffBusy(true);
+    setHandoffError(null);
+    try {
+      const accepted = await fid().handoffs.done(handoffId);
+      if (!accepted) setHandoffError("That handoff already closed.");
+      else setPendingHandoffs((current) => current.filter((item) => item.id !== handoffId));
+    } catch (caught) {
+      setHandoffError(errorText(caught));
+    } finally {
+      setHandoffBusy(false);
+    }
+  }
+
+  async function decideSkillSave(allow: boolean, draft?: SkillDraftInput) {
+    if (!skillSave || savingSkill) return;
+    const requestId = skillSave.id;
+    setSavingSkill(true);
+    setSkillSaveError(null);
+    try {
+      const accepted = await fid().skillSaves.decide(requestId, allow, draft);
+      if (!accepted) setSkillSaveError("That skill already closed.");
+      else setPendingSkillSaves((current) => current.filter((item) => item.id !== requestId));
+    } catch (caught) {
+      setSkillSaveError(errorText(caught));
+    } finally {
+      setSavingSkill(false);
+    }
+  }
+
+  async function answerQuestion(reply: QuestionReply) {
+    if (!question || answeringQuestion) return;
+    const questionId = question.id;
+    setAnsweringQuestion(true);
+    setQuestionError(null);
+    try {
+      const accepted = await fid().questions.answer(questionId, reply);
+      if (!accepted) setQuestionError("That question already closed.");
+      setPendingQuestions((current) => current.filter((item) => item.id !== questionId));
+    } catch (caught) {
+      setQuestionError(errorText(caught));
+    } finally {
+      setAnsweringQuestion(false);
+    }
   }
 
   async function decideApproval(action: ApprovalAction) {
@@ -481,6 +613,15 @@ export function App() {
     void startSignIn();
   }
 
+  async function placeAgent(agent: Agent, placement: AgentPlacement) {
+    try {
+      const updated = await fid().agents.place(agent.id, placement);
+      setAgents((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (caught) {
+      setLoadError(errorText(caught));
+    }
+  }
+
   async function deleteAgent(agent: Agent) {
     await fid().agents.delete(agent.id);
     setPendingDelete(null);
@@ -495,8 +636,17 @@ export function App() {
 
   const selected = agents.find((agent) => agent.id === agentId) ?? null;
   const approval = pendingApprovals.find((item) => item.agentId === agentId) ?? null;
+  const question = pendingQuestions.find((item) => item.agentId === agentId) ?? null;
+  const handoff = pendingHandoffs.find((item) => item.agentId === agentId) ?? null;
+  const skillSave = pendingSkillSaves.find((item) => item.agentId === agentId) ?? null;
   const otherApprovals = pendingApprovals.filter((item) => item.agentId !== agentId);
+  const otherQuestions = pendingQuestions.filter((item) => item.agentId !== agentId);
+  const otherHandoffs = pendingHandoffs.filter((item) => item.agentId !== agentId);
+  const otherSkillSaves = pendingSkillSaves.filter((item) => item.agentId !== agentId);
   const otherApproval = otherApprovals[0] ?? null;
+  const otherQuestion = otherQuestions[0] ?? null;
+  const otherHandoff = otherHandoffs[0] ?? null;
+  const otherSkillSave = otherSkillSaves[0] ?? null;
   const editing = dialog?.kind === "edit" ? (agents.find((agent) => agent.id === dialog.agentId) ?? null) : null;
   const copilotPresence: CopilotPresence = settings?.signedIn
     ? "ready"
@@ -529,6 +679,7 @@ export function App() {
           onSelect={setAgentId}
           onCreate={openCreate}
           onEdit={openEdit}
+          onPlace={(agent, placement) => void placeAgent(agent, placement)}
           onDelete={setPendingDelete}
           onSettings={() => openSettings("copilot")}
           onSkills={openSkills}
@@ -543,6 +694,48 @@ export function App() {
                 <X size={12} />
               </button>
             </div>
+          ) : null}
+          {otherHandoff ? (
+            <button
+              type="button"
+              className="approval-notice"
+              onClick={() => setAgentId(otherHandoff.agentId)}
+            >
+              <LogIn size={13} aria-hidden="true" />
+              <span>
+                Needs you in the browser for {otherHandoff.agentName}
+                {otherHandoffs.length > 1 ? ` +${otherHandoffs.length - 1}` : ""}
+              </span>
+              <b>Open</b>
+            </button>
+          ) : null}
+          {otherSkillSave ? (
+            <button
+              type="button"
+              className="approval-notice"
+              onClick={() => setAgentId(otherSkillSave.agentId)}
+            >
+              <Save size={13} aria-hidden="true" />
+              <span>
+                Save a skill for {otherSkillSave.agentName}
+                {otherSkillSaves.length > 1 ? ` +${otherSkillSaves.length - 1}` : ""}
+              </span>
+              <b>Open</b>
+            </button>
+          ) : null}
+          {otherQuestion ? (
+            <button
+              type="button"
+              className="approval-notice"
+              onClick={() => setAgentId(otherQuestion.agentId)}
+            >
+              <CircleHelp size={13} aria-hidden="true" />
+              <span>
+                Answer needed for {otherQuestion.agentName}
+                {otherQuestions.length > 1 ? ` +${otherQuestions.length - 1}` : ""}
+              </span>
+              <b>Open</b>
+            </button>
           ) : null}
           {otherApproval ? (
             <button
@@ -580,6 +773,19 @@ export function App() {
               approvalBusy={decidingApproval}
               approvalError={approvalError}
               onApprovalDecision={(action) => void decideApproval(action)}
+              handoff={handoff}
+              handoffBusy={handoffBusy}
+              handoffError={handoffError}
+              onHandoffTakeover={() => void takeoverHandoff()}
+              onHandoffDone={() => void completeHandoff()}
+              skillSave={skillSave}
+              skillSaveBusy={savingSkill}
+              skillSaveError={skillSaveError}
+              onSkillSaveDecide={(allow, draft) => void decideSkillSave(allow, draft)}
+              question={question}
+              questionBusy={answeringQuestion}
+              questionError={questionError}
+              onQuestionAnswer={(reply) => void answerQuestion(reply)}
               onStartSignIn={startSignInFromChat}
               onRetryModels={() => void refreshModels()}
               onToggleDesk={toggleDesk}

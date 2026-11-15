@@ -85,6 +85,22 @@ The shell tool pauses before a delete, a git push, or a download. A compact appr
 
 **Always allow** and **Always deny** save a rule for that exact command and folder. Deny rules win over allow rules. Ending the turn or ignoring the countdown rejects the command. Every request and decision appears in the Agent Desk approvals history, and saved rules are under **Settings → Safety**.
 
+## Answer a question
+
+When the agent needs a preference it cannot look up, it asks one question in the conversation. The card lists two to four choices. Pick one, or type your own answer and choose **Answer**. **Skip**, or waiting about two minutes, lets the agent continue with no answer. It should not ask again in that turn.
+
+![The question card with two choices, an own-answer box, and Skip.](images/answer-question.png)
+
+Stopping the turn, or closing Fid Coder, closes the card. The card is not saved. Ask mode can ask too. A routine that creates another routine cannot, and a scheduled run that nobody answers continues after the countdown. If another agent is waiting, a bar at the top of the chat opens that agent.
+
+## Hand the browser back
+
+When a page needs you to sign in or solve a captcha, the agent shows a **Needs you** card. Turn on **I have the browser** to bring that agent's browser window forward. Sign in there. The agent cannot click, type, navigate, or read the page while the card is open. Choose **Done** when you are finished. It takes a fresh snapshot before the next click, type, or page change, and it does not ask you to paste a password into the chat.
+
+![The Needs you card with the sign-in reason, the browser switch, and Done.](images/handoff-card.png)
+
+The card waits about ten minutes. If the time runs out, the agent continues and still starts with a fresh snapshot. Stop closes the card. The card is not saved. If another agent needs the browser, a bar at the top of the chat opens that agent.
+
 ## Recall an older issue
 
 Ask the agent what you worked on earlier, or name the issue. It can search the saved conversation by text or date, read only the matching turn, load a small date window, or read the first message. The full transcript stays on this PC; the agent loads what it needs instead of replaying the whole conversation.
