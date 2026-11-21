@@ -13,11 +13,39 @@ import type {
   SkillSaveOutcome,
 } from "../shared/types";
 
+export type CapturedBrowserResponse = {
+  url: string;
+  method: string;
+  status: number;
+  contentType: string;
+  body: string;
+};
+
+export type BrowserCaptureResult = {
+  /** The URL the page ended on, which may be an SSO or error page. */
+  pageUrl: string;
+  responses: CapturedBrowserResponse[];
+};
+
+export type BrowserCaptureOptions = {
+  /** Origins the capture may navigate to and record. The tool supplies this. */
+  allowedOrigins?: string[];
+  urlPattern?: string;
+  settleMs?: number;
+  maxBodies?: number;
+  maxBodyChars?: number;
+};
+
 export interface BrowserControl {
   navigate(agentId: string, url: string): Promise<string>;
   snapshot(agentId: string): Promise<string>;
   click(agentId: string, selector: string): Promise<string>;
   type(agentId: string, selector: string, text: string, submit: boolean): Promise<string>;
+  capture(
+    agentId: string,
+    url: string,
+    options?: BrowserCaptureOptions,
+  ): Promise<BrowserCaptureResult>;
 }
 
 export const MAX_CHECKPOINT_BYTES = 2_000_000;
@@ -67,6 +95,7 @@ export type ToolContext = {
   confluenceSite: string | null;
   confluenceEmail: string | null;
   confluenceMode: ConfluenceMode;
+  datadogUrl?: string | null;
   explore?: (question: string) => Promise<string>;
   review?: (target: string) => Promise<string>;
   checkpoint?: CheckpointPort;

@@ -104,7 +104,7 @@ Run the smallest set that proves the change, then the relevant end-to-end path.
 | Integration | `npm test` (integration part) | DB, main-process wiring, tools, IPC-adjacent logic. Mock Copilot. |
 | Deterministic UI | `npm run test:changes` | Seeded changes card, Workspace panel, changed list, lazy file tree, citation bridge, file revert, and turn revert. No Copilot turn. |
 | Deterministic UI | `npm run test:skills` | Electron UI, Ask mode, starters, cached project map, the in-place citation view, navigator references, the lazy workspace tree, clean diagram labels, full-screen diagrams, library, help screenshots. No Copilot turn. |
-| Deterministic UI | `npm run test:routines` | Electron UI for one-time and repeating routines, the Once editor, creation, deletion, the Desk list, run history, and the inbox. No Copilot turn. |
+| Deterministic UI | `npm run test:routines` | Electron UI for one-time and repeating routines, the Once editor, creation, deletion, the Desk list, run history, the Needs you board, and the all-routines list. No Copilot turn. |
 | Deterministic UI | `npm run test:questions` | Electron UI for the ask_user card: choices, own answer, skip, a resolved event, and the other-agent banner. No Copilot turn. |
 | Deterministic UI | `npm run test:queue` | Electron UI for the queued-message panel: visible row actions, edit, cancel, Send next, and Clear. No Copilot turn. |
 | Live UI | `npm run test:queue-live` | Queue during a real ask_user turn, let it drain, then Send now and keep the remaining queue. Needs Copilot. |
@@ -134,6 +134,7 @@ Rules:
 - Use a temporary `FID_CODER_USER_DATA`; never touch the real profile. Set `FID_CLEAN=1` to delete artifacts.
 - If a suite is blocked by account state (for example, no selectable models), report it as blocked, not passed.
 - After a behavior change, update the test that encoded the old behavior. Do not leave a stale test name.
+- **Restart Electron after a `src/main` or `src/preload` change.** The dev script rebuilds those files, but the running process and preload keep the old bridge. Vite's renderer reload is not enough when a new IPC channel or preload method is added; a missing method shows as `... is not a function`.
 
 ### Screenshots
 

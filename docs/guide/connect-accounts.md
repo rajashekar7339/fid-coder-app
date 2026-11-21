@@ -1,8 +1,8 @@
-# Connect Copilot, GitHub, Jira, and Confluence
+# Connect Copilot, GitHub, Jira, Confluence, and Datadog
 
-Copilot is the account your agents use to think and call tools. GitHub, Jira, and Confluence tokens are optional connections that give agents access to pull requests, Jira data, and Confluence pages.
+Copilot is the account your agents use to think and call tools. GitHub, Jira, and Confluence tokens are optional connections that give agents access to pull requests, Jira data, and Confluence pages. Datadog is optional too, but it uses the browser session instead of a token.
 
-![Settings with a demo Copilot account connected and the optional GitHub and Jira connections enabled; Confluence is in the same list.](images/settings.png)
+![Settings with a demo Copilot account connected. Optional connections appear in the same list.](images/settings.png)
 
 ## Sign in to Copilot
 
@@ -48,14 +48,39 @@ A Markdown replace is refused when the page already contains Confluence macros, 
 
 Ask mode gets the two read-only tools; Agent mode adds `confluence_update_page`. A routine never gets the update tool. A browser agent can use the Confluence tools too; no extra folder is required.
 
+## Add Datadog access
+
+Open **Settings → Datadog** and save the address you use to open Datadog, such as `https://app.datadoghq.com`. A custom host is fine. A pasted Log Explorer, monitor, or other deep link is trimmed to the site.
+
+**No API key is requested or stored.** Save the URL and close Settings. The badge shows **Browser**, and the Datadog Analyst uses the local headed browser:
+
+1. Ask the Datadog Analyst to troubleshoot a symptom.
+2. If Datadog asks for a sign-in, the **Needs you** card appears. Sign in in the visible browser, then choose **Done**.
+3. The agent opens the Log Explorer with the query and time range, captures the page's JSON log response, and returns compact rows with service, environment, version, host, trace id, message, and stack.
+4. It then reads the workspace, maps the stack to code, and reports the root cause.
+
+![Datadog settings in browser mode: a saved URL, no keys, and a Browser badge.](images/datadog-settings.png)
+
+The agent has two read-only tools: `datadog_browser_logs` searches the Log Explorer, and `datadog_browser_error_summary` groups the captured page sample into error patterns. Browser results are a page sample, not the full index; the agent labels them that way. The browser profile keeps the Datadog login for later turns.
+
+The Datadog profile is read-only. It has no shell, file writes, browser click/type, or Confluence update. Log text is treated as untrusted data. The capture is limited to the configured Datadog origin and records JSON responses only, never cookies or request headers. The session credential stays in the browser; the agent and the model never see it.
+
+Log text is sent to Copilot as tool output. Keep queries narrow and avoid searching for secrets or customer data you should not send to the model.
+
 ## Review approval rules
 
-Open **Settings → Safety** to review saved allow and deny rules. Each rule names the agent, command, and folder. Choose the trash button to remove a rule and start asking again. Deny rules win over allow rules.
+Open **Settings → Safety** to review approval rules. Three built-in denies always apply and cannot be removed: `format`, `diskpart`, and the system-root `rm -rf /`. They are checked before any saved rule, so an allow rule cannot override them. `format` blocks `format` and any arguments, such as `format C: /q`; `diskpart` blocks `diskpart` and its scripts; `rm -rf /` blocks `rm -rf /`, `rm -rf /*`, and `rm -rf --no-preserve-root /`.
+
+Below them, choose **New rule** to add a saved rule. Pick **All agents** or one agent, **Always allow** or **Always deny**, the command, **Exact command** or **Starts with**, and a folder (leave it empty for any folder). **Starts with** matches at a word boundary, so `git push` covers `git push --force` but not `git pushx`. Use the pencil to edit a saved rule and the trash button to delete it. Deny rules win over allow rules. A saved rule is checked when a sensitive command asks for approval; it does not make a command sensitive by itself.
+
+![Settings → Safety with the three built-in denies, the New rule action, and the saved-rules section below.](images/approval-rules.png)
 
 ## Where the credentials live
 
-Tokens are encrypted with Windows `safeStorage` and stored in `secrets.bin.json` under `%USERPROFILE%\.fid_coder_app`. The app does not send tokens to Copilot or print them in chat. A local tool such as `gh` can use its token to call its own service. Jira diagnostics go to `%USERPROFILE%\.fid_coder_app\logs\fid-coder.log`.
+Jira, Confluence, and GitHub tokens are encrypted with Windows `safeStorage` and stored in `secrets.bin.json` under `%USERPROFILE%\.fid_coder_app`. The app does not send them to Copilot or print them in chat. A local tool such as `gh` can use its token to call its own service. Jira diagnostics go to `%USERPROFILE%\.fid_coder_app\logs\fid-coder.log`.
 
-Saving or clearing a token or the Jira or Confluence site drops every live Copilot session. The saved conversations stay; the next message rebuilds context from the transcript.
+There is no Datadog API key. The Datadog session lives in the agent's persistent browser profile, like any other browser login. Fid Coder does not copy the cookie or token out of the browser.
 
-> **Tip:** Copilot is required. GitHub, Jira, and Confluence are optional. A browser agent reads Jira with a saved site and PAT, or through the browser when no PAT is saved.
+Saving or clearing a token or the Jira, Confluence, or Datadog site drops every live Copilot session. The saved conversations stay; the next message rebuilds context from the transcript.
+
+> **Tip:** Copilot is required. GitHub, Jira, Confluence, and Datadog are optional. A browser agent reads Jira with a saved site and PAT, or through the browser when no PAT is saved. The Datadog Analyst always uses the logged-in local browser; no Datadog API key is stored.

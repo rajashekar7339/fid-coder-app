@@ -31,7 +31,7 @@ import { RoutinesDialog } from "./components/routines/RoutinesDialog";
 import { SkillsDialog } from "./components/skills/SkillsDialog";
 import { SettingsDialog, type SettingsSection, type SignInNote } from "./components/settings/SettingsDialog";
 import { Sidebar, type CopilotPresence } from "./components/sidebar/Sidebar";
-import type { InboxItem, InboxView } from "../shared/inbox";
+import { inboxBadgeCount, type InboxItem, type InboxView } from "../shared/inbox";
 import { errorText, fid, hasFid } from "./lib/fid";
 import {
   clampWorkspaceWidth,
@@ -39,6 +39,12 @@ import {
   MIN_WORKSPACE_WIDTH,
   WORKSPACE_WIDTH_KEY,
 } from "./lib/layout";
+
+type CardNotice = { id: string; text: string } | null;
+
+function noticeText(notice: CardNotice, id: string | null | undefined): string | null {
+  return notice && notice.id === id ? notice.text : null;
+}
 
 type Dialog =
   | { kind: "create" }
@@ -93,17 +99,17 @@ export function App() {
   const [checkingSignIn, setCheckingSignIn] = useState(false);
   const [signInNote, setSignInNote] = useState<SignInNote | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
-  const [decidingApproval, setDecidingApproval] = useState(false);
-  const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [decidingApprovalId, setDecidingApprovalId] = useState<string | null>(null);
+  const [approvalError, setApprovalError] = useState<CardNotice>(null);
   const [pendingQuestions, setPendingQuestions] = useState<QuestionRequest[]>([]);
-  const [answeringQuestion, setAnsweringQuestion] = useState(false);
-  const [questionError, setQuestionError] = useState<string | null>(null);
+  const [answeringQuestionId, setAnsweringQuestionId] = useState<string | null>(null);
+  const [questionError, setQuestionError] = useState<CardNotice>(null);
   const [pendingHandoffs, setPendingHandoffs] = useState<BrowserHandoffRequest[]>([]);
-  const [handoffBusy, setHandoffBusy] = useState(false);
-  const [handoffError, setHandoffError] = useState<string | null>(null);
+  const [handoffBusyId, setHandoffBusyId] = useState<string | null>(null);
+  const [handoffError, setHandoffError] = useState<CardNotice>(null);
   const [pendingSkillSaves, setPendingSkillSaves] = useState<SkillSaveRequest[]>([]);
-  const [savingSkill, setSavingSkill] = useState(false);
-  const [skillSaveError, setSkillSaveError] = useState<string | null>(null);
+  const [savingSkillId, setSavingSkillId] = useState<string | null>(null);
+  const [skillSaveError, setSkillSaveError] = useState<CardNotice>(null);
   const [skillSeed, setSkillSeed] = useState<string | null>(null);
   const [skillsRevision, setSkillsRevision] = useState(0);
   const [pendingAttachments, setPendingAttachments] = useState<MessageAttachment[]>([]);
@@ -202,6 +208,20 @@ export function App() {
 
   const snoozeInboxItem = useCallback(async (item: InboxItem) => {
     setInbox(await fid().inbox.snooze(item.id));
+  }, []);
+
+  const dismissInboxItem = useCallback(async (item: InboxItem) => {
+    setInbox(await fid().inbox.read(item.id));
+  }, []);
+
+  const openInboxAgent = useCallback((nextAgentId: string) => {
+    setAgentId(nextAgentId);
+    setDialog(null);
+  }, []);
+
+  const openAgentRoutines = useCallback((nextAgentId: string) => {
+    setAgentId(nextAgentId);
+    setDialog({ kind: "routines" });
   }, []);
 
   const refreshChanges = useCallback(
@@ -314,7 +334,7 @@ export function App() {
         });
       }
       if (event.type === "approval-resolved") {
-        setDecidingApproval(false);
+        setDecidingApprovalId(null);
         setPendingApprovals((current) => current.filter((item) => item.id !== event.approvalId));
       }
       if (event.type === "question-request") {
@@ -325,7 +345,7 @@ export function App() {
         });
       }
       if (event.type === "question-resolved") {
-        setAnsweringQuestion(false);
+        setAnsweringQuestionId(null);
         setPendingQuestions((current) => current.filter((item) => item.id !== event.questionId));
       }
       if (event.type === "handoff-request") {
@@ -341,7 +361,7 @@ export function App() {
         );
       }
       if (event.type === "handoff-resolved") {
-        setHandoffBusy(false);
+        setHandoffBusyId(null);
         setPendingHandoffs((current) => current.filter((item) => item.id !== event.handoffId));
       }
       if (event.type === "skill-save-request") {
@@ -352,7 +372,7 @@ export function App() {
         });
       }
       if (event.type === "skill-save-resolved") {
-        setSavingSkill(false);
+        setSavingSkillId(null);
         setPendingSkillSaves((current) => current.filter((item) => item.id !== event.requestId));
         if (event.saved) setSkillsRevision((current) => current + 1);
       }
@@ -515,84 +535,85 @@ export function App() {
     await Promise.all([refreshRoutines(), refreshAgents()]);
   }
 
-  async function takeoverHandoff() {
-    if (!handoff || handoffBusy || handoff.takenOver) return;
-    const handoffId = handoff.id;
-    setHandoffBusy(true);
+  async function takeoverHandoff(requestId?: string) {
+    const handoffId = requestId ?? handoff?.id;
+    const current = pendingHandoffs.find((item) => item.id === handoffId);
+    if (!handoffId || !current || handoffBusyId || current.takenOver) return;
+    setHandoffBusyId(handoffId);
     setHandoffError(null);
-    setPendingHandoffs((current) =>
-      current.map((item) => (item.id === handoffId ? { ...item, takenOver: true } : item)),
+    setPendingHandoffs((items) =>
+      items.map((item) => (item.id === handoffId ? { ...item, takenOver: true } : item)),
     );
     try {
       const open = await fid().handoffs.takeover(handoffId);
-      if (!open) setHandoffError("The browser window is not open yet.");
+      if (!open) setHandoffError({ id: handoffId, text: "The browser window is not open yet." });
     } catch (caught) {
-      setHandoffError(errorText(caught));
+      setHandoffError({ id: handoffId, text: errorText(caught) });
     } finally {
-      setHandoffBusy(false);
+      setHandoffBusyId((busy) => (busy === handoffId ? null : busy));
     }
   }
 
-  async function completeHandoff() {
-    if (!handoff || handoffBusy) return;
-    const handoffId = handoff.id;
-    setHandoffBusy(true);
+  async function completeHandoff(requestId?: string) {
+    const handoffId = requestId ?? handoff?.id;
+    if (!handoffId || handoffBusyId) return;
+    setHandoffBusyId(handoffId);
     setHandoffError(null);
     try {
       const accepted = await fid().handoffs.done(handoffId);
-      if (!accepted) setHandoffError("That handoff already closed.");
-      else setPendingHandoffs((current) => current.filter((item) => item.id !== handoffId));
+      if (!accepted) setHandoffError({ id: handoffId, text: "That handoff already closed." });
+      else setPendingHandoffs((items) => items.filter((item) => item.id !== handoffId));
     } catch (caught) {
-      setHandoffError(errorText(caught));
+      setHandoffError({ id: handoffId, text: errorText(caught) });
     } finally {
-      setHandoffBusy(false);
+      setHandoffBusyId((busy) => (busy === handoffId ? null : busy));
     }
   }
 
-  async function decideSkillSave(allow: boolean, draft?: SkillDraftInput) {
-    if (!skillSave || savingSkill) return;
-    const requestId = skillSave.id;
-    setSavingSkill(true);
+  async function decideSkillSave(allow: boolean, draft?: SkillDraftInput, requestId?: string) {
+    const skillId = requestId ?? skillSave?.id;
+    if (!skillId || savingSkillId) return;
+    setSavingSkillId(skillId);
     setSkillSaveError(null);
     try {
-      const accepted = await fid().skillSaves.decide(requestId, allow, draft);
-      if (!accepted) setSkillSaveError("That skill already closed.");
-      else setPendingSkillSaves((current) => current.filter((item) => item.id !== requestId));
+      const accepted = await fid().skillSaves.decide(skillId, allow, draft);
+      if (!accepted) setSkillSaveError({ id: skillId, text: "That skill already closed." });
+      else setPendingSkillSaves((items) => items.filter((item) => item.id !== skillId));
     } catch (caught) {
-      setSkillSaveError(errorText(caught));
+      setSkillSaveError({ id: skillId, text: errorText(caught) });
     } finally {
-      setSavingSkill(false);
+      setSavingSkillId((busy) => (busy === skillId ? null : busy));
     }
   }
 
-  async function answerQuestion(reply: QuestionReply) {
-    if (!question || answeringQuestion) return;
-    const questionId = question.id;
-    setAnsweringQuestion(true);
+  async function answerQuestion(reply: QuestionReply, requestId?: string) {
+    const questionId = requestId ?? question?.id;
+    if (!questionId || answeringQuestionId) return;
+    setAnsweringQuestionId(questionId);
     setQuestionError(null);
     try {
       const accepted = await fid().questions.answer(questionId, reply);
-      if (!accepted) setQuestionError("That question already closed.");
-      setPendingQuestions((current) => current.filter((item) => item.id !== questionId));
+      if (!accepted) setQuestionError({ id: questionId, text: "That question already closed." });
+      setPendingQuestions((items) => items.filter((item) => item.id !== questionId));
     } catch (caught) {
-      setQuestionError(errorText(caught));
+      setQuestionError({ id: questionId, text: errorText(caught) });
     } finally {
-      setAnsweringQuestion(false);
+      setAnsweringQuestionId((busy) => (busy === questionId ? null : busy));
     }
   }
 
-  async function decideApproval(action: ApprovalAction) {
-    if (!approval || decidingApproval) return;
-    const approvalId = approval.id;
-    setDecidingApproval(true);
+  async function decideApproval(action: ApprovalAction, requestId?: string) {
+    const approvalId = requestId ?? approval?.id;
+    if (!approvalId || decidingApprovalId) return;
+    setDecidingApprovalId(approvalId);
     setApprovalError(null);
     try {
       await fid().approvals.decide(approvalId, action);
-      setPendingApprovals((current) => current.filter((item) => item.id !== approvalId));
+      setPendingApprovals((items) => items.filter((item) => item.id !== approvalId));
     } catch (caught) {
-      setApprovalError(errorText(caught));
+      setApprovalError({ id: approvalId, text: errorText(caught) });
     } finally {
-      setDecidingApproval(false);
+      setDecidingApprovalId((busy) => (busy === approvalId ? null : busy));
     }
   }
 
@@ -764,6 +785,10 @@ export function App() {
   const otherQuestion = otherQuestions[0] ?? null;
   const otherHandoff = otherHandoffs[0] ?? null;
   const otherSkillSave = otherSkillSaves[0] ?? null;
+  const inboxBadge = inboxBadgeCount(
+    inbox.unread,
+    pendingQuestions.length + pendingHandoffs.length + pendingSkillSaves.length,
+  );
   const editing = dialog?.kind === "edit" ? (agents.find((agent) => agent.id === dialog.agentId) ?? null) : null;
   const copilotPresence: CopilotPresence = settings?.signedIn
     ? "ready"
@@ -806,7 +831,7 @@ export function App() {
           onSettings={() => openSettings("copilot")}
           onSkills={openSkills}
           onHelp={openHelp}
-          inboxCount={inbox.unread}
+          inboxCount={inboxBadge}
           onInbox={() => setDialog({ kind: "inbox" })}
           runningAgentIds={runningAgentIds}
         />
@@ -895,21 +920,21 @@ export function App() {
               onOpenChanges={openChanges}
               onRefreshChanges={() => refreshChanges()}
               approval={approval}
-              approvalBusy={decidingApproval}
-              approvalError={approvalError}
+              approvalBusy={approval !== null && decidingApprovalId === approval.id}
+              approvalError={noticeText(approvalError, approval?.id)}
               onApprovalDecision={(action) => void decideApproval(action)}
               handoff={handoff}
-              handoffBusy={handoffBusy}
-              handoffError={handoffError}
+              handoffBusy={handoff !== null && handoffBusyId === handoff.id}
+              handoffError={noticeText(handoffError, handoff?.id)}
               onHandoffTakeover={() => void takeoverHandoff()}
               onHandoffDone={() => void completeHandoff()}
               skillSave={skillSave}
-              skillSaveBusy={savingSkill}
-              skillSaveError={skillSaveError}
+              skillSaveBusy={skillSave !== null && savingSkillId === skillSave.id}
+              skillSaveError={noticeText(skillSaveError, skillSave?.id)}
               onSkillSaveDecide={(allow, draft) => void decideSkillSave(allow, draft)}
               question={question}
-              questionBusy={answeringQuestion}
-              questionError={questionError}
+              questionBusy={question !== null && answeringQuestionId === question.id}
+              questionError={noticeText(questionError, question?.id)}
               onQuestionAnswer={(reply) => void answerQuestion(reply)}
               onStartSignIn={startSignInFromChat}
               onRetryModels={() => void refreshModels()}
@@ -933,7 +958,7 @@ export function App() {
         {showDesk && selected ? (
           <AgentDesk
             agent={selected}
-            routines={routines}
+            routines={routines.filter((routine) => routine.agentId === selected.id)}
             latestChange={changeSets[0] ?? null}
             changesLoading={changesLoading}
             changesError={changesError}
@@ -1015,7 +1040,7 @@ export function App() {
       {dialog?.kind === "routines" && selected ? (
         <RoutinesDialog
           agent={selected}
-          routines={routines}
+          routines={routines.filter((routine) => routine.agentId === selected.id)}
           onClose={() => setDialog(null)}
           onRefresh={refreshRoutinesForDialog}
         />
@@ -1024,9 +1049,29 @@ export function App() {
       {dialog?.kind === "inbox" ? (
         <InboxDialog
           view={inbox}
+          approvals={pendingApprovals}
+          questions={pendingQuestions}
+          handoffs={pendingHandoffs}
+          skillSaves={pendingSkillSaves}
+          approvalBusyId={decidingApprovalId}
+          questionBusyId={answeringQuestionId}
+          handoffBusyId={handoffBusyId}
+          skillSaveBusyId={savingSkillId}
+          approvalError={approvalError}
+          questionError={questionError}
+          handoffError={handoffError}
+          skillSaveError={skillSaveError}
           onClose={() => setDialog(null)}
           onOpen={(item) => void openInboxItem(item).catch((caught: unknown) => setLoadError(errorText(caught)))}
           onSnooze={(item) => void snoozeInboxItem(item).catch((caught: unknown) => setLoadError(errorText(caught)))}
+          onDismiss={(item) => void dismissInboxItem(item).catch((caught: unknown) => setLoadError(errorText(caught)))}
+          onOpenAgent={openInboxAgent}
+          onDecideApproval={(id, action) => void decideApproval(action, id)}
+          onAnswerQuestion={(id, reply) => void answerQuestion(reply, id)}
+          onTakeoverHandoff={(id) => void takeoverHandoff(id)}
+          onCompleteHandoff={(id) => void completeHandoff(id)}
+          onDecideSkillSave={(id, allow, draft) => void decideSkillSave(allow, draft, id)}
+          onOpenRoutines={openAgentRoutines}
         />
       ) : null}
 
@@ -1044,6 +1089,7 @@ export function App() {
 
       {dialog?.kind === "settings" ? (
         <SettingsDialog
+          agents={agents}
           settings={settings}
           usage={usage}
           usageMessage={usageMessage}

@@ -874,3 +874,20 @@ test("a repeating routine must wait at least 15 minutes and a one-time routine i
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("list all routines returns every agent name", () => {
+  const { dir, db } = tempDatabase();
+  try {
+    const alpha = createAgent(db, "Alpha");
+    const beta = createAgent(db, "Beta");
+    repeatingRoutine(db, alpha, "Morning", futureIso());
+    repeatingRoutine(db, beta, "Evening", futureIso());
+    const service = new RoutineService(db, { reload() {} });
+    const names = service.listAll().map((routine) => `${routine.agentName}: ${routine.name}`);
+    assert.deepEqual(names, ["Alpha: Morning", "Beta: Evening"]);
+    assert.equal(db.listAllRoutines().length, 2);
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

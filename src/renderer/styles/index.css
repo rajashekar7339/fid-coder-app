@@ -25,6 +25,8 @@
   --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
   /* Chat and composer cap; both stay fluid below this width. */
   --chat-column: 1180px;
+  /* Native minimize, maximize, and close controls at the top right. */
+  --window-controls: 152px;
   --shadow-lg: 0 24px 72px rgba(0, 0, 0, 0.45), 0 2px 14px rgba(0, 0, 0, 0.24);
   color-scheme: dark;
 }
@@ -619,6 +621,23 @@ select option {
   grid-template-columns: 276px minmax(0, 1fr);
   background: var(--canvas);
   overflow: hidden;
+}
+
+/* The native title text is hidden; the top headers drag the window. */
+:is(.sidebar-brand, .chat-header, .desk-header, .changes-head, .empty-app, .full-message) {
+  -webkit-app-region: drag;
+}
+
+:is(.sidebar-brand, .chat-header, .desk-header, .empty-app, .full-message) :is(button, input, a),
+.changes-head :is(button, input, a, [role="button"], [role="menu"]) {
+  -webkit-app-region: no-drag;
+}
+
+/* Leave the native minimize, maximize, and close controls clear. */
+.app-shell.has-desk .desk-header,
+.app-shell.has-changes .changes-head,
+.app-shell:not(.has-desk):not(.has-changes) .chat-header {
+  padding-right: var(--window-controls);
 }
 
 .app-shell.has-desk {
@@ -6005,12 +6024,100 @@ select option {
 }
 
 .inbox-modal {
-  width: min(520px, calc(100vw - 32px));
+  width: min(680px, calc(100vw - 32px));
 }
 
 .inbox-body {
   min-height: 180px;
+  max-height: min(70vh, 640px);
+  overflow: auto;
   padding: 4px 16px 16px;
+}
+
+.inbox-tabs {
+  margin-bottom: 12px;
+}
+
+.inbox-section-label {
+  margin: 4px 0 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.inbox-agent-block + .inbox-agent-block,
+.inbox-section + .inbox-section {
+  margin-top: 14px;
+}
+
+.inbox-agent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.inbox-waiting {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inbox-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inbox-since {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.inbox-actions {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.inbox-routine-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.inbox-routine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.inbox-routine-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.inbox-routine > .btn,
+.inbox-routine > .switch {
+  flex: none;
+}
+
+.inbox-meta .is-success {
+  color: var(--success);
+}
+
+.inbox-meta .is-error {
+  color: var(--danger);
 }
 
 .inbox-list {
@@ -6266,6 +6373,10 @@ select option {
 
 .connection-icon.is-confluence {
   color: #8fc7e8;
+}
+
+.connection-icon.is-datadog {
+  color: #c7a4f4;
 }
 
 .connection-copy {
@@ -7440,6 +7551,70 @@ select option {
   font-size: 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.approval-rule.is-built-in {
+  border-color: rgba(216, 248, 120, 0.1);
+  background: rgba(216, 248, 120, 0.025);
+}
+
+.approval-rule-lock {
+  flex: none;
+  color: var(--faint-2);
+}
+
+.approval-rule-copy .approval-rule-detail {
+  color: var(--faint-2);
+  font-size: 8.5px;
+  line-height: 1.4;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.connection-head-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.approval-rule-form {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.approval-form-title {
+  margin-bottom: 8px;
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.approval-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 9px;
+}
+
+.approval-form-grid .input {
+  width: 100%;
+}
+
+.approval-form-wide {
+  grid-column: 1 / -1;
+}
+
+.approval-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .connection-icon.is-safety {

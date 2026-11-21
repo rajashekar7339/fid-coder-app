@@ -39,6 +39,15 @@ export function inboxRowVisible(row: { snoozeUntil: string | null }, now: number
   return !Number.isFinite(until) || until <= now;
 }
 
+export function inboxUpdates(items: InboxItem[]): InboxItem[] {
+  return items.filter((item) => item.kind !== "approval");
+}
+
+/** `baseUnread` already includes approvals; `liveWaiting` is questions, handoffs, and skill saves. */
+export function inboxBadgeCount(baseUnread: number, liveWaiting: number): number {
+  return baseUnread + Math.max(0, liveWaiting);
+}
+
 export function buildInbox(rows: StoredInboxRow[], approvals: ApprovalRequest[], now: number): InboxView {
   const approvalItems: InboxItem[] = approvals
     .map((approval) => ({

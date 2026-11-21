@@ -1,28 +1,32 @@
 import { app, Notification, shell } from "electron";
 import fs from "fs";
 import path from "path";
+import { appIconIcoPath, appIconPath } from "../icon";
+import { appIdentity } from "../identity";
 
-const APP_USER_MODEL_ID = "com.fidcoder.desktop";
 let shortcutReady = false;
 
 export function ensureWindowsToastShortcut(): boolean {
   if (process.platform !== "win32") return false;
   if (shortcutReady) return true;
+  const identity = appIdentity();
   const shortcut = path.join(
     app.getPath("appData"),
     "Microsoft",
     "Windows",
     "Start Menu",
     "Programs",
-    "Fid Coder.lnk",
+    identity.shortcutName,
   );
   const root = findAppRoot(app.getAppPath());
   const options = {
     target: process.execPath,
-    cwd: app.isPackaged ? undefined : root,
-    args: app.isPackaged ? undefined : `"${root}"`,
-    appUserModelId: APP_USER_MODEL_ID,
-    description: "Fid Coder",
+    cwd: identity.dev ? root : undefined,
+    args: identity.dev ? `"${root}"` : undefined,
+    appUserModelId: identity.userModelId,
+    description: identity.description,
+    icon: appIconIcoPath(),
+    iconIndex: 0,
   };
   const operation = fs.existsSync(shortcut) ? "replace" : "create";
   let ok = shell.writeShortcutLink(shortcut, operation, options);
@@ -48,6 +52,7 @@ export function notify(title: string, body: string, onClick?: () => void): void 
   const toast = new Notification({
     title: title.slice(0, 64),
     body: body.slice(0, 240),
+    icon: appIconPath(),
   });
   if (onClick) toast.on("click", () => onClick());
   toast.show();

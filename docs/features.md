@@ -35,13 +35,17 @@ The user guide (`docs/guide/`), `docs/memory.md`, `docs/build-exe.md`, `docs/wor
 - Enhance on the composer. It rewrites the draft and does not send.
 - Routines 2.0: cron and one-time schedules, manual runs, Windows toasts, a tray while the app is open, run history, and an inbox. **Limitation:** nothing runs while the app is closed, and a missed slot is not caught up. Spec is under Routines 2.0 below.
 - Copilot usage, the help center, and the portable Windows build.
+- The Fid app icon on the window, taskbar, tray, toast, and portable executable.
+- A compact window chrome: no native title strip, draggable top headers, and the Windows controls over the right pane.
 - Pinning a code selection (`Ctrl+Shift+L`) for the next message. Quoting a span of a chat reply is still open (idea 17).
 
 ### Approval center
 
 **DONE.** Turn-scoped.
 
-An inline card names the command, working directory, and risk reason. The choices are **Allow once**, **Always allow**, **Reject**, and **Always deny**. Each agent has saved allow and deny rules, and deny wins. A timeout denies, and Stop denies a pending request. Decisions are stored. `shell_run` waits for that decision on deletes, git pushes, and downloads. The model cannot set its own confirmed flag.
+An inline card names the command, working directory, and risk reason. The choices are **Allow once**, **Always allow**, **Reject**, and **Always deny**. Saved allow and deny rules can apply to all agents or one agent, and deny wins. Settings → Safety lists the built-in denies and lets you create, edit, or delete a rule with exact or prefix matching. A timeout denies, and Stop denies a pending request. Decisions are stored. `shell_run` waits for that decision on deletes, git pushes, and downloads. The model cannot set its own confirmed flag.
+
+Three built-in denies (`format`, `diskpart`, and the system-root `rm -rf /`) cannot be removed and are checked before every saved rule, so an allow rule cannot override them. `format` blocks the command and any arguments; `diskpart` blocks the command and its scripts; `rm -rf /` blocks the three exact root forms. Settings → Safety lists them with that detail above the saved rules. **New rule** adds a saved rule for all agents or one agent, with an allow/deny decision, an exact or word-boundary prefix match, and an optional folder. Saved rules can be edited in place or deleted. Saved rules are checked only when a command asks for approval.
 
 A conversation id on the audit row waits until chats exist. Saved rules live in Settings → Safety, with a history view on the Agent Desk.
 
@@ -49,7 +53,7 @@ A conversation id on the audit row waits until chats exist. Saved rules live in 
 
 **DONE.** This replaces the 30 October design (copies under user data, an 8-file / 20 MB cap, and a dependency on chats) and idea C (one fenced text file and no new column).
 
-Images the app supports go to the model as binary attachments, up to 10 MB. Every other file is passed by path. Text and code uploads are copied to `.fid/uploads/<id>/` inside the workspace. Workspace references keep their relative path. Line selections send the exact text, up to 200,000 characters. The runner stores descriptors on the message as JSON and puts an `Attached files:` list at the top of the prompt. The agent reads those paths with its own file tools. A text attachment needs an agent with file tools. A Browser & Jira agent can still receive a supported image.
+Images the app supports go to the model as binary attachments, up to 10 MB. When the agent has a workspace and file tools, text and code uploads are copied to `.fid/uploads/<id>/` inside the workspace and the agent reads them as paths. Without a workspace or file tools, a text-like upload (CSV, TSV, text, Markdown, JSON, code) is sent as whole-file text, up to 200,000 characters; binary files such as XLSX, PDF, and ZIP still need a workspace and file tools. Workspace references keep their relative path. Line selections send the exact text, up to 200,000 characters. The runner stores descriptors on the message as JSON and puts an `Attached files:` list at the top of the prompt. The agent reads workspace paths with its own file tools. A Browser & Jira agent can receive a supported image or a text-like upload.
 
 ### Queue a follow-up
 
@@ -117,11 +121,11 @@ While the app is open, the tray menu is Open, Pause all routines or Resume, and 
 
 The dialog puts **Routines** and **History** in a switch at the top of the routine list. History has a **Refresh** action and lists the trigger, start, duration, status, and a short excerpt. **Stop** is shown only for a run that is still going. The editor stays mounted while History is open, so an unsaved draft survives a look at the history. The desk row shows the last status and when it ran. The sidebar agent row stays quiet.
 
-The bell count is live approvals plus unread routine and turn rows. Opening a stored row marks it read. Snooze hides that row for four hours and does not apply to an approval. The same count is the window badge.
+The bell count is live approvals, questions, handoffs, and skill saves plus unread routine and turn rows. Opening a stored row marks it read. Snooze hides that row for four hours and does not apply to a waiting card. The same count is the window badge.
 
 The run row is written as `running` before the turn. A `running` row left after a restart becomes interrupted and is not fired again. Scheduled finishes, misses, and interrupted runs enter the inbox. A manual run stays in history only. Rows older than 90 days are removed on reload.
 
-Tests: unit rules for due times, excerpts, labels, and the inbox list; integration coverage for a closed-app miss, pause, interrupt, Stop, a failed abort, snooze, and pruning; `npm run test:routines` for the desk, the Routines/History switch, History refresh, draft preservation, the idle Save state, and the inbox. No live Copilot run.
+Tests: unit rules for due times, excerpts, labels, and the inbox list; integration coverage for a closed-app miss, pause, interrupt, Stop, a failed abort, snooze, and pruning; `npm run test:routines` for the desk, the Routines/History switch, History refresh, draft preservation, the idle Save state, the Needs you board, the all-routines list, and the inbox. No live Copilot run.
 
 ### Working indicator
 
@@ -178,6 +182,40 @@ The Confluence tools are read-only in Ask mode and report-only routines. `conflu
 
 Tests: unit `tests/unit/confluence.test.ts` covers the URL, id, and display-link forms. Integration `tests/integration/confluence.test.cjs` covers CQL search, page text/storage, a pasted short link, an approved Markdown append, a stale version, a macro-page replacement refusal, a denied update, and Cloud Basic auth. The live `npm run test:native-live` harness has a real Copilot agent resolve a pasted short link, read the page, request approval, and append to a local fake page; it never contacts a real Confluence site.
 
+### Datadog analyst
+
+**DONE.** Added 20 November 2026; browser-only on 21 November 2026. The implementation record is `docs/datadog-implementation.md`.
+
+The **Datadog Analyst** is seeded once per installation with the read-only `datadog` profile and an optional workspace. It starts with the `datadog-triage` skill and loads `datadog-query` when it needs query syntax. The profile has the two Datadog browser tools, workspace read/search/git reads, Jira and Confluence reads, and browser navigate/snapshot/handoff, but no shell, writes, patch, browser click/type, or Confluence update.
+
+No API key is requested or stored. Settings → Datadog stores one URL: the address you open for Datadog, such as `https://app.datadoghq.com`. A pasted Log Explorer, monitor, or other deep link is trimmed to the site. The Datadog Analyst opens the logged-in Log Explorer in the local headed browser, captures the page's JSON log response, and returns compact rows. If Datadog asks for a sign-in, the browser handoff card appears; sign in once and the profile keeps the session. The session credential stays in the browser and is never read into a tool, logged, or shown.
+
+Tools:
+- `datadog_browser_logs` — opens the Log Explorer with a query and time window, captures the page's JSON log response, and returns service, env, version, host, status, trace id, HTTP fields, message, and stack. Browser results are a page sample.
+- `datadog_browser_error_summary` — clusters the captured page sample into message patterns with first/last seen, service, version, and a sample frame.
+
+The capture is limited to the configured Datadog origin and records JSON responses only; cookies and request headers are never recorded. The agent is read-only and treats log text as untrusted. A missing log payload returns the captured endpoints and suggests `browser_snapshot` or a wider window.
+
+The triage skill turns telemetry into a root cause: sample the error, extract the stack and trace id, search the workspace, read the failing path and callers, check recent git changes, and report `path:line` evidence with a confidence level.
+
+Tests: unit `tests/unit/datadog.test.ts`; integration `tests/integration/datadog.test.cjs` covers both browser tools against a fake capture, public and internal log shapes, a sign-in page, a missing payload, and a missing URL; `tests/integration/tool-profiles.test.cjs` covers the read-only profile, browser profile, and Ask mode; `tests/integration/agent-database.test.cjs` covers the one-time seed. The live `npm run test:datadog-browser-live` harness has a real Copilot agent open a local fake Datadog page in the headed browser, capture the JSON response, read a temp workspace, and report the root cause. It never contacts Datadog.
+
+### App icon
+
+**DONE.** Added 21 November 2026. This is packaging polish, not an agent feature.
+
+The window, taskbar, tray, toast, and packaged executable use the Fid brand mark instead of the Electron default. `assets/app-icon/` holds the SVG source and the generated 512 px window PNG, 32 px tray PNG, and multi-size ICO. `scripts/generate-app-icon.ps1` regenerates the raster files. `src/main/icon.ts` picks the development or packaged folder; `package.json` embeds the ICO in the portable `.exe` and copies the folder to `resources/app-icon`. The window icon stays a PNG because Electron's Windows window loader applies it reliably; the ICO is for the executable, the Start Menu shortcut, and the shell. Development uses its own Windows identity (`com.fidcoder.desktop.dev`) and `Fid Coder (dev).lnk` toast shortcut so its taskbar button does not pick up the packaged app's Electron icon; `src/main/identity.ts` is the one source for the ids and shortcut names.
+
+Tests: `npm run typecheck`, `npm run dist:win`, and an extracted-icon check of the portable executable. The development window/taskbar icon was checked visually. If Windows keeps an old pinned icon, unpin and pin Fid Coder again.
+
+### Window chrome
+
+**DONE.** Added 21 November 2026. This is window polish, not an agent feature.
+
+The native title strip is hidden, so the sidebar brand is the only **Fid Coder** title. `createWindow` uses `titleBarStyle: "hidden"` with a `titleBarOverlay`; the sidebar brand, chat header, Agent Desk header, Workspace header, empty screen, and full-message screen are drag regions. Their buttons and inputs are no-drag. The rightmost header reserves 152 px for the native minimize, maximize, and close controls. The guide tells users to drag from the sidebar or a top pane header.
+
+Tests: `npm run typecheck` and `npm run test:sidebar`. The packaged app was checked with a screenshot, and a real-mouse drag moved the window, confirming the drag regions.
+
 ### Memory facts
 
 **DONE.** O1. Added 20 November 2026.
@@ -197,6 +235,20 @@ Tests: unit `tests/unit/facts.test.ts` covers normalization, the secret check, s
 A repeating routine must wait at least 15 minutes. Saving a shorter schedule is refused. A one-time routine is exempt. Only a real error counts. Stopped, skipped, and interrupted runs do not. The first error after a success is posted. Errors two through nine stay in history. The tenth pauses the routine and posts once. Turn it back on to clear the count. A successful run also clears it. A manual run stays out of the inbox and does not add to the count.
 
 Tests: unit `tests/unit/routine-guard.test.ts`; integration `tests/integration/routines.test.cjs` covers the failure streak, the skip/stop/interrupt exclusions, the 15-minute floor, the report-only tool set, and the run mode; `npm run test:routines` checks the toggle and the history label. No live Copilot turn.
+
+### Needs you board
+
+**DONE.** O2. Added 20 November 2026.
+
+The sidebar bell opens **Needs you**. **Waiting on you** groups live approvals, questions, browser handoffs, and skill saves by agent, with the same cards used in the chat. Answer one there and the chat card closes too. An answer in the chat removes that row. **Updates** keeps finished routines and failed turns, with **Snooze** and **Dismiss**. Opening a row still goes to that agent. The count on the bell includes questions, handoffs, and skill saves.
+
+### All routines
+
+**DONE.** O6. Added 20 November 2026.
+
+The **Routines** tab on that same window lists every agent's routines. A row shows the schedule, the next run, the last status, and **Look and report** when that routine only reports. The switch enables or pauses it. **Run now** starts it. **Open** switches to that agent and opens its Routines dialog. Creating and editing stay in that dialog.
+
+Tests: unit `tests/unit/needs-you.test.ts`; integration `tests/integration/routines.test.cjs` covers the cross-agent list; `npm run test:routines` answers a question, an approval, and a handoff from the board, checks that a chat answer removes the row, and toggles, runs, and opens a routine from the full list. No live Copilot turn.
 
 ## Still to build
 
@@ -274,9 +326,7 @@ Implementation:
 
 Done when: a fixture MCP server's tools appear in an agent's Context view, a call shows up as a normal tool card, and write-like tools require approval.
 
-### Datadog analyst
-
-**Status:** Open. The plan is `docs/datadog-implementation.md` (draft, 31 October 2026). It is a read-only analyst that uses the agent's headed browser session. It does not use a Datadog API key. SSO inside the Playwright window is the prerequisite. Nothing from that plan is in the app.
+_Datadog analyst is DONE; see the implementation record in `docs/datadog-implementation.md`._
 
 ## OpenBot survey (20 November 2026)
 
@@ -293,11 +343,11 @@ This is the consolidated survey of `reference_projects/OpenBot`. It exists so a 
 | ID | Candidate | Fid gap | Size | Wave |
 |---|---|---|---|---|
 | O1 | User-managed memory facts — **DONE** | Facts on the agent, plus optional shared facts | M | 2 |
-| O2 | Needs-you board | Inbox is a flat list; approvals open the chat | M | 3 |
+| O2 | Needs-you board — **DONE** | Inbox is a flat list; approvals open the chat | M | 3 |
 | O3 | Routine guardrails and report-only mode — **DONE** | 15-minute floor, ten-failure pause, report-only tools | S/M | 1 |
 | O4 | Setup checklist | No health screen; failures appear only when used | M | 4 |
 | O5 | Human tool activity summary and duration — **DONE** | Counted summary and turn duration | S | 1 |
-| O6 | All routines view | Routines are per-agent only | S/M | 3 |
+| O6 | All routines view — **DONE** | Routines are per-agent only | S/M | 3 |
 | O7 | Routine completion checklist | Partial multi-step routines look complete | M | 5 |
 | O8 | Multi-field ask form | `ask_user` is one question | M | 5 |
 | O9 | Fixed result cards, checklist first | Markdown and Mermaid only | M | 5 |
@@ -310,7 +360,7 @@ This is the consolidated survey of `reference_projects/OpenBot`. It exists so a 
 | O16 | Goals/check-ins | Big state machine | L | Later |
 | O17 | Skill tool declarations | Skills are instructions only | M | Later |
 
-O1, O3, O5, and O12 are **DONE** (20 November 2026). Wave 3 is O2 and O6. Wave 4 is O4. Wave 5 is O7–O11. The rest are later or not taken. O10 is the same work as idea 30 and follows that item's schedule; it is listed here because OpenBot's UX sharpens it.
+O1, O2, O3, O5, O6, and O12 are **DONE** (20 November 2026). Wave 4 is O4, the setup checklist. Wave 5 is O7–O11. The rest are later or not taken. O10 is the same work as idea 30 and follows that item's schedule; it is listed here because OpenBot's UX sharpens it.
 
 An `O` number is a stable reference for discussion. It is not a backlog number and does not imply that the item is approved.
 
@@ -358,6 +408,8 @@ An `O` number is a stable reference for discussion. It is not a backlog number a
 **Do not copy.** Embeddings, app-source syncing, automatic fact formation, review queues, or Intelligence integration. OpenBot's personal edition actually omits Memory; this is a team-edition idea that fits Fid better than it fits OpenBot Desktop.
 
 ### O2. Needs-you board
+
+**Status: DONE (20 November 2026).** The implementation is recorded under **DONE → Needs you board** above. The notes below are the design record.
 
 **OpenBot.** `app/src/components/needs-you/board.tsx` splits **Waiting on you** from **From check-ins**, groups rows by Bot, shows counts and “waiting since,” and answers approvals and questions on the row. `app/src/components/approvals/waiting.tsx` has the inline question and approval actions. `app/src/components/tasks/task-row.tsx` shows the same row shape for task status.
 
@@ -537,6 +589,8 @@ An `O` number is a stable reference for discussion. It is not a backlog number a
 **Do not copy.** Per-tool diff cards, command-output cards, and todo cards. Fid already has `EditedFilesCard` and `ChangesPanel`; duplicating diffs inside the tool group would be noise.
 
 ### O6. All routines view
+
+**Status: DONE (20 November 2026).** The implementation is recorded under **DONE → All routines** above. The notes below are the design record.
 
 **OpenBot.** `/routines` lists every Bot's routines in one place, with what it does, when it starts, and the next run. Active rows come first.
 
@@ -1142,7 +1196,7 @@ The changes panel accepts or reverts a whole file.
 2. **Routine threads.** One thread per routine.
 3. **MCP transport.** Local stdio only in the first release.
 4. **Approval policy scope.** Per-agent rules with a global default. The approval center already stores per-agent rules.
-5. **Release-impact packaging.** If the Datadog plan grows a CLI, keep one dependency-free CLI plus a thin Fid Coder tool. The engine selects deterministically. The agent reviews and explains. The CLI never calls Copilot.
+5. **Datadog packaging.** No separate Datadog CLI. The browser capture stays inside the app, and the model-facing contract is the two browser tools.
 
 ## Removed
 
@@ -1188,9 +1242,9 @@ They fight the Copilot-only, no-Docker, local-browser rules, or they are larger 
 
 Quiet interface work still open: composer recall, instruction restore, the finish toast, reject-with-note, the context hint, and Show in folder. Queue-while-running is done. Next are workspace commands. Change-watch routines remain open. Read-only helpers can follow.
 
-Stop repair, compaction-by-window, and tool-output spill can sit with that quiet work. Fetched-text taint and the paused-approval resume belong with the approval center, before Agent mode widens further. Browser scroll and key press come before element refs. MCP, the Datadog analyst, report templates, and command secrets come later. Chats unblock a routine's own thread and forked chats. The inbox already opens the agent.
+Stop repair, compaction-by-window, and tool-output spill can sit with that quiet work. Fetched-text taint and the paused-approval resume belong with the approval center, before Agent mode widens further. Browser scroll and key press come before element refs. MCP, report templates, and command secrets come later. The Datadog analyst is DONE. Chats unblock a routine's own thread and forked chats. The inbox already opens the agent.
 
-From the OpenBot survey, memory facts (O1), routine guardrails (O3), the tool activity summary (O5), and the working indicator (O12) are DONE. Wave 3 is the needs-you board (O2) and the all-routines view (O6). Wave 4 is the setup checklist (O4). The remaining OpenBot candidates wait on those, and O13–O17 wait on a product decision or a larger change.
+From the OpenBot survey, memory facts (O1), the needs-you board (O2), routine guardrails (O3), the tool activity summary (O5), the all-routines view (O6), and the working indicator (O12) are DONE. Wave 4 is the setup checklist (O4). The remaining OpenBot candidates wait on that, and O13–O17 wait on a product decision or a larger change.
 
 ## Related documents
 
@@ -1198,5 +1252,5 @@ From the OpenBot survey, memory facts (O1), routine guardrails (O3), the tool ac
 - `docs/memory.md` — transcripts, the rolling summary, and user-managed facts.
 - `docs/build-exe.md` — packaging and distribution.
 - `docs/workspace-explorer.md` — the shipped workspace panel.
-- `docs/datadog-implementation.md` — the unshipped Datadog analyst plan.
+- `docs/datadog-implementation.md` — the shipped Datadog analyst design and tool contract.
 - `docs/guide/` — the in-app help.

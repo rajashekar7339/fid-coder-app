@@ -1,9 +1,18 @@
 import fs from "fs";
 import path from "path";
 import { DatabaseSync } from "node:sqlite";
+import {
+  DATADOG_AGENT_DESCRIPTION,
+  DATADOG_AGENT_NAME,
+  DATADOG_AGENT_PROMPT,
+} from "../../shared/datadog";
 import { AUTO_MODEL_ID, normalizeModelId } from "../../shared/model";
 import { normalizeToolProfile } from "../../shared/tool-profile";
-import { normalizeApprovalMatch } from "../../shared/approval";
+import {
+  approvalRuleMatches,
+  isApprovalMatcher,
+  normalizeApprovalMatch,
+} from "../../shared/approval";
 import { parseMessageAttachments } from "../../shared/attachments";
 import type {
   Agent,
@@ -22,6 +31,7 @@ import type {
   MessageRole,
   Routine,
   RoutineInput,
+  RoutineOverview,
   RoutinePatch,
   RoutineRun,
   RoutineRunTrigger,
@@ -57,6 +67,12 @@ const AGENT_SELECT = `
       WHERE r.agent_id = a.id AND r.enabled = 1 AND r.next_run_at IS NOT NULL
     ) AS next_routine_at
   FROM agents a
+`;
+
+const APPROVAL_RULE_SELECT = `
+  SELECT r.*, a.name AS agent_name
+  FROM approval_rules r
+  LEFT JOIN agents a ON a.id = r.agent_id
 `;
 
 type MessageRow = {
@@ -115,11 +131,12 @@ type ApprovalRow = {
 
 type ApprovalRuleRow = {
   id: string;
-  agent_id: string;
-  agent_name?: string;
+  agent_id: string | null;
+  agent_name?: string | null;
   kind: string;
   decision: string;
   match: string;
+  matcher: string;
   cwd: string;
   created_at: string;
 };
@@ -338,13 +355,13 @@ export class AppDatabase {
 
       CREATE TABLE IF NOT EXISTS approval_rules (
         id TEXT PRIMARY KEY,
-        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE,
         kind TEXT NOT NULL,
         decision TEXT NOT NULL,
         match TEXT NOT NULL,
+        matcher TEXT NOT NULL DEFAULT 'exact',
         cwd TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        UNIQUE(agent_id, kind, decision, match, cwd)
+        created_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_approval_rules_agent ON approval_rules(agent_id, created_at);
 
@@ -417,6 +434,7 @@ export class AppDatabase {
     this.ensureRoutineOnceColumns();
     this.ensureRoutineGuardColumns();
     this.ensureRoutineRunModeColumn();
+    this.ensureApprovalRuleColumns();
     const now = new Date().toISOString();
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(JIRA_NAME, now, OLD_JIRA_NAME);
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(GIT_NAME, now, OLD_GIT_NAME);
@@ -516,6 +534,51 @@ export class AppDatabase {
     this.db.exec("ALTER TABLE routine_runs ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0");
   }
 
+  /**
+   * Rebuild the old per-agent, exact-only rules table. SQLite cannot drop the
+   * NOT NULL on agent_id in place, and old rows need matcher = 'exact'.
+   */
+  private ensureApprovalRuleColumns(): void {
+    const columns = this.db
+      .prepare("PRAGMA table_info(approval_rules)")
+      .all() as { name: string; notnull: number }[];
+    const agent = columns.find((column) => column.name === "agent_id");
+    const hasMatcher = columns.some((column) => column.name === "matcher");
+    const uniqueIndex = `CREATE UNIQUE INDEX IF NOT EXISTS idx_approval_rules_unique
+      ON approval_rules(COALESCE(agent_id, ''), kind, decision, match, matcher, cwd);`;
+    if (hasMatcher && agent && agent.notnull === 0) {
+      this.db.exec(uniqueIndex);
+      return;
+    }
+    const matcher = hasMatcher ? "matcher" : "'exact'";
+    this.db.exec("BEGIN");
+    try {
+      this.db.exec(`
+        DROP TABLE IF EXISTS approval_rules_new;
+        CREATE TABLE approval_rules_new (
+          id TEXT PRIMARY KEY,
+          agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE,
+          kind TEXT NOT NULL,
+          decision TEXT NOT NULL,
+          match TEXT NOT NULL,
+          matcher TEXT NOT NULL DEFAULT 'exact',
+          cwd TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+        INSERT INTO approval_rules_new (id, agent_id, kind, decision, match, matcher, cwd, created_at)
+          SELECT id, agent_id, kind, decision, match, ${matcher}, cwd, created_at FROM approval_rules;
+        DROP TABLE approval_rules;
+        ALTER TABLE approval_rules_new RENAME TO approval_rules;
+        CREATE INDEX IF NOT EXISTS idx_approval_rules_agent ON approval_rules(agent_id, created_at);
+        ${uniqueIndex}
+      `);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   private ensureMessageTurnColumn(): void {
     const columns = this.db.prepare("PRAGMA table_info(messages)").all() as { name: string }[];
     if (columns.some((column) => column.name === "turn_id")) return;
@@ -549,22 +612,61 @@ export class AppDatabase {
 
   private seed(): void {
     const count = this.db.prepare("SELECT COUNT(*) AS c FROM agents").get() as { c: number };
-    if (count.c > 0) return;
-
-    const now = new Date().toISOString();
-    const insertAgent = this.db.prepare(
-      `INSERT INTO agents (id, name, description, system_prompt, workspace_dir, model, tool_profile, created_at, updated_at)
-       VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
-    );
-    this.db.exec("BEGIN");
-    try {
-      insertAgent.run(crypto.randomUUID(), JIRA_NAME, JIRA_DESCRIPTION, JIRA_PROMPT, AUTO_MODEL_ID, "browser", now, now);
-      insertAgent.run(crypto.randomUUID(), GIT_NAME, GIT_DESCRIPTION, GIT_PROMPT, AUTO_MODEL_ID, "developer", now, now);
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
+    if (count.c === 0) {
+      const now = new Date().toISOString();
+      const insertAgent = this.db.prepare(
+        `INSERT INTO agents (id, name, description, system_prompt, workspace_dir, model, tool_profile, created_at, updated_at)
+         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+      );
+      this.db.exec("BEGIN");
+      try {
+        insertAgent.run(crypto.randomUUID(), JIRA_NAME, JIRA_DESCRIPTION, JIRA_PROMPT, AUTO_MODEL_ID, "browser", now, now);
+        insertAgent.run(crypto.randomUUID(), GIT_NAME, GIT_DESCRIPTION, GIT_PROMPT, AUTO_MODEL_ID, "developer", now, now);
+        this.db.exec("COMMIT");
+      } catch (error) {
+        this.db.exec("ROLLBACK");
+        throw error;
+      }
     }
+    this.ensureDatadogAgent();
+  }
+
+  /**
+   * Add the Datadog analyst once for existing installs, and move a saved
+   * native API prompt to the browser-only contract. The saved flag means
+   * deleting the agent later does not bring it back on the next launch.
+   */
+  private ensureDatadogAgent(): void {
+    const existing = this.db
+      .prepare("SELECT id, system_prompt FROM agents WHERE name = ?")
+      .get(DATADOG_AGENT_NAME) as { id: string; system_prompt: string } | undefined;
+    if (existing) {
+      // Earlier 21 November builds used native API tools. Move that saved
+      // prompt to the browser-only contract without touching custom prompts.
+      if (
+        existing.system_prompt.includes("datadog_logs_search") ||
+        existing.system_prompt.includes("datadog_logs_aggregate")
+      ) {
+        this.db
+          .prepare(
+            "UPDATE agents SET system_prompt = ?, tool_profile = ?, updated_at = ? WHERE id = ?",
+          )
+          .run(DATADOG_AGENT_PROMPT, "datadog", new Date().toISOString(), existing.id);
+      }
+    }
+    if (this.getSetting("datadog_agent_seeded")) return;
+    if (!existing) {
+      this.createAgent({
+        name: DATADOG_AGENT_NAME,
+        description: DATADOG_AGENT_DESCRIPTION,
+        systemPrompt: DATADOG_AGENT_PROMPT,
+        workspaceDir: null,
+        model: AUTO_MODEL_ID,
+        toolProfile: "datadog",
+        memoryEnabled: true,
+      });
+    }
+    this.setSetting("datadog_agent_seeded", "1");
   }
 
   listAgents(): Agent[] {
@@ -1060,52 +1162,115 @@ export class AppDatabase {
   }
 
   findApprovalRule(agentId: string, kind: ApprovalKind, match: string, cwd: string): ApprovalRule | null {
-    const row = this.db
+    const rows = this.db
       .prepare(
-        `SELECT r.*, a.name AS agent_name
-         FROM approval_rules r
-         JOIN agents a ON a.id = r.agent_id
-         WHERE r.agent_id = ? AND r.kind = ? AND r.match = ? AND (r.cwd = ? OR r.cwd = '')
-         ORDER BY CASE r.decision WHEN 'deny' THEN 0 ELSE 1 END, r.created_at DESC
-         LIMIT 1`,
+        `${APPROVAL_RULE_SELECT}
+         WHERE r.kind = ? AND (r.agent_id = ? OR r.agent_id IS NULL)
+           AND (r.cwd = ? OR r.cwd = '')`,
       )
-      .get(agentId, kind, normalizeApprovalMatch(match), cwd) as ApprovalRuleRow | undefined;
-    return row ? mapApprovalRule(row) : null;
+      .all(kind, agentId, cwd) as ApprovalRuleRow[];
+    return (
+      rows
+        .map(mapApprovalRule)
+        .filter((rule) => approvalRuleMatches(rule, match))
+        .sort((left, right) => {
+          if (left.decision !== right.decision) return left.decision === "deny" ? -1 : 1;
+          if ((left.agentId === null) !== (right.agentId === null)) {
+            return left.agentId === null ? 1 : -1;
+          }
+          return right.createdAt.localeCompare(left.createdAt);
+        })[0] ?? null
+    );
   }
 
-  createApprovalRule(input: ApprovalRuleInput): ApprovalRule {
+  private cleanApprovalRuleInput(
+    input: ApprovalRuleInput,
+  ): { agentId: string | null; match: string; cwd: string } {
     if (input.decision !== "allow" && input.decision !== "deny") {
       throw new Error("Approval rule decision must be allow or deny");
     }
+    if (!isApprovalMatcher(input.matcher)) {
+      throw new Error("Approval rule match type must be exact or prefix");
+    }
     const match = normalizeApprovalMatch(input.match);
     if (!match) throw new Error("Approval rule match is required");
-    const cwd = input.cwd.trim();
-    const decision = input.decision;
+    const agentId = input.agentId?.trim() || null;
+    if (agentId && !this.getAgent(agentId)) throw new Error("Agent not found");
+    return { agentId, match, cwd: input.cwd.trim() };
+  }
+
+  createApprovalRule(input: ApprovalRuleInput): ApprovalRule {
+    const { agentId, match, cwd } = this.cleanApprovalRuleInput(input);
     const createdAt = new Date().toISOString();
     this.db
       .prepare(
-        `INSERT OR IGNORE INTO approval_rules (id, agent_id, kind, decision, match, cwd, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO approval_rules
+           (id, agent_id, kind, decision, match, matcher, cwd, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(crypto.randomUUID(), input.agentId, input.kind, decision, match, cwd, createdAt);
+      .run(
+        crypto.randomUUID(),
+        agentId,
+        input.kind,
+        input.decision,
+        match,
+        input.matcher,
+        cwd,
+        createdAt,
+      );
     const row = this.db
       .prepare(
-        `SELECT r.*, a.name AS agent_name
-         FROM approval_rules r
-         JOIN agents a ON a.id = r.agent_id
-         WHERE r.agent_id = ? AND r.kind = ? AND r.decision = ? AND r.match = ? AND r.cwd = ?`,
+        `${APPROVAL_RULE_SELECT}
+         WHERE r.agent_id IS ? AND r.kind = ? AND r.decision = ? AND r.match = ?
+           AND r.matcher = ? AND r.cwd = ?`,
       )
-      .get(input.agentId, input.kind, decision, match, cwd) as ApprovalRuleRow | undefined;
+      .get(
+        agentId,
+        input.kind,
+        input.decision,
+        match,
+        input.matcher,
+        cwd,
+      ) as ApprovalRuleRow | undefined;
     if (!row) throw new Error("Could not save the approval rule");
     return mapApprovalRule(row);
   }
 
+  updateApprovalRule(id: string, input: ApprovalRuleInput): ApprovalRule {
+    const current = this.getApprovalRule(id);
+    if (!current) throw new Error("Approval rule not found");
+    const { agentId, match, cwd } = this.cleanApprovalRuleInput(input);
+    try {
+      this.db
+        .prepare(
+          `UPDATE approval_rules
+           SET agent_id = ?, kind = ?, decision = ?, match = ?, matcher = ?, cwd = ?
+           WHERE id = ?`,
+        )
+        .run(agentId, input.kind, input.decision, match, input.matcher, cwd, id);
+    } catch (error) {
+      if (error instanceof Error && /unique/i.test(error.message)) {
+        throw new Error("A rule for that command already exists.");
+      }
+      throw error;
+    }
+    const updated = this.getApprovalRule(id);
+    if (!updated) throw new Error("Could not update the approval rule");
+    return updated;
+  }
+
+  getApprovalRule(id: string): ApprovalRule | null {
+    const row = this.db
+      .prepare(`${APPROVAL_RULE_SELECT} WHERE r.id = ?`)
+      .get(id) as ApprovalRuleRow | undefined;
+    return row ? mapApprovalRule(row) : null;
+  }
+
   listApprovalRules(agentId?: string): ApprovalRule[] {
-    const sql = `SELECT r.*, a.name AS agent_name
-      FROM approval_rules r
-      JOIN agents a ON a.id = r.agent_id
-      ${agentId ? "WHERE r.agent_id = ?" : ""}
-      ORDER BY a.name COLLATE NOCASE, r.created_at DESC`;
+    const sql = `${APPROVAL_RULE_SELECT}
+      ${agentId ? "WHERE r.agent_id = ? OR r.agent_id IS NULL" : ""}
+      ORDER BY CASE WHEN r.agent_id IS NULL THEN 0 ELSE 1 END,
+        a.name COLLATE NOCASE, r.created_at DESC`;
     const statement = this.db.prepare(sql);
     const rows = (agentId ? statement.all(agentId) : statement.all()) as ApprovalRuleRow[];
     return rows.map(mapApprovalRule);
@@ -1125,6 +1290,18 @@ export class AppDatabase {
   listEnabledRoutines(): Routine[] {
     const rows = this.db.prepare("SELECT * FROM routines WHERE enabled = 1").all() as RoutineRow[];
     return rows.map(mapRoutine);
+  }
+
+  listAllRoutines(): RoutineOverview[] {
+    const rows = this.db
+      .prepare(
+        `SELECT r.*, a.name AS agent_name
+         FROM routines r
+         JOIN agents a ON a.id = r.agent_id
+         ORDER BY a.name COLLATE NOCASE, r.enabled DESC, r.name COLLATE NOCASE`,
+      )
+      .all() as Array<RoutineRow & { agent_name: string }>;
+    return rows.map((row) => ({ ...mapRoutine(row), agentName: row.agent_name }));
   }
 
   getRoutine(id: string): Routine | null {
@@ -1686,10 +1863,11 @@ function mapApprovalRule(row: ApprovalRuleRow): ApprovalRule {
   return {
     id: row.id,
     agentId: row.agent_id,
-    agentName: row.agent_name ?? "",
+    agentName: row.agent_name ?? "All agents",
     kind: readApprovalKind(row.kind),
     decision: row.decision === "deny" ? "deny" : "allow",
     match: row.match,
+    matcher: row.matcher === "prefix" ? "prefix" : "exact",
     cwd: row.cwd,
     createdAt: row.created_at,
   };

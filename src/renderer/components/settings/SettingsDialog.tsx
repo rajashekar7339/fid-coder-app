@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
+  Activity,
   BookOpen,
   Check,
   Gauge,
@@ -7,6 +8,8 @@ import {
   KeyRound,
   Lock,
   LogOut,
+  Pencil,
+  Plus,
   RefreshCw,
   Power,
   ShieldCheck,
@@ -15,18 +18,27 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { BUILT_IN_APPROVAL_RULES } from "../../../shared/approval";
 import { formatUsageCount, formatUsageReset, type CopilotUsageView } from "../../../shared/copilot-usage";
 import type { AppPresence } from "../../../shared/app-settings";
-import type { ApprovalRule, SettingsView } from "../../../shared/types";
+import type { Agent, ApprovalMatcher, ApprovalRule, SettingsView } from "../../../shared/types";
 import { errorText, fid } from "../../lib/fid";
 import { Modal } from "../ui/Modal";
 import { Switch } from "../ui/Switch";
 import { UsageBar, usageLevel } from "../ui/UsageBar";
 
 export type SignInNote = { tone: "progress" | "ok" | "error"; text: string };
-export type SettingsSection = "copilot" | "github" | "jira" | "confluence" | "safety" | "app";
+export type SettingsSection =
+  | "copilot"
+  | "github"
+  | "jira"
+  | "confluence"
+  | "datadog"
+  | "safety"
+  | "app";
 
 type Props = {
+  agents: Agent[];
   settings: SettingsView | null;
   usage: CopilotUsageView | null;
   usageMessage: string | null;
@@ -79,6 +91,13 @@ const SECTIONS: Array<{
     Icon: BookOpen,
   },
   {
+    id: "datadog",
+    label: "Datadog",
+    title: "Datadog",
+    subtitle: "The Datadog URL the analyst opens in the logged-in browser. No API key is needed.",
+    Icon: Activity,
+  },
+  {
     id: "safety",
     label: "Safety",
     title: "Approval rules",
@@ -98,7 +117,29 @@ const ACCOUNT_SECTIONS = SECTIONS.filter((item) => item.id !== "safety" && item.
 const SAFETY_SECTION = SECTIONS.find((item) => item.id === "safety")!;
 const APP_SECTION = SECTIONS.find((item) => item.id === "app")!;
 
+function sectionConnected(id: SettingsSection, settings: SettingsView | null): boolean {
+  switch (id) {
+    case "copilot":
+      return Boolean(settings?.signedIn);
+    case "github":
+      return Boolean(settings?.hasGithubPat);
+    case "jira":
+      return Boolean(settings?.hasJiraToken && settings?.jiraSiteUrl);
+    case "confluence":
+      return Boolean(
+        settings?.hasConfluenceToken &&
+          settings?.confluenceSiteUrl &&
+          (settings.confluenceMode !== "cloud" || settings.confluenceEmail),
+      );
+    case "datadog":
+      return Boolean(settings?.datadogUrl);
+    default:
+      return false;
+  }
+}
+
 export function SettingsDialog({
+  agents,
   settings,
   usage,
   usageMessage,
@@ -123,6 +164,8 @@ export function SettingsDialog({
   const [confluenceEmail, setConfluenceEmail] = useState("");
   const [confluenceMode, setConfluenceMode] = useState<"cloud" | "data-center">("data-center");
   const [confluenceDirty, setConfluenceDirty] = useState(false);
+  const [datadogUrl, setDatadogUrl] = useState("");
+  const [datadogDirty, setDatadogDirty] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -139,6 +182,12 @@ export function SettingsDialog({
       setConfluenceMode(settings.confluenceMode);
     }
   }, [settings, confluenceDirty]);
+
+  useEffect(() => {
+    if (!datadogDirty && settings) {
+      setDatadogUrl(settings.datadogUrl);
+    }
+  }, [settings, datadogDirty]);
 
   useEffect(() => {
     setMessage(null);
@@ -208,18 +257,7 @@ export function SettingsDialog({
           <div className="settings-nav-list">
             {ACCOUNT_SECTIONS.map((item) => {
               const Icon = item.Icon;
-              const connected =
-                item.id === "copilot"
-                  ? Boolean(settings?.signedIn)
-                  : item.id === "github"
-                    ? Boolean(settings?.hasGithubPat)
-                    : item.id === "jira"
-                      ? Boolean(settings?.hasJiraToken && settings?.jiraSiteUrl)
-                      : Boolean(
-                          settings?.hasConfluenceToken &&
-                            settings?.confluenceSiteUrl &&
-                            (settings.confluenceMode !== "cloud" || settings.confluenceEmail),
-                        );
+              const connected = sectionConnected(item.id, settings);
               return (
                 <button
                   key={item.id}
@@ -392,7 +430,26 @@ export function SettingsDialog({
               />
             ) : null}
 
-            {section === "safety" ? <SafetySection /> : null}
+            {section === "datadog" ? (
+              <DatadogSection
+                url={datadogUrl}
+                busy={busy}
+                onUrl={(value) => {
+                  setDatadogDirty(true);
+                  setDatadogUrl(value);
+                }}
+                onSaveSettings={() =>
+                  void run(async () => {
+                    await fid().settings.saveDatadog({ url: datadogUrl });
+                    setDatadogDirty(false);
+                  }, datadogUrl.trim()
+                    ? "Datadog URL saved. The analyst now uses the local browser."
+                    : "Datadog URL removed.")
+                }
+              />
+            ) : null}
+
+            {section === "safety" ? <SafetySection agents={agents} /> : null}
 
             {message ? (
               <p className="settings-message is-success" role="status">
@@ -415,6 +472,11 @@ export function SettingsDialog({
                 <>
                   <ShieldCheck size={12} aria-hidden="true" />
                   <span>Rules stay in the local database. Delete a rule to ask again on the next command.</span>
+                </>
+              ) : section === "datadog" ? (
+                <>
+                  <Lock size={12} aria-hidden="true" />
+                  <span>The Datadog session stays in the browser; no API key is stored.</span>
                 </>
               ) : (
                 <>
@@ -718,11 +780,21 @@ function GitHubSection({
   );
 }
 
-function SafetySection() {
+function SafetySection({ agents }: { agents: Agent[] }) {
   const [rules, setRules] = useState<ApprovalRule[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [agentId, setAgentId] = useState("");
+  const [decision, setDecision] = useState<"allow" | "deny">("deny");
+  const [command, setCommand] = useState("");
+  const [matcher, setMatcher] = useState<ApprovalMatcher>("exact");
+  const [folder, setFolder] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+  const editing = editingId ? rules.find((rule) => rule.id === editingId) ?? null : null;
 
   async function load() {
     setLoading(true);
@@ -740,12 +812,62 @@ function SafetySection() {
     void load();
   }, []);
 
+  function openForm(rule: ApprovalRule | null) {
+    setFormOpen(true);
+    setEditingId(rule?.id ?? null);
+    setAgentId(rule?.agentId ?? "");
+    setDecision(rule?.decision ?? "deny");
+    setCommand(rule?.match ?? "");
+    setMatcher(rule?.matcher ?? "exact");
+    setFolder(rule?.cwd ?? "");
+    setFormError(null);
+  }
+
+  function cancelForm() {
+    setFormOpen(false);
+    setEditingId(null);
+    setFormError(null);
+  }
+
+  async function saveRule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (saving) return;
+    const text = command.trim();
+    if (!text) {
+      setFormError("Enter a command or prefix.");
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    try {
+      const approvals = fid().approvals;
+      const input = {
+        agentId: agentId || null,
+        kind: editing?.kind ?? "shell",
+        decision,
+        match: text,
+        matcher,
+        cwd: folder.trim(),
+      };
+      if (editing) await approvals.updateRule(editing.id, input);
+      else await approvals.createRule(input);
+      setFormOpen(false);
+      setEditingId(null);
+      await load();
+    } catch (caught) {
+      setFormError(errorText(caught));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function remove(rule: ApprovalRule) {
     setDeleting(rule.id);
     setError(null);
     try {
       await fid().approvals.deleteRule(rule.id);
       setRules((current) => current.filter((item) => item.id !== rule.id));
+      if (editingId === rule.id) cancelForm();
     } catch (caught) {
       setError(errorText(caught));
     } finally {
@@ -760,22 +882,135 @@ function SafetySection() {
           <ShieldCheck size={16} aria-hidden="true" />
         </div>
         <div className="connection-copy">
-          <div className="connection-name">Saved approval rules</div>
-          <div className="connection-note">Always allow and Always deny create these. Deny rules win over allow rules.</div>
+          <div className="connection-name">Approval rules</div>
+          <div className="connection-note">
+            Built-in denies always apply. Saved rules are checked next, but only when a command asks for approval.
+            Deny rules win over allow rules.
+          </div>
         </div>
-        <button type="button" className="text-button" disabled={loading} onClick={() => void load()}>
-          <RefreshCw size={11} className={loading ? "spin" : undefined} aria-hidden="true" />
-          Refresh
-        </button>
+        <div className="connection-head-actions">
+          <button type="button" className="text-button" disabled={saving} onClick={() => openForm(null)}>
+            <Plus size={11} aria-hidden="true" />
+            New rule
+          </button>
+          <button type="button" className="text-button" disabled={loading} onClick={() => void load()}>
+            <RefreshCw size={11} className={loading ? "spin" : undefined} aria-hidden="true" />
+            Refresh
+          </button>
+        </div>
       </div>
 
       <div className="safety-body">
+        <div className="approval-rule-list">
+          {BUILT_IN_APPROVAL_RULES.map((rule) => (
+            <div className="approval-rule is-built-in" key={rule.id} title={rule.detail}>
+              <span className="approval-decision is-deny">deny</span>
+              <div className="approval-rule-copy">
+                <code>{rule.match}</code>
+                <span>
+                  {rule.label} · Built-in · {rule.matcher === "prefix" ? "Starts with" : "Exact forms"} · Always
+                  denied
+                </span>
+                <span className="approval-rule-detail">{rule.detail}</span>
+              </div>
+              <Lock size={11} className="approval-rule-lock" aria-hidden="true" />
+            </div>
+          ))}
+        </div>
+
+        {formOpen ? (
+          <form className="approval-rule-form" onSubmit={saveRule}>
+            <div className="approval-form-title">{editing ? "Edit rule" : "New rule"}</div>
+            <div className="approval-form-grid">
+              <label className="field">
+                <span className="field-label">Agent</span>
+                <select
+                  className="input"
+                  aria-label="Rule agent"
+                  value={agentId}
+                  disabled={saving}
+                  onChange={(event) => setAgentId(event.target.value)}
+                >
+                  <option value="">All agents</option>
+                  {agents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span className="field-label">Decision</span>
+                <select
+                  className="input"
+                  aria-label="Rule decision"
+                  value={decision}
+                  disabled={saving}
+                  onChange={(event) => setDecision(event.target.value as "allow" | "deny")}
+                >
+                  <option value="deny">Always deny</option>
+                  <option value="allow">Always allow</option>
+                </select>
+              </label>
+              <label className="field approval-form-wide">
+                <span className="field-label">Command</span>
+                <input
+                  className="input"
+                  aria-label="Rule command"
+                  value={command}
+                  placeholder="git push --force"
+                  autoFocus
+                  disabled={saving}
+                  onChange={(event) => setCommand(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span className="field-label">Match</span>
+                <select
+                  className="input"
+                  aria-label="Rule match"
+                  value={matcher}
+                  disabled={saving}
+                  onChange={(event) => setMatcher(event.target.value as ApprovalMatcher)}
+                >
+                  <option value="exact">Exact command</option>
+                  <option value="prefix">Starts with</option>
+                </select>
+              </label>
+              <label className="field">
+                <span className="field-label">Folder</span>
+                <input
+                  className="input"
+                  aria-label="Rule folder"
+                  value={folder}
+                  placeholder="Any folder"
+                  title="Leave empty to apply in every folder."
+                  disabled={saving}
+                  onChange={(event) => setFolder(event.target.value)}
+                />
+              </label>
+            </div>
+            <div className="approval-form-actions">
+              <button type="button" className="btn btn-quiet" disabled={saving} onClick={cancelForm}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-secondary" disabled={saving || !command.trim()}>
+                {saving ? "Saving…" : editing ? "Save rule" : "Add rule"}
+              </button>
+            </div>
+            {formError ? (
+              <p className="settings-message is-error" role="alert">
+                {formError}
+              </p>
+            ) : null}
+          </form>
+        ) : null}
+
         {loading ? (
-          <p className="safety-empty">Reading rules…</p>
+          <p className="safety-empty">Reading saved rules…</p>
         ) : rules.length === 0 ? (
           <p className="safety-empty">
-            No saved rules. Every sensitive command asks first. Create a rule with Always allow or Always deny on an
-            approval.
+            No saved rules yet. Choose New rule, or choose Always allow or Always deny on an approval.
           </p>
         ) : (
           <div className="approval-rule-list">
@@ -785,9 +1020,19 @@ function SafetySection() {
                 <div className="approval-rule-copy">
                   <code>{rule.match}</code>
                   <span>
-                    {rule.agentName || rule.agentId} · {rule.cwd || "Any folder"}
+                    {rule.agentName} · {rule.cwd || "Any folder"}
+                    {rule.matcher === "prefix" ? " · starts with" : ""}
                   </span>
                 </div>
+                <button
+                  type="button"
+                  className="desk-icon-button"
+                  aria-label={`Edit ${rule.decision} rule for ${rule.match}`}
+                  disabled={saving}
+                  onClick={() => openForm(rule)}
+                >
+                  <Pencil size={11} />
+                </button>
                 <button
                   type="button"
                   className="desk-icon-button"
@@ -1024,6 +1269,65 @@ function ConfluenceSection({
         </div>
         <span className="field-note">
           Confluence updates ask for approval and check the page version first, so a stale page is not overwritten.
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function DatadogSection({
+  url,
+  busy,
+  onUrl,
+  onSaveSettings,
+}: {
+  url: string;
+  busy: boolean;
+  onUrl: (value: string) => void;
+  onSaveSettings: () => void;
+}) {
+  const configured = Boolean(url.trim());
+  return (
+    <div className="connection-card">
+      <div className="connection-head">
+        <div className="connection-icon is-datadog">
+          <Activity size={16} aria-hidden="true" />
+        </div>
+        <div className="connection-copy">
+          <div className="connection-name">Datadog access</div>
+          <div className="connection-note">
+            Uses the logged-in local browser. No API key is needed.
+          </div>
+        </div>
+        <span className={`connection-badge ${configured ? "is-on" : ""}`}>
+          {configured ? "Browser" : "Not configured"}
+        </span>
+      </div>
+      <div className="settings-form">
+        <label className="field">
+          <span className="field-label">Datadog URL</span>
+          <input
+            id="datadog-url"
+            className="input"
+            value={url}
+            placeholder="https://app.datadoghq.com"
+            onChange={(event) => onUrl(event.target.value)}
+          />
+          <span className="field-note">
+            Paste the address you use for Datadog. A Log Explorer, monitor, or other deep link is trimmed to the
+            site. Leave it empty and save to disconnect.
+          </span>
+        </label>
+        <div className="field-actions">
+          <button type="button" className="btn btn-secondary" disabled={busy} onClick={onSaveSettings}>
+            Save URL
+          </button>
+        </div>
+        <span className="field-note">
+          The Datadog Analyst opens the Log Explorer in the local headed browser and captures the page's log
+          response after you sign in once. The agent is read-only; the browser session stays in the browser and is
+          never copied into a tool or the chat. Log text is sent to Copilot, so keep queries narrow and avoid
+          secrets.
         </span>
       </div>
     </div>

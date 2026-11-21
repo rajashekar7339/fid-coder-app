@@ -141,6 +141,8 @@ try {
   await page.waitForSelector(".routine-history-row", { timeout: 10000 });
   await page.waitForTimeout(300);
   await save(page.locator(".routines-modal"), "routine-history.png");
+  // needs-you.png and all-routines.png are captured by tests/e2e-live/routines-ui.e2e.mjs.
+  // They need a second agent, a seeded inbox row, and a question card.
   await page.getByRole("button", { name: "Close routines" }).click();
   await page.waitForTimeout(300);
 
@@ -170,6 +172,13 @@ try {
     if (cells[0]) cells[0].textContent = "Guide demo";
   });
   await save(page.locator(".settings-modal"), "settings.png");
+  await page.locator(".settings-nav-item").filter({ hasText: "Datadog" }).click();
+  await page.waitForTimeout(500);
+  await save(page.locator(".settings-modal"), "datadog-settings.png");
+  await page.locator(".settings-nav-item").filter({ hasText: "Safety" }).click();
+  await page.locator(".approval-rule.is-built-in").first().waitFor({ state: "visible" });
+  await page.waitForTimeout(400);
+  await save(page.locator(".settings-modal"), "approval-rules.png");
   await page.getByRole("button", { name: "Close settings" }).click();
   await page.waitForTimeout(300);
 
@@ -532,6 +541,7 @@ async function seedDemoData(page) {
       await window.fid.settings.saveGithubPat("ghp_demo_guide_token");
       await window.fid.settings.saveJiraToken("jira_demo_guide_token");
       await window.fid.settings.saveJiraSite("https://fid.atlassian.net");
+      await window.fid.settings.saveDatadog({ url: "https://app.datadoghq.com" });
       return { ok: true };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };

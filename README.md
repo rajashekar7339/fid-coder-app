@@ -44,6 +44,7 @@ npm run dev
 | `npm run test:message-actions` | Deterministic Electron harness for editing and deleting user messages: inline editor, routine read-only, delete confirmation, and later turns kept. |
 | `npm run test:message-actions-live` | Live harness for editing a message with rewind and rerun, then deleting the edited turn. Needs Copilot. |
 | `npm run test:native-live` | Live harness for `table_read` and Confluence read/update. Uses a temp CSV and a local fake Confluence server; needs Copilot. Set `FID_WATCH_MS=1500` to watch the steps. |
+| `npm run test:datadog-browser-live` | Live harness for the Datadog Analyst with **no API keys**. Opens a local fake Datadog page in the real headed browser, captures its JSON log response, reads a temp workspace, and reports the root cause. Needs Copilot. Set `FID_WATCH_MS=1500` to watch the browser and the app. |
 | `npm run dist:win` | Build the portable Windows app into `release/` |
 
 ## Project layout

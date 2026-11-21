@@ -63,6 +63,17 @@ test("tables and Confluence pages are counted too", () => {
   );
 });
 
+test("Datadog searches are counted as telemetry work", () => {
+  assert.equal(
+    toolGroupSummary([
+      item("datadog_browser_error_summary", "Grouped errors"),
+      item("datadog_browser_logs", "Read logs"),
+      item("datadog_browser_logs", "Read logs"),
+    ]),
+    "Checked Datadog 3 times",
+  );
+});
+
 test("a worked duration uses seconds, minutes, and hours", () => {
   assert.equal(
     workDurationLabel("2026-11-20T10:00:00.000Z", "2026-11-20T10:00:05.000Z"),

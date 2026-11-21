@@ -2,6 +2,8 @@
 
 Fid Coder is one window with three working areas. The sidebar chooses an agent, the center column is the conversation, and the Agent Desk shows what the agent is doing on this PC.
 
+The window has no separate title strip. Drag it from the sidebar header or any top pane header. The Windows minimize, maximize, and close controls stay at the top right.
+
 ![The Fid Coder cockpit with the JIRA Agent selected, a conversation in the center, and the Agent Desk on the right.](images/cockpit.png)
 
 ## Sidebar
@@ -41,7 +43,7 @@ The right column shows the selected agent's local work.
 - **Changes** is a one-line summary of the latest edited turn. Choose **Open changes** for the turn picker, diff, and file tree.
 - **Approvals** shows recent allow, deny, and timeout decisions. Choose History for the full audit.
 - **Routines** lists saved routines. Use the switch to pause one, or the plus to manage them. A routine runs only while Fid Coder is open. Closing the app skips a slot that comes due while it is closed.
-- The bell beside **New agent** opens the inbox. It lists approvals, failed turns, and finished routine runs.
+- The bell beside **New agent** opens **Needs you**. **Waiting on you** groups approvals, questions, browser handoffs, and skill saves by agent, and you can answer them there. **Updates** lists failed turns and finished routine runs. **Routines** lists every agent's routines.
 - **Workspace** shows the folder a developer agent can read, search, and edit. Browser-only agents show no workspace.
 - The desk opens automatically at 1181 px and wider. Use the panel button in the chat header to hide or show it.
 

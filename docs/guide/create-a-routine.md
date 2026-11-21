@@ -1,6 +1,6 @@
 # Create a routine
 
-A routine sends a saved instruction to an agent at a time you choose. It can run once or repeat. The result lands in that agent's conversation. Fid Coder can raise a Windows notification, and the sidebar bell keeps approvals, failed turns, and finished runs.
+A routine sends a saved instruction to an agent at a time you choose. It can run once or repeat. The result lands in that agent's conversation. Fid Coder can raise a Windows notification, and the sidebar bell keeps approvals, questions, browser handoffs, skill saves, failed turns, and finished runs.
 
 ## Limitation
 
@@ -68,7 +68,15 @@ Choose the **History** tab at the top of the routine list. A row shows the routi
 
 ## Inbox
 
-The bell lists approvals, failed chat turns, and finished scheduled runs. Open a row to go to that agent. **Snooze** hides a routine or a failed turn for four hours. An approval stays until you answer it.
+The bell opens **Needs you**. **Waiting on you** groups approvals, questions, browser handoffs, and skill saves by agent. The same cards are in the chat, so answering in either place clears both. **Updates** lists failed chat turns and finished scheduled runs. Open a row to go to that agent. **Snooze** hides a routine or a failed turn for four hours. **Dismiss** clears that update. An approval, a question, a handoff, and a skill save stay until you answer them.
+
+![Needs you, with a question for one agent and a finished routine under Updates.](images/needs-you.png)
+
+## Every routine
+
+Choose **Routines** on that same window. Each agent has its own group. A row shows the schedule, the next run, the last status, and **Look and report** when the routine only reports. The switch pauses or resumes it. **Run now** starts it. **Open** switches to that agent and opens the routine editor. Add and edit a routine from the agent's own Routines dialog.
+
+![Every routine, grouped by agent, with the enable switch, Run now, and Open.](images/all-routines.png)
 
 ## Tray and pause
 

@@ -8,13 +8,16 @@ import { parseQuestionReply } from "../../shared/question";
 import { parseSkillDraft } from "../../shared/skill-draft";
 import { normalizeModelId } from "../../shared/model";
 import { isConfluenceMode, normalizeConfluenceSite } from "../../shared/confluence";
+import { normalizeDatadogUrl } from "../../shared/datadog";
 import { skillVersionLabel } from "../../shared/skills";
 import { normalizeToolProfile } from "../../shared/tool-profile";
 import type {
   AgentInput,
   ApprovalAction,
+  ApprovalRuleInput,
   AttachmentPick,
   ConfluenceSettingsInput,
+  DatadogSettingsInput,
   MessageAttachment,
   FactInput,
   FactPatch,
@@ -213,6 +216,12 @@ export function registerIpc(services: AppServices): void {
   ipcMain.handle(channels.approvalsRules, (_event, agentId?: string) =>
     db.listApprovalRules(agentId ? String(agentId) : undefined),
   );
+  ipcMain.handle(channels.approvalsCreateRule, (_event, input: ApprovalRuleInput) =>
+    db.createApprovalRule(input),
+  );
+  ipcMain.handle(channels.approvalsUpdateRule, (_event, id: string, input: ApprovalRuleInput) =>
+    db.updateApprovalRule(String(id ?? ""), input),
+  );
   ipcMain.handle(channels.approvalsDeleteRule, (_event, id: string) => db.deleteApprovalRule(String(id ?? "")));
 
   ipcMain.handle(channels.browserPreview, (_event, agentId: string) => browser.preview(String(agentId ?? "")));
@@ -289,6 +298,7 @@ export function registerIpc(services: AppServices): void {
   });
 
   ipcMain.handle(channels.routinesList, (_event, agentId: string) => routines.list(agentId));
+  ipcMain.handle(channels.routinesListAll, () => routines.listAll());
   ipcMain.handle(channels.routinesCreate, (_event, input: RoutineInput) => {
     const { agentId, ...draft } = input;
     return routines.create(agentId, draft);
@@ -332,12 +342,7 @@ export function registerIpc(services: AppServices): void {
 
   ipcMain.handle(channels.settingsGet, async (_event, options?: { refreshAuth?: boolean }) => {
     if (options?.refreshAuth) await stopClient();
-    const status = {
-      ...(await getCopilotStatus()),
-      jiraSiteUrl: db.getSetting("jira_site_url") ?? "",
-      ...confluenceSettings(db),
-      ...appPresence(db),
-    };
+    const status = await settingsSnapshot(db);
     watchCopilotUsage(status.signedIn);
     return status;
   });
@@ -353,12 +358,7 @@ export function registerIpc(services: AppServices): void {
   ipcMain.handle(channels.settingsSignOut, async () => {
     await runner.dropAllSessions();
     await signOutCopilot();
-    return {
-      ...(await getCopilotStatus()),
-      jiraSiteUrl: db.getSetting("jira_site_url") ?? "",
-      ...confluenceSettings(db),
-      ...appPresence(db),
-    };
+    return settingsSnapshot(db);
   });
   ipcMain.handle(channels.settingsLogin, async () => {
     await runner.dropAllSessions();
@@ -422,6 +422,16 @@ export function registerIpc(services: AppServices): void {
   });
   ipcMain.handle(channels.settingsClearConfluenceToken, async () => {
     clearSecret(secretKeys.confluence);
+    await runner.dropAllSessions();
+  });
+  ipcMain.handle(channels.settingsSaveDatadog, async (_event, input: DatadogSettingsInput) => {
+    const raw = String(input?.url ?? "").trim();
+    const url = raw ? normalizeDatadogUrl(raw) : "";
+    db.setSetting("datadog_url", url);
+    // Older builds stored a site preset, an app base, and an API base; clear them.
+    db.setSetting("datadog_site", "");
+    db.setSetting("datadog_app_base", "");
+    db.setSetting("datadog_api_base", "");
     await runner.dropAllSessions();
   });
 
@@ -515,6 +525,22 @@ function confluenceSettings(db: AppDatabase) {
     confluenceSiteUrl: db.getSetting("confluence_site_url") ?? "",
     confluenceEmail: db.getSetting("confluence_email") ?? "",
     confluenceMode: isConfluenceMode(mode) ? mode : "data-center",
+  };
+}
+
+function datadogSettings(db: AppDatabase) {
+  return {
+    datadogUrl: db.getSetting("datadog_url") ?? "",
+  };
+}
+
+async function settingsSnapshot(db: AppDatabase) {
+  return {
+    ...(await getCopilotStatus()),
+    jiraSiteUrl: db.getSetting("jira_site_url") ?? "",
+    ...confluenceSettings(db),
+    ...datadogSettings(db),
+    ...appPresence(db),
   };
 }
 

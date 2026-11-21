@@ -1,7 +1,7 @@
 import type { Citation } from "./citations";
 import type { ConfluenceMode } from "./confluence";
 
-export type AgentToolProfile = "all" | "browser" | "developer";
+export type AgentToolProfile = "all" | "browser" | "developer" | "datadog";
 
 export type Agent = {
   id: string;
@@ -113,6 +113,10 @@ export type FactInput = {
 export type FactPatch = {
   content?: string;
   enabled?: boolean;
+};
+
+export type RoutineOverview = Routine & {
+  agentName: string;
 };
 
 export type Routine = {
@@ -295,22 +299,26 @@ export type ApprovalRecord = {
   decidedAt: string | null;
 };
 
+export type ApprovalMatcher = "exact" | "prefix";
+
 export type ApprovalRule = {
   id: string;
-  agentId: string;
+  agentId: string | null;
   agentName: string;
   kind: ApprovalKind;
   decision: ApprovalDecision;
   match: string;
+  matcher: ApprovalMatcher;
   cwd: string;
   createdAt: string;
 };
 
 export type ApprovalRuleInput = {
-  agentId: string;
+  agentId: string | null;
   kind: ApprovalKind;
   decision: ApprovalDecision;
   match: string;
+  matcher: ApprovalMatcher;
   cwd: string;
 };
 
@@ -440,6 +448,7 @@ export type SettingsView = {
   confluenceSiteUrl: string;
   confluenceEmail: string;
   confluenceMode: ConfluenceMode;
+  datadogUrl: string;
   routinesPaused: boolean;
 };
 
@@ -447,6 +456,10 @@ export type ConfluenceSettingsInput = {
   siteUrl: string;
   email: string;
   mode: ConfluenceMode;
+};
+
+export type DatadogSettingsInput = {
+  url: string;
 };
 
 export type AgentInput = {

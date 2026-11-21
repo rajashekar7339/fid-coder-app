@@ -10,6 +10,7 @@ import type {
   ApprovalRecord,
   ApprovalRequest,
   ApprovalRule,
+  ApprovalRuleInput,
   BrowserHandoffRequest,
   QuestionReply,
   QuestionRequest,
@@ -19,6 +20,7 @@ import type {
   ChangeSet,
   ChatEvent,
   ConfluenceSettingsInput,
+  DatadogSettingsInput,
   ContextView,
   CopilotModel,
   FileDiff,
@@ -27,6 +29,7 @@ import type {
   QueuedMessage,
   Routine,
   RoutineInput,
+  RoutineOverview,
   RoutinePatch,
   RoutineRun,
   SettingsView,
@@ -107,6 +110,8 @@ export interface FidApi {
     pending: (agentId?: string) => Promise<ApprovalRequest[]>;
     history: (agentId: string, limit?: number) => Promise<ApprovalRecord[]>;
     rules: (agentId?: string) => Promise<ApprovalRule[]>;
+    createRule: (input: ApprovalRuleInput) => Promise<ApprovalRule>;
+    updateRule: (id: string, input: ApprovalRuleInput) => Promise<ApprovalRule>;
     deleteRule: (id: string) => Promise<void>;
   };
   browser: {
@@ -142,6 +147,7 @@ export interface FidApi {
   };
   routines: {
     list: (agentId: string) => Promise<Routine[]>;
+    listAll: () => Promise<RoutineOverview[]>;
     create: (input: RoutineInput) => Promise<Routine>;
     update: (id: string, patch: RoutinePatch) => Promise<Routine>;
     delete: (id: string) => Promise<void>;
@@ -175,6 +181,7 @@ export interface FidApi {
     saveConfluence: (input: ConfluenceSettingsInput) => Promise<void>;
     saveConfluenceToken: (token: string) => Promise<void>;
     clearConfluenceToken: () => Promise<void>;
+    saveDatadog: (input: DatadogSettingsInput) => Promise<void>;
   };
   dialog: {
     pickFolder: () => Promise<string | null>;

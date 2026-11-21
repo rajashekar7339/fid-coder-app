@@ -166,10 +166,69 @@ test("new databases seed agents on Auto", () => {
     assert.equal(agents.find((agent) => agent.name === "JIRA Agent")?.description, "Jira teammate");
     assert.equal(agents.find((agent) => agent.name === "JIRA Agent")?.toolProfile, "browser");
     assert.equal(agents.find((agent) => agent.name === "GIT PR Review")?.toolProfile, "developer");
+    const datadog = agents.find((agent) => agent.name === "Datadog Analyst");
+    assert.equal(datadog?.description, "Logs, metrics, and root cause");
+    assert.equal(datadog?.toolProfile, "datadog");
+    assert.match(datadog?.systemPrompt ?? "", /datadog-triage/);
     assert.ok(agents.every((agent) => agent.lastActivityAt === null));
     assert.ok(agents.every((agent) => agent.pinned === false && agent.archived === false));
   } finally {
     db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a saved native Datadog prompt moves to browser mode", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-datadog-prompt-"));
+  const file = path.join(dir, "app.sqlite");
+  try {
+    const db = new AppDatabase(file);
+    const datadog = db.listAgents().find((agent) => agent.name === "Datadog Analyst");
+    assert.ok(datadog);
+    db.updateAgent(datadog.id, {
+      name: datadog.name,
+      description: datadog.description,
+      systemPrompt:
+        "You are a Datadog analyst. Use datadog_logs_search and datadog_logs_aggregate with an API key.",
+      workspaceDir: null,
+      model: "auto",
+      toolProfile: "datadog",
+      readOnly: false,
+      memoryEnabled: false,
+    });
+    db.close();
+
+    const reopened = new AppDatabase(file);
+    try {
+      const upgraded = reopened.listAgents().find((agent) => agent.id === datadog.id);
+      assert.match(upgraded.systemPrompt, /datadog_browser_logs/);
+      assert.doesNotMatch(upgraded.systemPrompt, /datadog_logs_search/);
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the seeded Datadog agent is added once and stays deleted", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fid-datadog-seed-"));
+  const file = path.join(dir, "app.sqlite");
+  try {
+    const db = new AppDatabase(file);
+    const datadog = db.listAgents().find((agent) => agent.name === "Datadog Analyst");
+    assert.ok(datadog);
+    db.deleteAgent(datadog.id);
+    assert.equal(db.listAgents().some((agent) => agent.name === "Datadog Analyst"), false);
+    db.close();
+
+    const reopened = new AppDatabase(file);
+    try {
+      assert.equal(reopened.listAgents().some((agent) => agent.name === "Datadog Analyst"), false);
+    } finally {
+      reopened.close();
+    }
+  } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

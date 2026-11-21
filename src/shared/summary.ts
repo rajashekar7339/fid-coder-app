@@ -25,7 +25,8 @@ type ToolGroupKind =
   | "git"
   | "pull-requests"
   | "jira"
-  | "confluence-pages";
+  | "confluence-pages"
+  | "datadog";
 
 const GROUP_ORDER: ToolGroupKind[] = [
   "files-read",
@@ -41,6 +42,7 @@ const GROUP_ORDER: ToolGroupKind[] = [
   "pull-requests",
   "jira",
   "confluence-pages",
+  "datadog",
 ];
 
 function toolGroupKind(name: string): ToolGroupKind | null {
@@ -57,6 +59,7 @@ function toolGroupKind(name: string): ToolGroupKind | null {
   if (name.startsWith("git_")) return "git";
   if (name.startsWith("gh_pr_")) return "pull-requests";
   if (name.startsWith("jira_")) return "jira";
+  if (name.startsWith("datadog_")) return "datadog";
   if (name.startsWith("browser_") && name !== "browser_needs_you") return "browser";
   return null;
 }
@@ -93,6 +96,8 @@ function groupPhrase(kind: ToolGroupKind, count: number): string {
       return `Read ${plural(count, "pull request", "pull requests")}`;
     case "jira":
       return count === 1 ? "Checked Jira" : `Checked Jira ${count} times`;
+    case "datadog":
+      return count === 1 ? "Checked Datadog" : `Checked Datadog ${count} times`;
   }
 }
 

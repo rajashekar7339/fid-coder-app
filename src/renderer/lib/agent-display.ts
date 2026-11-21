@@ -1,4 +1,5 @@
 import {
+  Activity,
   Bot,
   FileText,
   GitBranch,
@@ -31,6 +32,7 @@ export function isRecentlyActive(iso: string | null): boolean {
 
 function agentIcon(agent: AgentIdentity): LucideIcon {
   const text = `${agent.name} ${agent.description} ${agent.systemPrompt}`.toLowerCase();
+  if (/datadog|telemetry|observability|monitor/.test(text)) return Activity;
   if (/jira|ticket|issue tracker/.test(text)) return Ticket;
   if (/git|github|pull request|code review|repository/.test(text)) return GitBranch;
   if (/inbox|mail|email|newsletter/.test(text)) return Inbox;

@@ -1,10 +1,14 @@
 /// <reference types="vite/client" />
 
+import allRoutinesImage from "../../../docs/guide/images/all-routines.png";
 import agentFactsImage from "../../../docs/guide/images/agent-facts.png";
+import approvalRulesImage from "../../../docs/guide/images/approval-rules.png";
 import askModeImage from "../../../docs/guide/images/ask-mode.png";
 import confluenceSettingsImage from "../../../docs/guide/images/confluence-settings.png";
+import datadogSettingsImage from "../../../docs/guide/images/datadog-settings.png";
 import enhancePromptImage from "../../../docs/guide/images/enhance-prompt.png";
 import messageActionsImage from "../../../docs/guide/images/message-actions.png";
+import needsYouImage from "../../../docs/guide/images/needs-you.png";
 import projectMapImage from "../../../docs/guide/images/project-map.png";
 import queueWhileRunningImage from "../../../docs/guide/images/queue-while-running.png";
 import routineHistoryImage from "../../../docs/guide/images/routine-history.png";
@@ -36,7 +40,7 @@ const SOURCES: GuideSource[] = [
     id: "the-cockpit",
     title: "The cockpit at a glance",
     group: "Start here",
-    summary: "Search, pin, and archive agents, open the inbox, then use the conversation, Agent Desk, and shortcuts.",
+    summary: "Search, pin, and archive agents, clear Needs you, then use the conversation, Agent Desk, and shortcuts.",
     readMinutes: 4,
     file: "the-cockpit.md",
   },
@@ -63,7 +67,7 @@ const SOURCES: GuideSource[] = [
     title: "Create a routine",
     group: "Using Fid Coder",
     summary:
-      "Create a routine that runs once or repeats while Fid Coder is open. It can do the work or only look and report. A slot that passes while the app is closed does not run.",
+      "Create a routine that runs once or repeats while Fid Coder is open, see every routine in one list, and let it do the work or only look and report. A slot that passes while the app is closed does not run.",
     readMinutes: 6,
     file: "create-a-routine.md",
   },
@@ -107,11 +111,15 @@ const IMAGES = import.meta.glob("../../../docs/guide/images/*", {
 }) as Record<string, string>;
 
 const EXPLICIT_IMAGES: Record<string, string> = {
+  "all-routines.png": allRoutinesImage,
   "agent-facts.png": agentFactsImage,
+  "approval-rules.png": approvalRulesImage,
   "ask-mode.png": askModeImage,
   "confluence-settings.png": confluenceSettingsImage,
+  "datadog-settings.png": datadogSettingsImage,
   "enhance-prompt.png": enhancePromptImage,
   "message-actions.png": messageActionsImage,
+  "needs-you.png": needsYouImage,
   "project-map.png": projectMapImage,
   "queue-while-running.png": queueWhileRunningImage,
   "routine-history.png": routineHistoryImage,

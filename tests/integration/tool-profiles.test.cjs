@@ -40,7 +40,7 @@ test("review_code forwards the target to the read-only reviewer", async () => {
 });
 
 test("ask_user is on every chat profile and not on the review subagent", () => {
-  for (const profile of ["browser", "developer", "all"]) {
+  for (const profile of ["browser", "developer", "all", "datadog"]) {
     assert.equal(toolsForAgent(profile).some((tool) => tool.name === "ask_user"), true, profile);
   }
   assert.equal(askTools().some((tool) => tool.name === "ask_user"), true);
@@ -55,8 +55,9 @@ test("browser handoff and save skill follow the mode rules", () => {
   assert.equal(ask.includes("save_skill"), true);
   assert.equal(toolsForAgent("browser").some((tool) => tool.name === "browser_needs_you"), true);
   assert.equal(toolsForAgent("all").some((tool) => tool.name === "browser_needs_you"), true);
+  assert.equal(toolsForAgent("datadog").some((tool) => tool.name === "browser_needs_you"), true);
   assert.equal(toolsForAgent("developer").some((tool) => tool.name === "browser_needs_you"), false);
-  for (const profile of ["browser", "developer", "all"]) {
+  for (const profile of ["browser", "developer", "all", "datadog"]) {
     assert.equal(toolsForAgent(profile).some((tool) => tool.name === "save_skill"), true, profile);
   }
   for (const names of [review, routine]) {
@@ -85,6 +86,8 @@ test("Ask mode exposes every read-only tool and no writes or actions", () => {
     "jira_issue",
     "confluence_search",
     "confluence_page",
+    "datadog_browser_logs",
+    "datadog_browser_error_summary",
     "table_read",
     "history_first",
     "history_search",
@@ -105,6 +108,46 @@ test("Ask mode exposes every read-only tool and no writes or actions", () => {
   ]) {
     assert.equal(names.includes(name), false, name);
   }
+});
+
+test("the Datadog profile reads telemetry, code, and the browser but cannot write", () => {
+  const names = toolsForAgent("datadog").map((tool) => tool.name);
+  for (const name of [
+    "datadog_browser_logs",
+    "datadog_browser_error_summary",
+    "file_read",
+    "read_many",
+    "search_text",
+    "git_status",
+    "git_diff",
+    "git_log",
+    "browser_navigate",
+    "browser_snapshot",
+    "browser_needs_you",
+    "jira_search",
+    "confluence_page",
+    "explore_code",
+  ]) {
+    assert.equal(names.includes(name), true, name);
+  }
+  for (const name of [
+    "file_write",
+    "apply_patch",
+    "shell_run",
+    "browser_click",
+    "browser_type",
+    "review_code",
+    "confluence_update_page",
+  ]) {
+    assert.equal(names.includes(name), false, name);
+  }
+});
+
+test("the browser profile gets the read-only Datadog browser tools", () => {
+  const names = toolsForAgent("browser").map((tool) => tool.name);
+  assert.equal(names.includes("datadog_browser_logs"), true);
+  assert.equal(names.includes("datadog_browser_error_summary"), true);
+  assert.equal(names.includes("file_write"), false);
 });
 
 test("table and Confluence tools follow the mode rules", () => {

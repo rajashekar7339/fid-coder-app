@@ -3,6 +3,7 @@ import type { AgentToolProfile } from "../shared/types";
 import { askUserTool } from "./ask/ask";
 import { browserTools } from "./browser/browser";
 import { confluenceTools } from "./confluence/confluence";
+import { datadogBrowserTools } from "./datadog/browser";
 import { exploreCodeTool } from "./explore/explore-code";
 import { exploreTools } from "./explore/explore";
 import { fileTools } from "./files/files";
@@ -37,6 +38,8 @@ const askReadNames = new Set([
   "jira_issue",
   "confluence_search",
   "confluence_page",
+  "datadog_browser_logs",
+  "datadog_browser_error_summary",
   "table_read",
   "history_first",
   "history_search",
@@ -78,6 +81,7 @@ export function allTools(): AppTool[] {
     ...browserTools,
     ...jiraTools,
     ...confluenceTools,
+    ...datadogBrowserTools,
     ...tableTools,
     ...shellTools,
     ...exploreTools,
@@ -98,6 +102,7 @@ export function toolsForAgent(profile: AgentToolProfile): AppTool[] {
       ...browserTools,
       ...jiraTools,
       ...confluenceTools,
+      ...datadogBrowserTools,
       ...tableTools,
       ...historyTools,
       ...routineManagementTools,
@@ -117,6 +122,13 @@ export function toolsForAgent(profile: AgentToolProfile): AppTool[] {
       ...routineManagementTools,
       exploreCodeTool,
       reviewCodeTool,
+    ];
+  }
+  if (profile === "datadog") {
+    // Read-only analysis with routine management; spreadsheets are out of scope.
+    return [
+      ...askTools().filter((tool) => tool.name !== "table_read"),
+      ...routineManagementTools,
     ];
   }
   return allTools();

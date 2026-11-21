@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Check, FolderOpen, X } from "lucide-react";
+import { DATADOG_AGENT_PROMPT } from "../../../shared/datadog";
 import { AUTO_MODEL_ID } from "../../../shared/model";
 import type { Agent, AgentToolProfile, CopilotModel } from "../../../shared/types";
 import { errorText, fid } from "../../lib/fid";
@@ -61,17 +62,24 @@ const INSTRUCTION_PRESETS = [
     label: "Release notes",
     text: "You are a release assistant. Read the changelog and open pull requests, then draft release notes with the main changes, risks, and testing gaps. When the user wants a shareable page, load the html-report skill with use_skill and produce one self-contained HTML file.",
   },
+  {
+    id: "datadog",
+    label: "Datadog analyst",
+    text: DATADOG_AGENT_PROMPT,
+  },
 ];
 
 const TOOL_CHOICES: { value: AgentToolProfile; label: string }[] = [
   { value: "all", label: "All tools" },
   { value: "browser", label: "Browser and Jira" },
   { value: "developer", label: "Shell, search, git, and files" },
+  { value: "datadog", label: "Datadog and workspace" },
 ];
 
 function toolChoiceDetail(profile: AgentToolProfile): string {
-  if (profile === "all") return "Browser, Jira, shell, search, git, and files.";
+  if (profile === "all") return "Browser, Jira, Datadog, shell, search, git, and files.";
   if (profile === "browser") return "Full browser control, Jira, and history.";
+  if (profile === "datadog") return "Datadog log capture, browser, Jira, and workspace reads.";
   return "Shell, file writes, search, git, and history.";
 }
 

@@ -61,7 +61,9 @@ export function describeAttachmentFiles(paths: string[]): AttachmentPick {
  * Code Puppy's rule: only images go to the model as binary attachments.
  * Text and code files are passed as workspace paths, and the agent reads them
  * with its own file tools. An upload from outside the workspace is copied to
- * `.fid/uploads/<id>/` first so those tools can reach it.
+ * `.fid/uploads/<id>/` first so those tools can reach it. When the agent has no
+ * workspace or no file tools, a text-like upload is sent as whole-file text
+ * instead; binary files still need a workspace and file tools.
  */
 export function buildCopilotAttachments(
   agent: Agent,
@@ -155,7 +157,7 @@ function buildWorkspaceFile(agent: Agent, ref: MessageAttachment): BuiltOne {
 
 function buildUpload(agent: Agent, ref: MessageAttachment): BuiltOne {
   if (!path.isAbsolute(ref.path)) throw new Error("Choose that file again.");
-  statFile(ref.path);
+  const stat = statFile(ref.path);
   const mime = imageMimeForAttachment(ref.path);
   const name = path.basename(ref.path);
   if (mime) {
@@ -165,11 +167,7 @@ function buildUpload(agent: Agent, ref: MessageAttachment): BuiltOne {
       prompt: `- ${name} (image attachment)`,
     };
   }
-  if (!canUseFileTools(agent)) {
-    throw new Error(
-      "This agent cannot read files. Use an agent with a workspace and file tools, or attach a PNG, JPEG, WebP, or GIF image up to 10 MB.",
-    );
-  }
+  if (!canUseFileTools(agent)) return buildTextUpload(ref, name, stat.size);
   const copied = copyUpload(agent.workspaceDir, ref.path, name);
   return {
     sdk: null,
@@ -180,6 +178,66 @@ function buildUpload(agent: Agent, ref: MessageAttachment): BuiltOne {
     },
     prompt: `- ${copied.relative} (uploaded file)`,
   };
+}
+
+/**
+ * A no-workspace agent cannot reach a path with file_read or table_read, so a
+ * text-like upload travels in the message itself. The text is capped and is
+ * never stored in SQLite; only the descriptor is saved.
+ */
+function buildTextUpload(ref: MessageAttachment, name: string, bytes: number): BuiltOne {
+  const text = readTextUpload(ref.path, bytes);
+  const lines = text.split(/\r?\n/);
+  if (lines[lines.length - 1] === "") lines.pop();
+  const last = lines.length - 1;
+  return {
+    sdk: {
+      type: "selection",
+      filePath: ref.path,
+      displayName: name,
+      text,
+      selection: {
+        start: { line: 0, character: 0 },
+        end: { line: last, character: lines[last]?.length ?? 0 },
+      },
+    },
+    stored: { kind: "upload", path: ref.path, name },
+    prompt: `- ${name} (attached text, ${text.length.toLocaleString()} characters)`,
+  };
+}
+
+function readTextUpload(file: string, bytes: number): string {
+  if (bytes > MAX_SELECTION_CHARS * 4) throw tooLargeTextUpload();
+  let text: string;
+  try {
+    text = fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "");
+  } catch {
+    throw new Error("That file could not be read.");
+  }
+  if (!text.trim()) throw new Error("That file is empty.");
+  if (text.length > MAX_SELECTION_CHARS) throw tooLargeTextUpload();
+  if (text.includes("\uFFFD") || looksBinary(text)) {
+    throw new Error(
+      "This file type needs a workspace folder and file tools. Attach a text, CSV, or image file, or add a workspace folder.",
+    );
+  }
+  return text;
+}
+
+function tooLargeTextUpload(): Error {
+  return new Error(
+    "This file is too large to attach without a workspace. Add a workspace folder and file tools to read it, or attach a smaller text file.",
+  );
+}
+
+function looksBinary(text: string): boolean {
+  const sample = text.slice(0, 4096);
+  for (let index = 0; index < sample.length; index += 1) {
+    const code = sample.charCodeAt(index);
+    if (code === 0) return true;
+    if (code < 32 && code !== 9 && code !== 10 && code !== 13) return true;
+  }
+  return false;
 }
 
 function canUseFileTools(agent: Agent): agent is Agent & { workspaceDir: string } {

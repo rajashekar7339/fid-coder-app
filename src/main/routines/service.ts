@@ -1,6 +1,7 @@
 import type {
   Routine,
   RoutineInput,
+  RoutineOverview,
   RoutinePatch,
 } from "../../shared/types";
 import {
@@ -21,6 +22,10 @@ export class RoutineService {
 
   list(agentId: string): Routine[] {
     return this.db.listRoutines(agentId);
+  }
+
+  listAll(): RoutineOverview[] {
+    return this.db.listAllRoutines();
   }
 
   create(agentId: string, draft: RoutineDraft): Routine {

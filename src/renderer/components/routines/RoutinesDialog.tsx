@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   ChevronRight,
   Clock3,
@@ -45,8 +45,16 @@ export function RoutinesDialog({ agent, routines, onClose, onRefresh }: Props) {
   const [selection, setSelection] = useState<Selection>(() =>
     routines[0] ? { kind: "routine", id: routines[0].id } : { kind: "new" },
   );
+  const openedEmpty = useRef(routines.length === 0);
 
   useEffect(() => setList(routines), [routines]);
+
+  useEffect(() => {
+    const first = routines[0];
+    if (!openedEmpty.current || !first) return;
+    openedEmpty.current = false;
+    setSelection({ kind: "routine", id: first.id });
+  }, [routines]);
 
   useEffect(() => {
     if (selection.kind === "routine" && !list.some((routine) => routine.id === selection.id)) {

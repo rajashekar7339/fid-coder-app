@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
+  Activity,
   ArrowDown,
   ArrowUp,
   BookOpen,
@@ -177,6 +178,12 @@ const TOOL_META: Record<string, ToolMeta> = {
     label: "Updated a Confluence page",
     active: "Updating a Confluence page",
     Icon: BookOpen,
+  },
+  datadog_browser_logs: { label: "Read Datadog logs", active: "Reading Datadog logs", Icon: Activity },
+  datadog_browser_error_summary: {
+    label: "Grouped Datadog errors",
+    active: "Grouping Datadog errors",
+    Icon: Activity,
   },
   file_write: { label: "Wrote a file", active: "Writing a file", Icon: FileText },
   apply_patch: { label: "Patched a file", active: "Patching a file", Icon: FileText },

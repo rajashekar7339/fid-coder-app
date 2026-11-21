@@ -689,6 +689,16 @@ async function main() {
       { timeout: 10_000 },
     );
     check("help guide has the Working screenshot", true);
+    await page.getByRole("button", { name: /Connect Copilot, GitHub, Jira, and Confluence/ }).first().click();
+    await page.waitForFunction(
+      () =>
+        [...document.querySelectorAll(".help-article img")].some(
+          (image) =>
+            image.src.includes("approval-rules.png") && image.complete && image.naturalWidth > 0,
+        ),
+      { timeout: 10_000 },
+    );
+    check("help guide has the approval-rules screenshot", true);
     await page.getByRole("button", { name: "Close help" }).click();
     await page.waitForSelector(".help-modal", { state: "detached", timeout: 10_000 });
   } finally {

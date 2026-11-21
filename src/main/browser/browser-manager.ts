@@ -1,6 +1,11 @@
 import fs from "fs";
-import { chromium, type BrowserContext, type Page } from "playwright";
+import { chromium, type BrowserContext, type Page, type Response } from "playwright";
 import type { BrowserPreview } from "../../shared/types";
+import type {
+  BrowserCaptureOptions,
+  BrowserCaptureResult,
+  CapturedBrowserResponse,
+} from "../../tools/types";
 import { profileDir } from "../paths";
 
 const channels: Array<"msedge" | "chrome" | null> = ["msedge", "chrome", null];
@@ -55,6 +60,88 @@ export class BrowserManager {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Open a page and collect its JSON XHR/fetch responses. The caller supplies
+   * the origins it will accept; the manager never records cookies or request
+   * headers, and it records responses only from those origins.
+   */
+  async capture(
+    agentId: string,
+    url: string,
+    options: BrowserCaptureOptions = {},
+  ): Promise<BrowserCaptureResult> {
+    const target = new URL(url);
+    if (target.protocol !== "http:" && target.protocol !== "https:") {
+      throw new Error("Capture only supports http and https pages.");
+    }
+    const allowed = (options.allowedOrigins ?? [])
+      .map((origin) => {
+        try {
+          return new URL(origin).origin;
+        } catch {
+          return "";
+        }
+      })
+      .filter(Boolean);
+    if (allowed.length === 0) throw new Error("Capture needs an allowed origin.");
+    if (!allowed.includes(target.origin)) {
+      throw new Error("Capture is limited to the allowed origins.");
+    }
+    const pattern = options.urlPattern ? new RegExp(options.urlPattern, "i") : /\/api\//i;
+    const maxBodies = clampInt(options.maxBodies ?? 12, 1, 30);
+    const maxBodyChars = clampInt(options.maxBodyChars ?? 200_000, 1_000, 500_000);
+    const settleMs = clampInt(options.settleMs ?? 6_000, 0, 15_000);
+    const page = await this.page(agentId);
+    const found = new Map<string, CapturedBrowserResponse>();
+    const pending: Promise<void>[] = [];
+    const onResponse = (response: Response) => {
+      const request = response.request();
+      if (request.resourceType() !== "xhr" && request.resourceType() !== "fetch") return;
+      let responseUrl: URL;
+      try {
+        responseUrl = new URL(response.url());
+      } catch {
+        return;
+      }
+      if (!allowed.includes(responseUrl.origin)) return;
+      if (!pattern.test(response.url())) return;
+      const contentType = response.headers()["content-type"] ?? "";
+      if (!/json/i.test(contentType)) return;
+      const key = `${request.method()} ${response.url()}`;
+      if (found.has(key)) return;
+      found.set(key, {
+        url: response.url(),
+        method: request.method(),
+        status: response.status(),
+        contentType,
+        body: "",
+      });
+      pending.push(
+        (async () => {
+          try {
+            const body = await response.text();
+            const row = found.get(key);
+            if (row) row.body = body.slice(0, maxBodyChars);
+          } catch {
+            // The body can disappear after a navigation; keep the metadata.
+          }
+        })(),
+      );
+    };
+    page.on("response", onResponse);
+    try {
+      await page.goto(target.toString(), { waitUntil: "domcontentloaded", timeout: 30_000 });
+      await page.waitForTimeout(settleMs);
+      await Promise.allSettled(pending);
+    } finally {
+      page.off("response", onResponse);
+    }
+    return {
+      pageUrl: page.url(),
+      responses: [...found.values()].slice(0, maxBodies),
+    };
   }
 
   async click(agentId: string, selector: string): Promise<string> {
@@ -134,4 +221,8 @@ export class BrowserManager {
       `Could not open a local browser. ${errors.join(" | ")}. If Chromium is missing, run npx playwright install chromium in the app folder.`,
     );
   }
+}
+
+function clampInt(value: number, min: number, max: number): number {
+  return Math.min(Math.max(Math.floor(value), min), max);
 }

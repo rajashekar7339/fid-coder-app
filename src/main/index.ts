@@ -14,7 +14,10 @@ import { stopClient } from "./copilot";
 import { ensureWindowsToastShortcut } from "./routines/notify";
 import { hasSecret, getSecret, secretKeys } from "./secrets";
 import { logInfo, logJiraStatus, logWarn } from "./log";
+import { appIconPath } from "./icon";
+import { appUserModelId } from "./identity";
 import { channels } from "../shared/channels";
+import { inboxBadgeCount } from "../shared/inbox";
 import { currentInbox } from "./routines/inbox";
 import { createAppTray, setInboxBadge } from "./routines/tray";
 
@@ -26,7 +29,7 @@ const userData = path.resolve(process.env.FID_CODER_USER_DATA || path.join(os.ho
 fs.mkdirSync(userData, { recursive: true });
 app.setPath("userData", userData);
 if (process.platform === "win32") {
-  app.setAppUserModelId("com.fidcoder.desktop");
+  app.setAppUserModelId(appUserModelId());
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -51,7 +54,8 @@ if (!gotLock) {
 
   function publishInbox(): void {
     if (!db || !runner) return;
-    inboxCount = currentInbox(db, runner.listPendingApprovals()).unread;
+    const view = currentInbox(db, runner.listPendingApprovals());
+    inboxCount = inboxBadgeCount(view.unread, runner.pendingWaitingCount());
     setInboxBadge(mainWindow, inboxCount);
     tray?.update();
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -164,6 +168,13 @@ function createWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 640,
     title: "Fid Coder",
+    icon: appIconPath(),
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+      color: "#2b2d30",
+      symbolColor: "#c8cbd1",
+      height: 36,
+    },
     backgroundColor: "#1e1f22",
     autoHideMenuBar: true,
     show: false,
