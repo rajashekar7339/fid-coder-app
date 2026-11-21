@@ -13,7 +13,7 @@ A time that passes while the app is closed is not run later.
 
 Leave Fid Coder open when you want a routine to run.
 
-![The Routines dialog with a weekday morning routine selected, its instruction, next run, last-run status, and notification switch.](images/routines.png)
+![The Routines dialog with a weekday morning routine selected, its Only look and report setting, instruction, next run, last-run status, and notification switch.](images/routines.png)
 
 ## Create from chat
 
@@ -46,17 +46,25 @@ Choose **Once**, **Every day**, **Weekdays**, **Every week**, or **Custom**. Tim
 
 The next run appears under the fields. Save the routine to recalculate it. See the limitation above: a slot that passes while Fid Coder is closed does not run.
 
+A repeating routine must wait at least 15 minutes between runs. Saving a shorter custom schedule is refused. A one-time routine can use any future time.
+
+## What it is allowed to do
+
+**Only look and report** is off by default, so the routine does the work with that agent's tools. Turn it on when the routine should read and describe, without changing files, running the shell, asking a question, or saving a skill. The choice is saved with the routine. History shows **Look and report** on a run that used that mode.
+
 ## Notifications and status
 
 Leave **Windows notification** on to be notified when a scheduled run finishes, fails, is skipped, or is missed. Click the toast to open that agent. The desk row shows the last status.
 
 If the agent is already working, the run is marked **Skipped**. A one-time routine is used up by that skip. A repeating routine waits for its next time.
 
+A real error counts. A stop, a skip, and a run interrupted because Fid Coder closed do not. The first error after a success is posted. The next errors stay in history until ten in a row, which pauses the routine. The editor then says **Paused after 10 failures. Turn it on to try again.** Turning it on clears the count. A successful run also clears it. Errors in between do not send a toast or an inbox row.
+
 ## History
 
-Choose the **History** tab at the top of the routine list. A row shows the routine, status, whether it was scheduled or manual, how long it took, and a short excerpt. **Open chat** closes the dialog. **Refresh** loads newer runs, and **Stop** is there only while a run is still going.
+Choose the **History** tab at the top of the routine list. A row shows the routine, status, whether it was scheduled or manual, **Look and report** when that run was report-only, how long it took, and a short excerpt. **Open chat** closes the dialog. **Refresh** loads newer runs, and **Stop** is there only while a run is still going.
 
-![Run history for a finished weekday routine, with its status, trigger, duration, and excerpt.](images/routine-history.png)
+![Run history for a finished weekday routine, with its status, scheduled trigger, Look and report mode, duration, and excerpt.](images/routine-history.png)
 
 ## Inbox
 

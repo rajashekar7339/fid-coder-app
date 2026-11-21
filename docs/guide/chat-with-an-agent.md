@@ -17,11 +17,11 @@ While a turn is running, the composer stays open. Type a follow-up and press **E
 - **Send now** stops the current turn and starts that message immediately. It does not inject the message into the running turn.
 - **Edit** opens the queued text in place. **Enter** saves, **Shift+Enter** adds a line, and **Escape** closes the editor.
 - **Cancel** removes the message from the queue.
-- With text in the composer, **Ctrl+Enter** (or **Cmd+Enter** on a Mac) also sends now and stops the current turn. The queue arrow and Send now bolt sit next to **Stop** while a turn is running.
+- With text in the composer, **Ctrl+Enter** (or **Cmd+Enter** on a Mac) also sends now and stops the current turn. While a turn is running, the composer shows only **Stop**; press **Enter** to queue the draft, then use **Send now** on its row when you want it to start immediately.
 
 A queued message is not saved until it starts. When a turn finishes normally, the next queued message starts automatically. If you press **Stop** or the turn fails, the queue pauses: choose **Send next** or **Clear**, or send another message. The queue is kept for the current app session; closing Fid Coder clears it. Attachments can be queued too. The queue holds up to 20 messages.
 
-![A running question with a queued follow-up, its Send now, Edit, and Cancel actions, and the composer's Send now button.](images/queue-while-running.png)
+![A running question with a queued follow-up and its Send now, Edit, and Cancel actions.](images/queue-while-running.png)
 
 ## Attach files and code
 
@@ -32,6 +32,20 @@ To point at code, open the Workspace panel. The file you are viewing is automati
 Attachments use the model's attachment support. An image needs a model that accepts images. The chips stay under the user message after the turn is saved.
 
 Text and code attachments are not sent as binary context. The app copies the file into the workspace and puts its path at the top of the message, so the agent can read it with the same tools it uses for the repository. This follows Code Puppy's approach: the app passes the file, and the agent decides what to do with it.
+
+## Read a spreadsheet
+
+Ask the agent to read a CSV or Excel file in the workspace. `table_read` handles `.csv`, `.tsv`, `.xlsx`, and `.xlsm`. It shows the sheet names, the headers, and a preview; say **next rows** or name a row range to page through a large sheet. A sheet can be chosen by name.
+
+The preview is bounded: 50 rows by default, 200 maximum, with long cells shortened. That keeps a large workbook from filling the conversation. Excel formulas are not calculated — the reader returns the last saved value where one exists — and macros are never run. Files above 20 MB, `.xls`, and `.ods` are refused; save the file as `.xlsx` or `.csv` first.
+
+## Read and update Confluence
+
+With **Settings → Confluence** saved, paste a page link and ask the agent to read it. It passes the URL to `confluence_page`, which resolves common Cloud and Data Center links and short `/x/` links. It can also search with CQL, such as `space = ENG AND text ~ "release notes"`, or read by id or space and title. The tools work in Ask mode too, so a read-only agent can answer from Confluence.
+
+Ask it to append a note or replace a section. The agent reads the page first and passes the current version, so a page someone else changed meanwhile is refused instead of overwritten. The normal approval card appears before the write; **Reject** leaves the page untouched. An append keeps the existing page body. A Markdown replace is refused when the page contains Confluence macros, because the conversion would drop them; use append or storage format for those pages. `confluence_update_page` is not available in Ask mode or to a routine.
+
+![Settings with the Confluence deployment, site, token, and Configured badge.](images/confluence-settings.png)
 
 ## Edit or delete a message
 
@@ -55,7 +69,11 @@ Enhance runs only when you choose it. It does not run on later messages and does
 
 ## Follow the work
 
-While the agent runs, its current tool step is highlighted in the open tool card. Finished tool calls stay in the card above the reply. Expand it to see each call and a short summary of its result.
+While the agent runs, its current tool step is highlighted in the open tool card. Finished tool calls stay in the card above the reply. The card's line summarizes what the run did, such as **Read 2 files · Searched the code · Ran 1 command**, and counts any issues. Expand it to see each call, a short summary of its result, and **Failed** on a call that did not work.
+
+Between steps, **Thinking** appears beside the agent name with animated bars and the elapsed time. There is no separate card. It disappears when the answer starts streaming, and it is not saved. The reply's foot shows how long the turn worked, such as **Worked for 2m**; a live turn says **Working for 12s**.
+
+![A running turn with Thinking beside the agent name and the elapsed time.](images/live-activity.png)
 
 Day dividers mark **Today**, **Yesterday**, and older calendar dates. They stay at the top of the thread while you scroll that day. Hover any time to see the full date and timestamp.
 
@@ -81,6 +99,12 @@ The **Skills** row at the bottom of the sidebar opens the library. It lists ever
 Send `/compact` when you want the conversation summarized now. Fid Coder uses the same Auto summary it builds after the thread passes 30 messages. The messages stay in the chat. The next message starts a fresh Copilot session that keeps the summary and only the latest messages.
 
 `/compact` also runs when Automatic memory is off, and before the thread is long enough for an automatic update. It spends Copilot quota only when there is something new to summarize. If the summary is already current, the next message still starts from that summary. Send `/compact` on its own.
+
+## Remember a fact
+
+Open **Edit agent**. Under **Facts**, add a short line the agent should keep, such as the test command or the release branch. A fact is data. If it disagrees with the message you just sent, the message wins. Check **Shared with all agents** to store it for every agent. Turn a fact off to hide it without deleting it. **Forget**, then **Forget it**, removes it, and **Undo** puts that fact back. Facts save immediately and are separate from the agent form. The agent does not invent them, and a fact cannot hold a token or a key.
+
+![The agent editor with the Facts section, an agent fact, a shared fact, and the Add a fact row.](images/agent-facts.png)
 
 ## Ask for a code review
 

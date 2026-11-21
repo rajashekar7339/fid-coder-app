@@ -670,14 +670,25 @@ async function main() {
     await shot(page, "05-help-codebase");
     await page.getByRole("button", { name: /Chat with an agent/ }).first().click();
     await page.waitForFunction(
+      () => {
+        const images = [...document.querySelectorAll(".help-article img")];
+        return ["enhance-prompt.png", "agent-facts.png"].every((name) =>
+          images.some((image) => image.src.includes(name) && image.complete && image.naturalWidth > 0),
+        );
+      },
+      { timeout: 10_000 },
+    );
+    check("help guide has the Enhance and facts screenshots", true);
+    await page.getByRole("button", { name: /The cockpit at a glance/ }).first().click();
+    await page.waitForFunction(
       () =>
         [...document.querySelectorAll(".help-article img")].some(
           (image) =>
-            image.src.includes("enhance-prompt.png") && image.complete && image.naturalWidth > 0,
+            image.src.includes("sidebar-working.png") && image.complete && image.naturalWidth > 0,
         ),
       { timeout: 10_000 },
     );
-    check("help guide has the Enhance screenshot", true);
+    check("help guide has the Working screenshot", true);
     await page.getByRole("button", { name: "Close help" }).click();
     await page.waitForSelector(".help-modal", { state: "detached", timeout: 10_000 });
   } finally {

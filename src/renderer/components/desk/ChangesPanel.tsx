@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import {
   ChevronDown,
   FileText,
@@ -6,6 +10,8 @@ import {
   Loader2,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   RotateCcw,
   X,
 } from "lucide-react";
@@ -37,6 +43,10 @@ type Props = {
   error: string | null;
   request: ChangesOpenRequest | null;
   chatCollapsed: boolean;
+  workspaceWidth: number | null;
+  minWorkspaceWidth: number;
+  maxWorkspaceWidth: number;
+  onWorkspaceWidth: (width: number | null) => void;
   onToggleChat: () => void;
   onActiveContext: (attachment: MessageAttachment | null) => void;
   onClose: () => void;
@@ -52,6 +62,10 @@ export function ChangesPanel({
   error,
   request,
   chatCollapsed,
+  workspaceWidth,
+  minWorkspaceWidth,
+  maxWorkspaceWidth,
+  onWorkspaceWidth,
   onToggleChat,
   onActiveContext,
   onClose,
@@ -78,6 +92,7 @@ export function ChangesPanel({
   const [dirErrors, setDirErrors] = useState<Record<string, string>>({});
   const [refsOpen, setRefsOpen] = useState(true);
   const [changedOpen, setChangedOpen] = useState(true);
+  const [navOpen, setNavOpen] = useState(true);
   const [turnMenu, setTurnMenu] = useState(false);
   const [diff, setDiff] = useState<FileDiff | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
@@ -506,9 +521,80 @@ export function ChangesPanel({
     selectedTurn.files.every((file) => file.revertible);
   const canRevertFile = selectedFile?.revertible === true;
 
+  useEffect(
+    () => () => {
+      document.body.classList.remove("is-resizing");
+    },
+    [],
+  );
+
+  function startResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth =
+      panel.current?.getBoundingClientRect().width ?? workspaceWidth ?? minWorkspaceWidth;
+    const target = event.currentTarget;
+    const pointerId = event.pointerId;
+    const shell = panel.current?.closest(".app-shell") as HTMLElement | null;
+    let moved = false;
+    let lastWidth = startWidth;
+    target.setPointerCapture(pointerId);
+    document.body.classList.add("is-resizing");
+    const move = (moveEvent: PointerEvent) => {
+      const next = Math.max(
+        minWorkspaceWidth,
+        Math.min(maxWorkspaceWidth, Math.round(startWidth - (moveEvent.clientX - startX))),
+      );
+      lastWidth = next;
+      moved = true;
+      // Update the grid directly while dragging; commit React state on release.
+      if (shell) shell.style.setProperty("--workspace-width", `${next}px`);
+      else onWorkspaceWidth(next);
+    };
+    const end = () => {
+      if (target.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId);
+      document.body.classList.remove("is-resizing");
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      if (moved) onWorkspaceWidth(lastWidth);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+  }
+
+  function resizeKey(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "Home") return;
+    event.preventDefault();
+    if (event.key === "Home") {
+      onWorkspaceWidth(null);
+      return;
+    }
+    const current =
+      workspaceWidth ??
+      Math.round(panel.current?.getBoundingClientRect().width ?? minWorkspaceWidth);
+    onWorkspaceWidth(current + (event.key === "ArrowLeft" ? 24 : -24));
+  }
+
   return (
     <>
       <aside ref={panel} className="changes-panel" aria-label="Workspace" tabIndex={-1}>
+        <div
+          className="changes-resizer"
+          role="separator"
+          aria-label="Resize workspace panel"
+          aria-orientation="vertical"
+          aria-valuemin={minWorkspaceWidth}
+          aria-valuemax={maxWorkspaceWidth}
+          aria-valuenow={workspaceWidth ?? undefined}
+          tabIndex={0}
+          title="Drag to resize. Double-click to reset."
+          onDoubleClick={() => onWorkspaceWidth(null)}
+          onKeyDown={resizeKey}
+          onPointerDown={startResize}
+        />
         <header className="changes-head">
           <div className="changes-head-copy">
             <div className="changes-kicker">{agent.name}</div>
@@ -580,6 +666,17 @@ export function ChangesPanel({
             ) : null}
             <button
               type="button"
+              className="icon-button"
+              aria-label={navOpen ? "Hide file list" : "Show file list"}
+              aria-controls="workspace-navigator"
+              aria-expanded={navOpen}
+              title={navOpen ? "Hide the file list" : "Show the file list"}
+              onClick={() => setNavOpen((open) => !open)}
+            >
+              {navOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+            </button>
+            <button
+              type="button"
               className="icon-button changes-chat-toggle"
               aria-label={chatCollapsed ? "Show chat" : "Collapse chat"}
               title={chatCollapsed ? "Show the chat" : "Slide the chat left"}
@@ -607,7 +704,7 @@ export function ChangesPanel({
           </div>
         ) : null}
 
-        <div className="changes-body">
+        <div className={`changes-body${navOpen ? "" : " is-nav-hidden"}`}>
           {view === "diff" ? (
             selectedFile ? (
               <section className="changes-diff-pane" aria-label="Selected file diff">

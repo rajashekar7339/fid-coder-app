@@ -15,6 +15,7 @@ import type {
   ApprovalRule,
   ApprovalRuleInput,
   ApprovalSource,
+  Fact,
   FileChangeKind,
   Message,
   MessageAttachment,
@@ -66,6 +67,8 @@ type MessageRow = {
   created_at: string;
   turn_id: string | null;
   turn_source?: string | null;
+  turn_started_at?: string | null;
+  turn_ended_at?: string | null;
   usage: string | null;
   attachments: string | null;
 };
@@ -173,6 +176,8 @@ type RoutineRow = {
   run_at: string | null;
   enabled: number;
   notify: number;
+  read_only: number | null;
+  consecutive_failures: number | null;
   last_run_at: string | null;
   next_run_at: string | null;
   last_status: string | null;
@@ -379,6 +384,17 @@ export class AppDatabase {
       );
       CREATE INDEX IF NOT EXISTS idx_inbox_agent ON inbox_items(agent_id, created_at);
 
+      CREATE TABLE IF NOT EXISTS agent_facts (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'user',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_agent_facts_agent ON agent_facts(agent_id, created_at);
+
       CREATE TABLE IF NOT EXISTS workspace_maps (
         workspace_dir TEXT PRIMARY KEY,
         cache_key TEXT NOT NULL,
@@ -399,6 +415,8 @@ export class AppDatabase {
     this.ensureAgentReadOnlyColumn();
     this.ensureAgentPlacementColumns();
     this.ensureRoutineOnceColumns();
+    this.ensureRoutineGuardColumns();
+    this.ensureRoutineRunModeColumn();
     const now = new Date().toISOString();
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(JIRA_NAME, now, OLD_JIRA_NAME);
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(GIT_NAME, now, OLD_GIT_NAME);
@@ -479,6 +497,23 @@ export class AppDatabase {
     if (!names.has("run_at")) {
       this.db.exec("ALTER TABLE routines ADD COLUMN run_at TEXT");
     }
+  }
+
+  private ensureRoutineGuardColumns(): void {
+    const columns = this.db.prepare("PRAGMA table_info(routines)").all() as { name: string }[];
+    const names = new Set(columns.map((column) => column.name));
+    if (!names.has("read_only")) {
+      this.db.exec("ALTER TABLE routines ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0");
+    }
+    if (!names.has("consecutive_failures")) {
+      this.db.exec("ALTER TABLE routines ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0");
+    }
+  }
+
+  private ensureRoutineRunModeColumn(): void {
+    const columns = this.db.prepare("PRAGMA table_info(routine_runs)").all() as { name: string }[];
+    if (columns.some((column) => column.name === "read_only")) return;
+    this.db.exec("ALTER TABLE routine_runs ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0");
   }
 
   private ensureMessageTurnColumn(): void {
@@ -673,7 +708,8 @@ export class AppDatabase {
   listMessages(agentId: string): Message[] {
     const rows = this.db
       .prepare(
-        `SELECT m.*, t.source AS turn_source
+        `SELECT m.*, t.source AS turn_source,
+                t.started_at AS turn_started_at, t.ended_at AS turn_ended_at
          FROM messages m
          LEFT JOIN turns t ON t.id = m.turn_id
          WHERE m.agent_id = ?
@@ -686,7 +722,8 @@ export class AppDatabase {
   getMessage(id: string): Message | null {
     const row = this.db
       .prepare(
-        `SELECT m.*, t.source AS turn_source
+        `SELECT m.*, t.source AS turn_source,
+                t.started_at AS turn_started_at, t.ended_at AS turn_ended_at
          FROM messages m
          LEFT JOIN turns t ON t.id = m.turn_id
          WHERE m.id = ?`,
@@ -1101,8 +1138,9 @@ export class AppDatabase {
     this.db
       .prepare(
         `INSERT INTO routines (
-          id, agent_id, name, prompt, cron, once, run_at, enabled, notify, last_run_at, next_run_at, last_status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL, ?, ?)`,
+          id, agent_id, name, prompt, cron, once, run_at, enabled, notify, read_only, consecutive_failures,
+          last_run_at, next_run_at, last_status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, NULL, ?, ?)`,
       )
       .run(
         id,
@@ -1114,6 +1152,7 @@ export class AppDatabase {
         input.runAt ?? null,
         input.enabled !== false ? 1 : 0,
         input.notify !== false ? 1 : 0,
+        input.readOnly ? 1 : 0,
         nextRunAt,
         now,
         now,
@@ -1126,10 +1165,12 @@ export class AppDatabase {
     const now = new Date().toISOString();
     const once = patch.once ?? current.once;
     const runAt = once ? (patch.runAt !== undefined ? patch.runAt : current.runAt) : null;
+    const enabling = (patch.enabled ?? current.enabled) && !current.enabled;
     this.db
       .prepare(
         `UPDATE routines
-         SET name = ?, prompt = ?, cron = ?, once = ?, run_at = ?, enabled = ?, notify = ?, next_run_at = ?, updated_at = ?
+         SET name = ?, prompt = ?, cron = ?, once = ?, run_at = ?, enabled = ?, notify = ?, read_only = ?,
+             consecutive_failures = ?, next_run_at = ?, updated_at = ?
          WHERE id = ?`,
       )
       .run(
@@ -1140,6 +1181,8 @@ export class AppDatabase {
         runAt,
         (patch.enabled ?? current.enabled) ? 1 : 0,
         (patch.notify ?? current.notify) ? 1 : 0,
+        (patch.readOnly ?? current.readOnly) ? 1 : 0,
+        enabling ? 0 : current.consecutiveFailures,
         nextRunAt,
         now,
         id,
@@ -1161,16 +1204,100 @@ export class AppDatabase {
       .run(new Date().toISOString(), status.slice(0, 500), nextRunAt, new Date().toISOString(), id);
   }
 
-  startRoutineRun(input: { routineId: string; agentId: string; trigger: RoutineRunTrigger }): RoutineRun {
+  startRoutineRun(input: {
+    routineId: string;
+    agentId: string;
+    trigger: RoutineRunTrigger;
+    readOnly?: boolean;
+  }): RoutineRun {
     const id = crypto.randomUUID();
     const startedAt = new Date().toISOString();
     this.db
       .prepare(
-        `INSERT INTO routine_runs (id, routine_id, agent_id, trigger, status, started_at)
-         VALUES (?, ?, ?, ?, 'running', ?)`,
+        `INSERT INTO routine_runs (id, routine_id, agent_id, trigger, read_only, status, started_at)
+         VALUES (?, ?, ?, ?, ?, 'running', ?)`,
       )
-      .run(id, input.routineId, input.agentId, input.trigger, startedAt);
+      .run(id, input.routineId, input.agentId, input.trigger, input.readOnly ? 1 : 0, startedAt);
     return this.requireRoutineRun(id);
+  }
+
+  setRoutineFailures(id: string, count: number, disable: boolean): Routine {
+    const now = new Date().toISOString();
+    if (disable) {
+      this.db
+        .prepare(
+          `UPDATE routines
+           SET consecutive_failures = ?, enabled = 0, next_run_at = NULL, updated_at = ?
+           WHERE id = ?`,
+        )
+        .run(count, now, id);
+    } else {
+      this.db
+        .prepare("UPDATE routines SET consecutive_failures = ?, updated_at = ? WHERE id = ?")
+        .run(count, now, id);
+    }
+    return this.requireRoutine(id);
+  }
+
+  listFacts(agentId: string): Fact[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM agent_facts
+         WHERE agent_id = ? OR agent_id IS NULL
+         ORDER BY CASE WHEN agent_id IS NULL THEN 1 ELSE 0 END, created_at ASC`,
+      )
+      .all(agentId) as FactRow[];
+    return rows.map(mapFact);
+  }
+
+  listAllFacts(): Fact[] {
+    const rows = this.db
+      .prepare("SELECT * FROM agent_facts ORDER BY created_at ASC")
+      .all() as FactRow[];
+    return rows.map(mapFact);
+  }
+
+  getFact(id: string): Fact | null {
+    const row = this.db.prepare("SELECT * FROM agent_facts WHERE id = ?").get(id) as FactRow | undefined;
+    return row ? mapFact(row) : null;
+  }
+
+  insertFact(input: { agentId: string | null; content: string; enabled: boolean }): Fact {
+    const now = new Date().toISOString();
+    const id = crypto.randomUUID();
+    this.db
+      .prepare(
+        `INSERT INTO agent_facts (id, agent_id, content, source, enabled, created_at, updated_at)
+         VALUES (?, ?, ?, 'user', ?, ?, ?)`,
+      )
+      .run(id, input.agentId, input.content, input.enabled ? 1 : 0, now, now);
+    const fact = this.getFact(id);
+    if (!fact) throw new Error("Could not save the fact");
+    return fact;
+  }
+
+  updateFact(id: string, patch: { content?: string; enabled?: boolean }): Fact {
+    const current = this.getFact(id);
+    if (!current) throw new Error("Fact not found");
+    const now = new Date().toISOString();
+    this.db
+      .prepare("UPDATE agent_facts SET content = ?, enabled = ?, updated_at = ? WHERE id = ?")
+      .run(
+        patch.content ?? current.content,
+        (patch.enabled ?? current.enabled) ? 1 : 0,
+        now,
+        id,
+      );
+    const fact = this.getFact(id);
+    if (!fact) throw new Error("Fact not found");
+    return fact;
+  }
+
+  deleteFact(id: string): Fact {
+    const current = this.getFact(id);
+    if (!current) throw new Error("Fact not found");
+    this.db.prepare("DELETE FROM agent_facts WHERE id = ?").run(id);
+    return current;
   }
 
   finishRoutineRun(
@@ -1366,6 +1493,8 @@ function mapMessage(row: MessageRow): Message {
     createdAt: row.created_at,
     turnId: row.turn_id ?? null,
     turnSource: row.turn_source ?? null,
+    turnStartedAt: row.turn_started_at ?? null,
+    turnEndedAt: row.turn_ended_at ?? null,
     usage: parseUsage(row.usage),
     attachments: parseMessageAttachments(row.attachments),
   };
@@ -1399,12 +1528,23 @@ function parseUsage(raw: string | null): TokenUsage | null {
   }
 }
 
+type FactRow = {
+  id: string;
+  agent_id: string | null;
+  content: string;
+  source: string;
+  enabled: number;
+  created_at: string;
+  updated_at: string;
+};
+
 type RoutineRunRow = {
   id: string;
   routine_id: string;
   agent_id: string;
   routine_name: string;
   trigger: string;
+  read_only: number | null;
   status: string;
   started_at: string;
   ended_at: string | null;
@@ -1431,6 +1571,7 @@ function mapRoutineRun(row: RoutineRunRow): RoutineRun {
     agentId: row.agent_id,
     routineName: row.routine_name,
     trigger: row.trigger === "manual" ? "manual" : "schedule",
+    readOnly: row.read_only === 1,
     status: row.status,
     startedAt: row.started_at,
     endedAt: row.ended_at,
@@ -1464,9 +1605,23 @@ function mapRoutine(row: RoutineRow): Routine {
     runAt: row.run_at,
     enabled: row.enabled === 1,
     notify: row.notify === 1,
+    readOnly: row.read_only === 1,
+    consecutiveFailures: row.consecutive_failures ?? 0,
     lastRunAt: row.last_run_at,
     nextRunAt: row.next_run_at,
     lastStatus: row.last_status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapFact(row: FactRow): Fact {
+  return {
+    id: row.id,
+    agentId: row.agent_id,
+    content: row.content,
+    source: "user",
+    enabled: row.enabled === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

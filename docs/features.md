@@ -1,6 +1,6 @@
 # Features
 
-One backlog for Fid Coder. Combined on 15 November 2026 from the old feature-enhancements, future-enhancements, and reference-feature-ideas notes, then checked against the code. Those three files are retired.
+One backlog for Fid Coder. Combined on 15 November 2026 from the old feature-enhancements, future-enhancements, and reference-feature-ideas notes, then checked against the code. Those three files are retired. The OpenBot survey was consolidated on 20 November 2026 under [OpenBot survey](#openbot-survey-20-november-2026); use that section instead of rescanning the reference project.
 
 **DONE** means the behavior is in the app. Open items are still to build. Removed means it was taken out on purpose.
 
@@ -31,6 +31,7 @@ The user guide (`docs/guide/`), `docs/memory.md`, `docs/build-exe.md`, `docs/wor
 - The workspace explorer: citations, changed files, and a lazy tree. Spec: `docs/workspace-explorer.md`.
 - Skills loaded on demand, the Skills library, and `/skills`.
 - `/compact` and the rolling summary. Spec: `docs/memory.md`.
+- User-managed facts. The user writes them. They are data in the system message, separate from the summary.
 - Enhance on the composer. It rewrites the draft and does not send.
 - Routines 2.0: cron and one-time schedules, manual runs, Windows toasts, a tray while the app is open, run history, and an inbox. **Limitation:** nothing runs while the app is closed, and a missed slot is not caught up. Spec is under Routines 2.0 below.
 - Copilot usage, the help center, and the portable Windows build.
@@ -54,7 +55,7 @@ Images the app supports go to the model as binary attachments, up to 10 MB. Ever
 
 **DONE.** Idea 1.
 
-The composer stays open while a turn runs. **Enter** queues the draft; it appears above the composer in order. Each row shows **Send now**, **Edit**, and **Cancel**. **Send now** stops the current turn and starts that message. **Edit** changes the queued text in place, and **Cancel** removes it. With text in the composer, **Ctrl+Enter** (Cmd+Enter) does the same as Send now.
+The composer stays open while a turn runs. **Enter** queues the draft; it appears above the composer in order. Each row shows **Send now**, **Edit**, and **Cancel**. **Send now** stops the current turn and starts that message. **Edit** changes the queued text in place, and **Cancel** removes it. With text in the composer, **Ctrl+Enter** (Cmd+Enter) does the same as Send now. While the turn runs, the composer shows only **Stop**; it does not repeat the queue and send-now buttons beside it.
 
 The queue belongs to the main process, one FIFO per agent, in memory and capped at 20. It drains after a successful turn. Stop or an error pauses it; **Send next** starts the first item and **Clear** empties it. A forced send aborts the current turn, waits for that turn to finish, and then sends the message through the normal `runTurn` path, so it becomes an ordinary stored user message and turn. It does not steer the active turn. Pending approvals, questions, handoffs, and skill cards close when the turn is stopped. A queued message keeps its attachments.
 
@@ -122,6 +123,81 @@ The run row is written as `running` before the turn. A `running` row left after 
 
 Tests: unit rules for due times, excerpts, labels, and the inbox list; integration coverage for a closed-app miss, pause, interrupt, Stop, a failed abort, snooze, and pruning; `npm run test:routines` for the desk, the Routines/History switch, History refresh, draft preservation, the idle Save state, and the inbox. No live Copilot run.
 
+### Working indicator
+
+**DONE.** O12. Added 20 November 2026.
+
+An agent with an active turn shows a lime **Working** label and a pulsing dot in the sidebar, in place of its last-activity date. The **Agents** header shows `N working`. A working row that is not selected also gets a faint lime tint and a short left accent so it is visible without reading the label.
+
+The main process exposes `chat:running-all`, backed by `Runner.runningAgentIds()`. The renderer polls it every 1.5 seconds and also updates immediately from `user`, `done`, and `error` chat events. There is no new table and no task state; the runner's in-memory running set is the source of truth.
+
+Tests: `runningAgentIds` in `tests/integration/message-queue.test.cjs`; `npm run test:sidebar` stubs the running set and checks the row label, the working class, and the header count. The sidebar suite passed 23/23 on 20 November 2026.
+
+### Tool activity summary and duration
+
+**DONE.** O5. Added 20 November 2026.
+
+The collapsed tool card now says what the run did, not only how many steps it took: **Read 2 files · Searched the code · Ran 1 command**. Counts are grouped by tool family; tools without a useful count, such as a routine or a question, keep their label. A failed call adds **N issues** to the summary and **Failed** on its own step. While a call is still running, the line shows that call's active label instead of a past-tense count.
+
+The assistant reply's foot shows **Worked for 42s**, **Worked for 2m**, or **Worked for 1h 5m**. A live turn shows **Working for 12s** and ticks each second. Completed durations come from the turn's `started_at` and `ended_at`, joined onto each message as `turnStartedAt` and `turnEndedAt`. The duration is elapsed turn time, so a wait on an approval counts. The grouping rules live in `src/shared/summary.ts`; `ToolGroup` and `TurnDuration` in `ChatView.tsx` render them.
+
+Tests: unit `tests/unit/tool-summary.test.ts`; `tests/e2e-live/tool-activity.e2e.mjs` seeds a finished turn with four tool calls and checks the summary, the issue count, the failed step, and the 2m duration. The harness passed 5/5, with no live Copilot turn.
+
+### Live working indicator
+
+**DONE.** Added 20 November 2026.
+
+The old three-dot **Thinking** row is now one line beside the agent name: **Thinking**, animated lime bars, and the elapsed time. There is no separate card. It appears while a turn waits between steps, gives way to the tool card while a tool runs, and disappears when the answer starts streaming. Raw model reasoning is not shown. The row is renderer-only and is not stored.
+
+Tests: `workDurationLabel` in `tests/unit/tool-summary.test.ts` covers the elapsed label. The row itself was checked in the running app during a live turn.
+
+### Spreadsheet reader
+
+**DONE.** Added 20 November 2026.
+
+`table_read` reads `.csv`, `.tsv`, `.xlsx`, and `.xlsm` files inside the agent workspace. It returns the sheet names, data-row count, headers, and a Markdown preview. CSV files are one sheet; an Excel file can name a sheet. `headerRow` defaults to 1 and can be 0. `offset` and `limit` page the data: 50 rows by default, 200 maximum. Output is capped at 24,000 characters and each cell at 200 characters, so a large sheet never floods the model context.
+
+It refuses paths outside the workspace, files larger than 20 MB, non-UTF-8/binary CSV, `.xls`/`.ods`, and any other extension. Excel formulas are not calculated; the reader returns the cached value where the file has one. Macros are never executed. Dates are shown as local `YYYY-MM-DD` or `YYYY-MM-DD HH:MM`.
+
+It is a native tool and needs no MCP server. Dependencies: `read-excel-file` (MIT) and `csv-parse` (MIT). The app does not use the stale npm `xlsx` package, which has unfixable high-severity advisories.
+
+Tests: unit `tests/unit/table.test.ts`; integration `tests/integration/table.test.cjs` covers CSV, a semicolon delimiter, paging, a generated XLSX sheet, traversal refusal, and an unsupported `.xls`. The live `npm run test:native-live` harness reads a temp CSV with a real Copilot turn.
+
+### Confluence read and update
+
+**DONE.** Added 20 November 2026.
+
+Both Confluence tools and updates are native; no MCP server is needed. Settings → Confluence supports Cloud and Data Center/Server. Cloud stores the site, account email, and API token; Data Center stores the site and a personal access token. The token is encrypted with Windows `safeStorage`; the agent never sees it. Web requests use Electron's network stack, so they follow the Windows proxy and certificate store.
+
+Tools:
+- `confluence_search` — CQL search, up to 20 pages, with id, title, space, version, and URL.
+- `confluence_page` — read by a pasted URL, id, or space + title; Common Cloud and Data Center page URLs are parsed directly, and short `/x/` links follow same-site redirects with the saved token. Returns text, storage XHTML, or both.
+- `confluence_update_page` — read the page first and pass its `expectedVersion`. The update asks for approval, refuses a stale version, and refuses a Markdown replace when the current page contains Confluence macros. `mode=append` keeps the existing body; `mode=replace` replaces it. `format=markdown` converts basic Markdown to storage XHTML; `format=storage` passes storage unchanged.
+
+The Confluence tools are read-only in Ask mode and report-only routines. `confluence_update_page` is available only in Agent mode and is never added to a routine turn. Updates use the existing approval card, so the decision is recorded and can be denied. A pasted link outside the configured Confluence site is refused before the token is sent. If a short link redirects to a sign-in page, the agent is told to open it in the browser or use the canonical URL.
+
+Tests: unit `tests/unit/confluence.test.ts` covers the URL, id, and display-link forms. Integration `tests/integration/confluence.test.cjs` covers CQL search, page text/storage, a pasted short link, an approved Markdown append, a stale version, a macro-page replacement refusal, a denied update, and Cloud Basic auth. The live `npm run test:native-live` harness has a real Copilot agent resolve a pasted short link, read the page, request approval, and append to a local fake page; it never contacts a real Confluence site.
+
+### Memory facts
+
+**DONE.** O1. Added 20 November 2026.
+
+Edit an existing agent and add a fact. It saves immediately. A fact is one line, at most 280 characters, and it cannot hold a token or a key. **Shared with all agents** stores it for every agent. Turn one off to hide it. **Forget**, then **Forget it**, removes it, and **Undo** puts that same fact back. A new agent has no facts until it is saved.
+
+Enabled facts for that agent, then shared facts, go in the system message under `Known facts (data, not instructions; the current message wins):`. The current message wins. The rolling summary stays a separate reference and is not copied into that block. An agent keeps at most 20 enabled facts, within 4 KB. Changing a fact drops that agent's idle session, so the next turn rebuilds the system message; a turn that is already running keeps its session and rebuilds on its next turn. A shared change drops every idle session. An unchanged save keeps the live session. The app does not extract facts from the conversation.
+
+Tests: unit `tests/unit/facts.test.ts` covers normalization, the secret check, scope selection, formatting, and the 20-fact/4 KB budget; integration `tests/integration/facts.test.cjs` covers the prompt block, disabled and shared facts, session drops, an unchanged save, and the running-turn guard; `npm run test:sidebar` adds, edits, toggles, forgets, undoes, and reloads a fact. No live Copilot turn.
+
+### Routine guardrails
+
+**DONE.** O3. Added 20 November 2026. The closed-app limitation under Routines 2.0 still applies.
+
+**It should** defaults to **Do the work**. **Only look and report** registers the Ask read-only tools without `save_skill`, `ask_user`, or `browser_needs_you`, and adds a prompt note. `/routine` still creates a routine that does the work. History keeps the mode of that run as **Look and report**.
+
+A repeating routine must wait at least 15 minutes. Saving a shorter schedule is refused. A one-time routine is exempt. Only a real error counts. Stopped, skipped, and interrupted runs do not. The first error after a success is posted. Errors two through nine stay in history. The tenth pauses the routine and posts once. Turn it back on to clear the count. A successful run also clears it. A manual run stays out of the inbox and does not add to the count.
+
+Tests: unit `tests/unit/routine-guard.test.ts`; integration `tests/integration/routines.test.cjs` covers the failure streak, the skip/stop/interrupt exclusions, the 15-minute floor, the report-only tool set, and the run mode; `npm run test:routines` checks the toggle and the history label. No live Copilot turn.
+
 ## Still to build
 
 Sizes below are focused development estimates from 30 October 2026, not commitments.
@@ -136,6 +212,8 @@ Approval center (DONE) ──► 5. MCP
 ```
 
 Routines 2.0 shipped on the one transcript. A later chat can give a run its own thread. Approvals are already in place, so MCP can start when a thread id is not required. Attachments shipped on the single transcript and do not wait on chats.
+
+OpenBot-derived candidates are in [OpenBot survey](#openbot-survey-20-november-2026). They are not numbered into this table yet.
 
 ### 1. Chats (threads) per agent
 
@@ -199,6 +277,619 @@ Done when: a fixture MCP server's tools appear in an agent's Context view, a cal
 ### Datadog analyst
 
 **Status:** Open. The plan is `docs/datadog-implementation.md` (draft, 31 October 2026). It is a read-only analyst that uses the agent's headed browser session. It does not use a Datadog API key. SSO inside the Playwright window is the prerequisite. Nothing from that plan is in the app.
+
+## OpenBot survey (20 November 2026)
+
+This is the consolidated survey of `reference_projects/OpenBot`. It exists so a future session does not have to rescan that project. Start here, then read only the OpenBot file a candidate names.
+
+**Caveat.** OpenBot's server ships as signed images and is not in this checkout. Everything below about server behavior comes from its docs and `shared/` contracts, not from reading server source. A question about backend policy internals still needs OpenBot's server repository or a running deployment. All OpenBot paths below are relative to `reference_projects/OpenBot/`.
+
+**Verdict.** OpenBot is a team-scale agent workspace. Fid Coder is a local coding cockpit. The useful transfer is the interaction model around a long-running agent: what it remembers, what waits on you, how scheduled work behaves, how setup failures are explained, and how tool work is narrated. The enterprise stack, remote computers, recorder, delegation, voice, and automatic learning do not fit the product constraints in this document.
+
+**Size key.** S = under a day; M = 1–3 days; L = 3–6 days; XL = more than a week.
+
+### Candidate table
+
+| ID | Candidate | Fid gap | Size | Wave |
+|---|---|---|---|---|
+| O1 | User-managed memory facts — **DONE** | Facts on the agent, plus optional shared facts | M | 2 |
+| O2 | Needs-you board | Inbox is a flat list; approvals open the chat | M | 3 |
+| O3 | Routine guardrails and report-only mode — **DONE** | 15-minute floor, ten-failure pause, report-only tools | S/M | 1 |
+| O4 | Setup checklist | No health screen; failures appear only when used | M | 4 |
+| O5 | Human tool activity summary and duration — **DONE** | Counted summary and turn duration | S | 1 |
+| O6 | All routines view | Routines are per-agent only | S/M | 3 |
+| O7 | Routine completion checklist | Partial multi-step routines look complete | M | 5 |
+| O8 | Multi-field ask form | `ask_user` is one question | M | 5 |
+| O9 | Fixed result cards, checklist first | Markdown and Mermaid only | M | 5 |
+| O10 | Secret request card | Planned as idea 30, not built | M | 5 |
+| O11 | Routine/follow-up proposal card | `/routine` only | M | 5 |
+| O12 | Working indicator — **DONE** | Sidebar **Working** label and `N working` count | S | 1 |
+| O13 | Activity/audit trail | Pieces exist, no unified view | L | Later |
+| O14 | Global full-text search | Deferred until chats exist | M | Later |
+| O15 | Subagents | Idea 32 is the right-sized version | L | Later |
+| O16 | Goals/check-ins | Big state machine | L | Later |
+| O17 | Skill tool declarations | Skills are instructions only | M | Later |
+
+O1, O3, O5, and O12 are **DONE** (20 November 2026). Wave 3 is O2 and O6. Wave 4 is O4. Wave 5 is O7–O11. The rest are later or not taken. O10 is the same work as idea 30 and follows that item's schedule; it is listed here because OpenBot's UX sharpens it.
+
+An `O` number is a stable reference for discussion. It is not a backlog number and does not imply that the item is approved.
+
+### O1. User-managed memory facts
+
+**Status: DONE (20 November 2026).** The implementation is recorded under **DONE → Memory facts** above. The notes below are the design record.
+
+**OpenBot.** `app/src/components/memory/memories.tsx` is a real Memory page: **Remember a fact**, edit, forget, enable/disable, provenance, and “formed by this Bot” versus “you.” `docs/how-openbot-works.md` says facts you add are shared with all Bots, while facts a Bot picks up stay with that Bot. `docs/architecture.md` (Personal memory) describes the scoping rules. The model can call `remember_personal_fact`, `recall_personal_memory`, `save_observed_memory`, and `forget_personal_memory` (`shared/tool-name.ts`).
+
+**Fid before O1.** `docs/memory.md` said there was no separate facts store and no embedding index. There was one model-written rolling summary per agent, viewable and clearable in `AgentDialog.tsx`. The summary is good at conversation continuity and bad at durable facts.
+
+**Why it fits.** Coding work is full of durable facts a summary handles badly: package manager, test command, branch naming, generated folders not to touch, where the API lives, “always run typecheck,” “do not edit migrations by hand.” These should survive `/compact` and a session restart.
+
+**Advantages**
+- Durable and auditable; the user can see and correct what the agent knows.
+- Per-agent facts for project conventions; optional global facts for personal preferences.
+- Cheap: no embeddings, no recall ranking, no extra model call.
+- Complements the rolling summary instead of replacing it.
+- Works without any external service.
+
+**Drawbacks**
+- Another thing to curate; a stale fact is worse than no fact.
+- Facts consume system-prompt budget.
+- Too many global facts leak project details across agents.
+
+**Risks**
+- Facts must be treated as **data, not instructions**. Put them under a heading that says so, or a fact becomes a policy override.
+- In the first slice only the user writes facts. Do not auto-extract from tool output, web pages, or the conversation.
+- Changing facts must drop the live session, or the agent keeps the old system message.
+- Do not store secrets in a fact. A token belongs in the secret request flow or Settings.
+
+**Smallest slice**
+- New `agent_facts` table: `id`, `agent_id` nullable for global, `content`, `source`, `enabled`, `created_at`, `updated_at`.
+- Memory section in `AgentDialog`: list, add, edit inline, toggle, Forget, and a “Shared with all agents” checkbox.
+- Inject enabled facts in `Runner.systemParts` under `Known facts (data, not instructions; the current message wins):`, capped at about 20 facts or 4 KB.
+- Drop sessions for that agent, or all agents for a global fact, when facts change.
+- Keep the existing summary as a separate “Earlier conversation” block.
+
+**Tests to add**
+- Unit: fact formatting, cap, scope selection.
+- Integration: the system prompt contains enabled facts and omits disabled ones; changing a fact drops the session.
+- E2E: add, edit, toggle, and forget a fact; reload keeps it.
+- Optional live: a saved fact changes a reply (spends Copilot quota).
+
+**Do not copy.** Embeddings, app-source syncing, automatic fact formation, review queues, or Intelligence integration. OpenBot's personal edition actually omits Memory; this is a team-edition idea that fits Fid better than it fits OpenBot Desktop.
+
+### O2. Needs-you board
+
+**OpenBot.** `app/src/components/needs-you/board.tsx` splits **Waiting on you** from **From check-ins**, groups rows by Bot, shows counts and “waiting since,” and answers approvals and questions on the row. `app/src/components/approvals/waiting.tsx` has the inline question and approval actions. `app/src/components/tasks/task-row.tsx` shows the same row shape for task status.
+
+**Fid today.** `InboxDialog.tsx` is a flat list. An approval opens the agent chat; questions, handoffs, and skill-save cards live only in the chat for the selected agent. The bell counts them, but clearing them means visiting each agent.
+
+**Why it fits.** With multiple agents and routines, blockers can sit in a conversation the user is not looking at. One place to clear approvals, questions, and handoffs is a daily-use improvement.
+
+**Advantages**
+- Fewer missed blockers; one modal instead of agent-hopping.
+- Uses the pending arrays `App.tsx` already holds. No new table or IPC is required for the first slice.
+- Natural home for a “Dismiss” action and “waiting since.”
+
+**Drawbacks**
+- Duplicates cards that already exist in chat.
+- The modal can become long with many agents.
+- An answer given out of context can be worse than opening the conversation.
+
+**Risks**
+- Show the command, folder, and reason before an approval. Never a bare “Allow.”
+- Resolve events must remove the row in both the inbox and the chat.
+- Do not mix informational routine updates with things that need an answer.
+- A stale card must not be able to decide a request that was already settled elsewhere.
+
+**Smallest slice**
+- Expand `InboxDialog` into **Needs you** with two sections: **Waiting on you** (approvals, questions, handoffs, skill saves) and **Updates** (routine and turn rows).
+- Group by agent. Pass the existing `pendingApprovals`, `pendingQuestions`, `pendingHandoffs`, `pendingSkillSaves` and handlers from `App.tsx`.
+- Use compact rows with inline actions. Reuse the existing card components where they fit; do not build a second approval model.
+- Add relative “waiting since,” per-agent counts, and an optional **Dismiss** for stored rows. Keep Snooze.
+- No new database table.
+
+**Tests to add**
+- E2E: seed an approval, a question, and a handoff; answer each from the inbox; the chat updates and the row disappears.
+- E2E: resolving an approval in the chat removes it from the inbox.
+- Integration: no new storage; the inbox view still builds from the existing rows and pending requests.
+
+**Do not copy.** Tasks, task threads, check-in findings, and stalled-handoff machinery. Those depend on OpenBot's delegation model, which Fid leaves out.
+
+### O3. Routine guardrails and report-only mode
+
+**Status: DONE (20 November 2026).** The implementation is recorded under **DONE → Routine guardrails** above. The closed-app limitation still applies. The notes below are the design record.
+
+**OpenBot.** `docs/routines.md` has the clearest rules in the repository:
+- A 15-minute floor, because a model can be talked into “every minute.”
+- A 20-enabled-routine cap.
+- Ten consecutive failures switch the routine off. It posts one message on the first failure after a success and one final message on auto-disable.
+- Missed windows are skipped, not replayed.
+- **Does: Act for you** versus **Only tell you**.
+
+**Fid before O3.** `MAX_ROUTINES_PER_AGENT = 20`; a custom cron could fire every minute; the scheduler notified on every failure and never auto-disabled; every routine ran with the agent's normal tool set.
+
+**Why it fits.** This is the difference between a routine that is useful and one that quietly burns quota or fills the inbox with the same broken job every night.
+
+**Advantages**
+- Protects model spend and attention.
+- Report-only routines make scheduled monitoring safe.
+- Mostly scheduler state; the UI is one toggle.
+- Matches the existing run-history and inbox model.
+
+**Drawbacks**
+- Auto-disable can surprise someone who depends on a routine.
+- Report-only limits routines that legitimately need writes.
+- A minimum interval can block deliberate test schedules.
+
+**Risks**
+- Do not count `stopped` or `skipped: agent busy` as failures. Only `error`.
+- Reset the failure count on success and when the user re-enables the routine.
+- Report-only must use the Ask tool set minus `save_skill`, `ask_user`, and `browser_needs_you`, not just a prompt sentence, or a tool can still write or wait for a person.
+- Make the 15-minute floor a clear validation message, not a silent skip.
+- A routine that is auto-disabled should stay visible with a reason and a one-click **Enable** action.
+
+**Smallest slice**
+- Add `consecutive_failures` and `read_only` to `routines` (migration).
+- Scheduler: increment on `error`, reset on `ok`; notify and add an inbox row on the first failure after a success and on the tenth; disable at ten.
+- Routine editor: **It should** toggle — **Do the work** / **Only look and report**.
+- Report-only runs with that reduced read-only set and a prompt note.
+- Optional second step: reject a custom cron that fires more often than every 15 minutes.
+
+**Tests to add**
+- Integration: a failure sequence increments, a success resets, the tenth disables, and a stopped or skipped run does not count.
+- Integration: a report-only routine gets the reduced read-only set.
+- E2E: the toggle saves and the run history shows the mode.
+- Unit: the 15-minute validation if it is added.
+
+**Do not copy.** Goals, check-ins, event triggers, “posts in a channel,” or cross-agent routine ownership. Those are a different product.
+
+### O4. Setup checklist
+
+**OpenBot.** `app/src/components/setup/setup-checklist.tsx` shows one row per prerequisite with **Ready / Needs setup / Not checked**, a detail sentence, and the fix. **Check again** re-runs the checks. It explicitly does not block use, and optional gaps are worded as optional.
+
+**Fid today.** Settings has Copilot, GitHub, and Jira sections. Browser failures are discovered when the agent first tries to browse. There is no single “what is missing?” screen.
+
+**Why it fits.** A local Electron app has several prerequisites that fail in different places. A checklist turns “why doesn't the browser work?” into “the local browser is not installed; run this.”
+
+**Advantages**
+- Fewer support questions and actionable errors.
+- Surfaces optional integrations without nagging.
+- Can be entirely local; no network calls required.
+- Useful after an update, a profile move, or a new machine.
+
+**Drawbacks**
+- Another screen to maintain.
+- A check can be flaky or slow.
+- Too much red makes the app feel broken.
+
+**Risks**
+- Do not auto-launch a headed browser just to check it. Check the executable path, or offer an explicit **Test browser** button.
+- Never display secret values; only “saved” or “missing.”
+- Do not block anything. A missing optional integration is neutral, not an error.
+- A failed check should say what could not be checked, not claim the feature is broken.
+
+**Smallest slice**
+- A **Setup** section in Settings with rows:
+  - Copilot sign-in (existing status)
+  - Local browser (executable exists, or a **Test browser** action)
+  - App data writable
+  - GitHub token (optional)
+  - Jira site and token (optional)
+  - At least one agent has a workspace (optional)
+- New `setup:check` IPC returning `{ id, title, detail, status, fix }`.
+- **Check again** button. Each fix opens the existing Settings section or starts the browser test.
+- No new storage.
+
+**Tests to add**
+- Integration: each check with temporary user data; missing and present cases.
+- E2E: rows render, **Check again** updates, a fix opens the right section.
+- No live Copilot run.
+
+**Do not copy.** Server environment variables, admin/member wording, Kubernetes checks, or remote computer checks.
+
+### O5. Human tool activity summary and duration
+
+**Status: DONE (20 November 2026).** The implementation is recorded under **DONE → Tool activity summary and duration** above. The notes below are the design record.
+
+**OpenBot.** `app/src/components/channels/tool-activity.tsx` turns a run of tool calls into one sentence: “Read 3 files and searched for 2 patterns.” Each step has a human label and a detail. `tool-line.tsx` distinguishes **In progress / Not completed / Blocked / Didn't work / Interrupted / Done by you**. `worked-for.tsx` adds “Worked for 2m.” `coding-tool-cards.tsx` adds command, diff, and todo cards for coding harness tools.
+
+**Fid before O5.** `ToolGroup` in `ChatView.tsx` said “5 tool steps · Read a file · Searched the code” and put the raw body in a disclosure. It was accurate, but it read like a log, not like a person describing what happened. There was no turn duration and no per-step failure state.
+
+**Why it fits.** The transcript is the main product surface. This is cheap polish with a large perceived-quality gain.
+
+**Advantages**
+- Scannable at a glance; fewer disclosures opened.
+- Makes failures and interruptions visible.
+- Duration answers “was that slow?” without a separate dashboard.
+- Reuses the existing tool labels and stored tool messages.
+
+**Drawbacks**
+- Counts require a name-to-family mapping.
+- A wrong count is worse than no count.
+- Duration needs a join from messages to turns.
+- Too many summary words can be longer than the list it replaces.
+
+**Risks**
+- Do not hide the raw output; keep the disclosure.
+- Mark failures clearly; do not turn a failed step into a neutral line.
+- Treat duration as approximate if the turn waited on approvals.
+- Do not show a model-facing refusal sentence to the person. Translate it, as OpenBot's `shared/approval-outcomes.ts` does.
+
+**Smallest slice**
+- Extend the `ToolGroup` summary with counts by family:
+  - `file_read` and `read_many` → “Read N files”
+  - `search_text` and `explore_code` → “Searched the code N times”
+  - `shell_run` → “Ran N commands”
+  - `apply_patch` and `file_write` → “Changed N files”
+  - browser tools → “Used the browser N times”
+  - other tools → the existing labels
+- Add “N issues” when any step failed or was stopped.
+- Add a per-step status word from the `tool-end` event or the stored content.
+- Add “Worked for Xs” under the assistant reply using `turns.ended_at`.
+- Optionally translate model-facing refusal text into person-facing text: “You declined it” rather than “Do not try this action again.”
+
+**Tests to add**
+- Unit: the family mapping and pluralization.
+- E2E: a read/search/shell run produces the expected summary.
+- E2E: a completed turn shows a duration; a stopped turn does not claim success.
+- No new model call.
+
+**Do not copy.** Per-tool diff cards, command-output cards, and todo cards. Fid already has `EditedFilesCard` and `ChangesPanel`; duplicating diffs inside the tool group would be noise.
+
+### O6. All routines view
+
+**OpenBot.** `/routines` lists every Bot's routines in one place, with what it does, when it starts, and the next run. Active rows come first.
+
+**Fid today.** Routines exist only inside one agent's Routines dialog and on that agent's desk. With several agents, scheduled work is scattered.
+
+**Advantages**
+- One place to see every next run and last failure.
+- Toggle or run a routine without opening the agent first.
+- Pairs naturally with the needs-you board.
+- Small query and a small UI.
+
+**Drawbacks**
+- Another surface for controls that already exist.
+- Editing still has to open the agent's Routines dialog.
+- Cross-agent lists can become long.
+
+**Risks**
+- Toggling the wrong agent's routine. Show the agent name on every row.
+- A stale next-run time. Reuse the existing schedule formatting.
+- Do not allow create or edit from this view in the first slice; only Open, Enable/Disable, and Run now.
+
+**Smallest slice**
+- Add `routines:list-all` in `src/main/db/index.ts` and `src/main/ipc/index.ts`, joining the agent name.
+- Add a **Routines** tab to the needs-you/inbox modal, or a small **All routines** modal from the sidebar.
+- Group by agent; show schedule, next run, last status, and a toggle. **Open** switches to that agent and opens the existing Routines dialog.
+- No schema change.
+
+**Tests to add**
+- Integration: `list-all` returns routines from multiple agents with the agent names.
+- E2E: toggle a routine from the global list; Run now; Open switches agents.
+
+### O7. Routine completion checklist
+
+**OpenBot.** `shared/routine-checklist.ts` reads a top-level list of 2–10 parts from a routine's instruction. `shared/run-notices.ts` sends one nudge for parts that are still open. The run is expected to close each part as **Done**, **Blocked** (with the reason), or **Skipped** (with the reason).
+
+**Fid today.** A routine can stop after the first two steps of a five-step instruction and still look finished.
+
+**Advantages**
+- A multi-step routine completes or says what is blocked.
+- The run output is an explicit checklist instead of a vague summary.
+- No UI work; the run history already shows the output.
+
+**Drawbacks**
+- One extra model turn when parts are open.
+- Prompt overhead on every multi-part routine.
+- List parsing is heuristic.
+
+**Risks**
+- A numbered list of data (twenty issue ids) is not a checklist. Cap at 2–8 top-level items.
+- The model can write “Done” without doing the work. The checklist improves reporting, not truth.
+- A nudge loop must be capped at one.
+- Do not apply this to normal chat turns.
+
+**Smallest slice**
+- Add a shared parser for the outermost list of 2–8 items, adapted from OpenBot's rules.
+- On a routine turn, append a short checklist notice to the prompt.
+- After the run, find open parts in the final answer. If any remain, send one nudge with the open parts. If they are still open, append `Open: …` to the run output.
+- No new table and no UI.
+
+**Tests to add**
+- Unit: list parsing, inline numbered steps, open-part detection, caps.
+- Integration: a routine with a three-part list gets one nudge and its output records the closed parts.
+- No live Copilot run for the parser; one optional live run for the full behavior.
+
+### O8. Multi-field ask form
+
+**OpenBot.** `app/src/components/gallery/form.tsx` supports up to eight labeled fields (text, email, number, select, textarea), required fields, validation, a submitted state, and recovery from a malformed form.
+
+**Fid today.** `ask_user` asks one question with two to four choices plus **Other**. Some setup or requirements questions need three or four related values at once.
+
+**Advantages**
+- Fewer round trips when the agent needs several facts.
+- Structured answers are easier for the model to use than free text.
+- Reuses the existing pending-card pattern.
+
+**Drawbacks**
+- A larger card and a larger tool schema.
+- The model may use it when a simple question would do.
+- Validation and focus handling add code.
+
+**Risks**
+- Never request passwords, tokens, or other secrets. Those belong in the secret request flow.
+- Cap the fields and lengths. Do not copy eight fields.
+- Do not store the form separately; the answer belongs in the tool result and transcript.
+- A malformed form must return a repair message, not leave the turn suspended.
+
+**Smallest slice**
+- Add `ask_form` with at most four fields: text, select, or boolean; one required flag; no email/number/textarea types in the first slice.
+- One pending form per agent, with the same timeout and Stop behavior as `ask_user`.
+- Return `{ status: "submitted", values }` or `{ status: "skipped" }`.
+- A card with labels, required markers, inline validation, and a submitted summary.
+
+**Tests to add**
+- Unit: schema, duplicate field ids, required fields, length caps.
+- Integration: the runner round trip returns the values to the model.
+- E2E: the card submits, validates, and shows the answers after submit.
+- No live Copilot run required for the card; one optional live run.
+
+### O9. Fixed result cards, checklist first
+
+**OpenBot.** `app/src/components/gallery/cards.tsx` defines record, metrics, checklist, and notice cards. `table.tsx` adds a sortable table; `charts.tsx` adds bar, donut, line, area, and progress charts. The model calls tools such as `showTable`, `showMetrics`, and `showChecklist`; the renderer validates the arguments and draws a component. `docs/how-openbot-works.md` calls this “components instead of prose.”
+
+**Fid today.** Markdown, Mermaid, code blocks, `EditedFilesCard`, and `ChangesPanel`. There is no agent-rendered structured card.
+
+**Why it fits, narrowly.** A turn-scoped checklist is the one card that adds something Markdown does not: a plan the user can scan while the agent works. Tables and charts are mostly presentation and cost more than they return in a coding app.
+
+**Advantages**
+- A plan reads better as a checklist than as prose.
+- It gives the “plan” feel without reviving the removed sticky `set_plan` strip.
+- Validation keeps the card safe and predictable.
+
+**Drawbacks**
+- Another rendering surface and another tool schema.
+- The model may call it too often or not at all.
+- Cards duplicate text if the model also writes the same list.
+
+**Risks**
+- Do not build an arbitrary React component gallery. A fixed, validated registry only.
+- Cap items and string lengths; reject malformed arguments and return a repair message.
+- Render only from the tool call's arguments, never from HTML or scripts.
+- Scope the card to the turn. Do not persist it as an agent-level plan.
+
+**Smallest slice**
+- One `show_checklist` tool: title, items (`text`, `done`, optional `note`), max 12 items.
+- Render it as a card in the transcript only when the tool call is complete.
+- Prompt guidance: use it for a plan or progress update, not for ordinary findings.
+- No charts, tables, record cards, metrics, or forms in the first slice.
+- If it proves useful, add a sortable table; stop there.
+
+**Tests to add**
+- Unit: schema, caps, malformed arguments.
+- E2E: a known tool call draws the checklist; a second turn does not inherit the first turn's card.
+- One live test that the model calls it for a plan-shaped request; this spends quota.
+
+**Do not copy.** Record cards, metrics cards, charts, donut charts, generated forms, the component gallery, or the admin playground.
+
+### O10. Secret request card
+
+**OpenBot.** `app/src/components/computer/computer-view.tsx` has a secret-supply form. The value goes straight to the page, never the transcript. The activity trail records that a secret was requested and how long it was, not what it said. `shared/tool-name.ts` names `computer_request_secret`; `docs/approvals.md` says credential changes are handed to the person.
+
+**Fid today.** `src/main/secrets.ts` already stores the Copilot, GitHub, and Jira tokens encrypted with Electron `safeStorage`. Settings can save or clear them. An agent cannot ask for a new token without the user pasting it into chat. Idea 30 (“Command secrets without chat”) is already open.
+
+**Why it fits.** Authenticated coding work needs `NPM_TOKEN`, a deploy key, or a Jira token. A request card is a safer bridge than chat, and it reuses the encrypted store.
+
+**Advantages**
+- The secret never enters the transcript or the model context.
+- Explicit name, purpose, and scope make the request reviewable.
+- Reuses `secrets.ts` and the existing card pattern.
+- Closes idea 30 with a smaller UX than a full vault.
+
+**Drawbacks**
+- Environment injection can leak into a command's output.
+- A secret may outlive the task unless it is cleared.
+- The agent's own code can read an exported variable.
+
+**Risks**
+- Name the exact variable and scope in the card. Never a generic “enter a token.”
+- Never return the value to the model. Return only “Stored.”
+- Redact plain, base64, and URL-encoded forms in logs and tool output.
+- Do not add a secret-read tool.
+- Prefer one-time or session-scoped secrets; make **Clear** easy.
+- This is not a security boundary against a malicious command. Say so in the doc and the card.
+
+**Smallest slice**
+- A `request_secret` tool with `name`, `purpose`, and `scope` (“shell_run only”).
+- A card that asks for the value; on submit, store it encrypted under the agent and name.
+- `shell_run` injects only names the user approved, in the environment of that call.
+- The tool result says `Stored <NAME> for shell commands.`
+- No browser fill, no secret listing, no value ever returned.
+
+**Tests to add**
+- Integration: store, inject, and clear; the value never appears in a tool result or log.
+- Integration: redaction of plain, base64, and URL-encoded forms.
+- E2E: the card saves and the next command sees the variable.
+- No live Copilot run required for the store; one optional live request.
+
+**Do not copy.** The browser password manager, the vault UI, OAuth app connections, or per-host credential filling.
+
+### O11. Routine/follow-up proposal card
+
+**OpenBot.** `shared/check-in-offer.ts` defines `offer_check_in`, which a Bot calls to offer a check-in on something just looked at. `docs/routines.md` lets a Bot create routines from conversation, with the cap and floor containing the risk.
+
+**Fid today.** `routine_create` is exposed only during a `/routine` turn. Normal chat cannot create a routine, which is deliberate.
+
+**Why it fits.** Users say “remind me tomorrow” or “check this every Monday” in normal chat. A proposal card makes that discoverable without giving the agent blanket write access.
+
+**Advantages**
+- One confirmation card, not a new permission.
+- The agent can offer a follow-up at the moment it is useful.
+- Reuses the routine service and the existing card patterns.
+
+**Drawbacks**
+- The model may propose routines too often.
+- Another pending card type.
+- Overlaps with `/routine`.
+
+**Risks**
+- The card is the write gate. The agent never creates the routine unattended.
+- Cap one proposal per turn. Only propose when the user asked for a schedule or reminder.
+- Validate the schedule with the existing service and show the next run before Create.
+- **Not now** must write nothing.
+
+**Smallest slice**
+- A `propose_routine` tool with name, instruction, and schedule, available only in normal chat.
+- A card with editable fields, **Create routine**, and **Not now**.
+- On Create, call the existing `RoutinesService`; on failure, leave the card open with the error.
+- No edit of existing routines and no goals/check-ins.
+
+**Tests to add**
+- Unit: schedule validation and caps.
+- Integration: the card creates a routine through the service; Not now writes nothing.
+- E2E: propose, edit, create, and see the routine in the agent's list.
+- One live test that the model proposes for a reminder-shaped request.
+
+### O12. Working indicator
+
+**Status: DONE (20 November 2026).** The implementation is recorded under **DONE → Working indicator** above. The notes below are the design record.
+
+**OpenBot.** `app/src/components/channels/working-now.tsx` shows which conversation is working and links to it; the sidebar marks every busy conversation.
+
+**Fid before O12.** `ChatView` kept live turns in a renderer map so switching agents preserved the live view, but the sidebar had no running dot. A routine or queued turn could be running in an agent the user was not looking at.
+
+**Advantages**
+- Situational awareness with queue and routines.
+- Clicking the row opens the working agent.
+- Small state and a small UI.
+
+**Drawbacks**
+- The renderer needs a reliable running set.
+- A stale dot is confusing.
+
+**Risks**
+- Main process is the source of truth. Emit start and end events; do not infer from the last message.
+- Clear the dot on abort, error, and app restart.
+- Do not show a routine run as the user's active turn unless it actually is.
+
+**Smallest slice**
+- Add `chat:running` IPC returning agent ids, plus start/end events.
+- Show a pulsing dot and “Working” on the sidebar agent row.
+- Optionally show a small “Working now” line above the composer for another agent.
+- No new table.
+
+**Tests to add**
+- E2E: start a turn, switch agents, see the dot; stop the turn, see it clear.
+- Integration: the running set clears on abort and error.
+
+### O13. Activity/audit trail
+
+**OpenBot.** `app/src/components/bot-profile/activity.tsx` groups routines, goals, handoffs, approvals, questions, and follow-ups. `app/src/components/audit/ask-the-trail.tsx` lets an admin ask questions about the audit trail. `shared/activity-rows.ts` deduplicates an action's first row from its failure row.
+
+**Fid today.** Tool steps, approval history, routine history, and workspace changes already exist in separate places. There is no unified activity view.
+
+**Verdict.** Do not build this now. A real audit table needs structured rows for every tool action, retention rules, sensitive-output handling, and a UI that does not duplicate the transcript. Fid already has the pieces a coding user needs. Revisit after MCP or multi-agent work creates actions that are not visible in a single transcript.
+
+**If it is revisited:** start with a per-turn summary (steps, files changed, approvals, failures) rather than an audit table. OpenBot's “record the action before it runs” rule is the right principle for MCP.
+
+### O14. Global full-text search
+
+**OpenBot.** Not a clean match; its nearest feature is the natural-language audit query in `ask-the-trail.tsx`.
+
+**Fid today.** Agent-name Ctrl+K search is done. Global transcript search is deferred in this document until chats exist.
+
+**Verdict.** Keep it deferred. When chats ship, SQLite FTS5 over messages and turns is the pragmatic version. Do not copy the audit-query model; it adds a model call and an audit vocabulary Fid does not need.
+
+### O15. Subagents
+
+**OpenBot.** `shared/subagent.ts` describes `run_subagent`: a fresh run of the same Bot, in a derived thread, with up to 10 at once and 100 per answer. `app/src/components/channels/subtask-step.tsx` draws one row that opens to the subagent's steps. A subagent that reaches an approval stops and hands it back; the parent asks the user.
+
+**Fid today.** `review_code` is a read-only subagent. Idea 32 (“read-only helpers”) is the planned general version.
+
+**Verdict.** Idea 32 is the right size. OpenBot's design is a reference for a later generic version, not a reason to build task threads now. If Fid adds one helper, keep it read-only, depth one, no shell or browser, with a 12,000-character cap. Do not let a subagent ask or approve on its own.
+
+### O16. Goals/check-ins
+
+**OpenBot.** `docs/routines.md` unifies routines, goals, and check-ins. A goal has an outcome and can be completed; a check-in only tells you and runs at most hourly. `shared/responsibility-turn.ts` carries the run rules.
+
+**Fid today.** Simple cron and one-time routines.
+
+**Verdict.** Defer. Goals are a state machine: recurring versus ends-when-met, progress reports, completion switching off routines, event subscriptions, and a different run contract. Fid's simple routines plus O3 (report-only) and O7 (checklist) cover most of the value. If this is revisited, start with a **check-in** = read-only routine whose findings land in Needs you, not with full goals.
+
+### O17. Skill tool declarations
+
+**OpenBot.** `app/src/components/skills/skill-tools.tsx` lets a skill declare the tools it needs. Selection happens over skills: the run gets those skills' tools plus every granted tool no skill claims. A declaration is not a grant; it is intersected with what the Bot already has.
+
+**Fid today.** Skills are instructions only. Tools are registered by profile. There are around 30 tools, so tool-count pressure is low.
+
+**Verdict.** Revisit after MCP, when the tool count grows. If it is built, start with explicit `/skills <id>` invocation only: offer the declared tools plus the core read tools. Do not add model-based automatic skill selection in the first slice; it adds a model call and can hide a tool a task needs.
+
+### Related to existing backlog
+
+These are not new features. They are OpenBot details worth using when the existing item is built.
+
+| OpenBot idea | Existing Fid item | What to borrow |
+|---|---|---|
+| Conversation-scoped approvals | 1. Chats (threads) per agent | **Allow once / Allow for this conversation / Always allow here / Deny**, plus the “Allowed in this conversation” line with **Turn off**. See `app/src/components/approvals/conversation-allowances.tsx`. |
+| Tool effect classification | 5. MCP tool servers | Read/write/destructive effects; unknown tools are writes; a write asks before it runs; record the decision before the action. See `docs/approvals.md`, `shared/tool-name.ts`. |
+| Subagent hand-back | 32. Read-only helpers | A helper that reaches an approval stops; the parent asks the user. No inherited approval right. |
+| Fixed result cards | 33. A report template the agent fills | Prefer a fixed checklist/table card over arbitrary HTML components in the transcript. Keep the existing sandboxed HTML report for long documents. |
+| Check-in findings | 9. A short open-work list | A finding is a row with **Work on it**, **Dismiss**, and **Stop checking**. Do not build a task board. |
+| Secret request | 30. Command secrets without chat | The card names the variable and scope; the value goes to the command, never the transcript; return only “Stored.” |
+| Working now | 15. A toast when a turn finishes | The same running set can drive the sidebar dot and the toast. |
+
+### Not taking
+
+These are intentionally excluded. They overlap with **Leave these out** below; listing them here keeps a future session from reopening them by accident.
+
+- **Enterprise governance.** SSO, organizations, roles, SCIM, audit CSV, CEL boundaries, what-if policy simulation, Kubernetes/Helm, remote computers, shared computers, supervisors, and container isolation. Different product and deployment model.
+- **Docker, remote browsers, and live screen streaming.** Fid's browser is local and headed; the user can see it.
+- **Teach a Bot / recorder / screen recording.** OpenBot's most impressive feature, but it needs a browser extension, a Learning backend, and a product decision this document currently answers “no” to. Do not start here.
+- **Group chat, task threads, delegation, bot-to-bot messages, and bots creating bots.** Explicitly out. The compatible subset is the read-only helper (idea 32).
+- **Voice calls and dictation.** Out.
+- **Automatic Learning and proposed skills from conversations.** Requires an external Learning service and carries noisy-skill risk. Fid's explicit `/skill-save` is the better local model.
+- **Arbitrary generated React components.** A fixed, validated card registry is safe; a component gallery is not.
+- **Auto-review approval model.** Explicitly out.
+- **Security-floor and update-feed machinery.** Fid ships a portable Windows build; internal IT blocks installers. Not the same distribution problem.
+- **Multiple model providers and model routing.** Copilot only.
+- **A full audit table now.** O13 is later work.
+- **Goals/check-ins now.** O16 is later work.
+
+### Design principles worth copying
+
+1. **One declaration, read from both sides.** OpenBot's `shared/` keeps approval outcomes, thread ids, and tool labels from drifting. Fid already does this; keep it.
+2. **Record or decide before acting.** OpenBot writes the audit row before the action, so no path acts without a record. Use this for MCP and future app tools.
+3. **Translate model-facing text for the person.** “Do not try this action again” is written for the model. The person should read “You declined it.” See `shared/approval-outcomes.ts`.
+4. **Every wait has a card, a timeout, and an outcome line.** A question, handoff, or approval that disappears silently reads as a broken turn.
+5. **Fail closed on unknown writes.** Especially for MCP and future app tools.
+6. **Setup never blocks.** It says what is missing and how to fix it.
+7. **Turn-scoped plans, not sticky plans.** The removed `set_plan` strip failed because it persisted across turns. A `show_checklist` card scoped to one turn avoids that.
+8. **One message per failure, not one per attempt.** Run history can keep every row; the inbox and notifications should not.
+
+### Source index
+
+Read these only when a candidate needs more detail. This is the map that replaces a full rescan. Every path in this table is under `reference_projects/OpenBot/`.
+
+| Area | OpenBot files |
+|---|---|
+| Routines | `docs/routines.md`, `shared/routine-checklist.ts`, `shared/run-notices.ts`, `app/src/routes/_authed/_app/routines.tsx`, `app/src/routes/_authed/_app/routines_.new.tsx`, `app/src/lib/routines/plan.ts` |
+| Memory | `app/src/components/memory/memories.tsx`, `app/src/components/memory/sources.tsx`, `docs/architecture.md` (Personal memory), `shared/tool-name.ts` |
+| Needs you | `app/src/components/needs-you/board.tsx`, `app/src/components/needs-you/needs-you.tsx`, `app/src/components/needs-you/board-row.tsx`, `app/src/components/needs-you/stalled-handoffs.tsx`, `app/src/components/approvals/waiting.tsx`, `app/src/components/approvals/conversation-allowances.tsx`, `app/src/components/tasks/task-row.tsx`, `app/src/components/suggestions/suggestion-row.tsx` |
+| Setup | `app/src/components/setup/setup-checklist.tsx` |
+| Tool transcript | `app/src/components/channels/tool-activity.tsx`, `app/src/components/channels/tool-line.tsx`, `app/src/components/channels/coding-tool-cards.tsx`, `app/src/components/tasks/worked-for.tsx`, `app/src/components/channels/browser-activity.tsx`, `app/src/components/channels/research-results.tsx`, `app/src/components/tasks/task-steer.tsx` |
+| Result cards | `app/src/components/gallery/cards.tsx`, `app/src/components/gallery/table.tsx`, `app/src/components/gallery/charts.tsx`, `app/src/components/gallery/form.tsx`, `app/src/components/gallery/frame.tsx`, `docs/how-openbot-works.md` |
+| Secrets and computer | `app/src/components/computer/computer-view.tsx`, `shared/tool-name.ts`, `docs/approvals.md` |
+| Approvals | `docs/approvals.md`, `app/src/components/approvals/*`, `shared/approval-outcomes.ts`, `shared/standing-rule.ts`, `shared/tool-name.ts` |
+| Subagents | `shared/subagent.ts`, `app/src/components/channels/subtask-step.tsx` |
+| Recorder | `shared/recorder-api.ts`, `shared/demonstration-rules.ts`, `shared/recorder-masking.ts`, `app/src/components/computer/bot-browser.tsx`, `docs/personal-edition.md` |
+| Delegation | `shared/orchestration.ts`, `docs/coworkers.md`, `app/src/components/bot-profile/delegation.tsx` |
+| Activity/audit | `app/src/components/bot-profile/activity.tsx`, `app/src/components/audit/ask-the-trail.tsx`, `shared/activity-rows.ts` |
+| Skills | `app/src/components/skills/skill-tools.tsx`, `app/src/components/skills/skill-fields.tsx`, `app/src/components/skills/proposed-skill.tsx` |
+| Working now | `app/src/components/channels/working-now.tsx` |
+| Conversation allowances | `app/src/components/approvals/conversation-allowances.tsx` |
+
+**Do not rescan `reference_projects/OpenBot` for these features.** If a future question needs backend policy internals, read OpenBot's server repository or a running deployment, not this checkout. If OpenBot changes materially, update this section instead of starting a new survey.
 
 ## Smaller ideas still open
 
@@ -440,7 +1131,7 @@ The changes panel accepts or reverts a whole file.
 ## Deferred
 
 - **Global full-text search.** After chats exist, the conversations table makes SQLite FTS cheap. Agent-name **Ctrl+K** is already DONE.
-- **Confluence and Jira writes.** Native follow-ups if MCP does not cover the internal Atlassian setup.
+- **Jira writes.** Confluence writes are DONE natively; Jira remains a read-only tool. Native follow-ups if MCP does not cover the internal Atlassian setup.
 - **Usage and activity dashboard.** The app shows one quota bar.
 - **Portable auto-update or a LAN remote UI.** Relevant to internal distribution, and not a top workflow feature.
 - **Per-hunk accept and a change timeline** are idea 35. The desk shows the latest turn.
@@ -499,10 +1190,12 @@ Quiet interface work still open: composer recall, instruction restore, the finis
 
 Stop repair, compaction-by-window, and tool-output spill can sit with that quiet work. Fetched-text taint and the paused-approval resume belong with the approval center, before Agent mode widens further. Browser scroll and key press come before element refs. MCP, the Datadog analyst, report templates, and command secrets come later. Chats unblock a routine's own thread and forked chats. The inbox already opens the agent.
 
+From the OpenBot survey, memory facts (O1), routine guardrails (O3), the tool activity summary (O5), and the working indicator (O12) are DONE. Wave 3 is the needs-you board (O2) and the all-routines view (O6). Wave 4 is the setup checklist (O4). The remaining OpenBot candidates wait on those, and O13–O17 wait on a product decision or a larger change.
+
 ## Related documents
 
 - `AGENTS.md` — repository conventions and where new code belongs.
-- `docs/memory.md` — transcripts and the rolling summary.
+- `docs/memory.md` — transcripts, the rolling summary, and user-managed facts.
 - `docs/build-exe.md` — packaging and distribution.
 - `docs/workspace-explorer.md` — the shipped workspace panel.
 - `docs/datadog-implementation.md` — the unshipped Datadog analyst plan.

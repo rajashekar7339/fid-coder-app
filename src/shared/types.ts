@@ -1,4 +1,5 @@
 import type { Citation } from "./citations";
+import type { ConfluenceMode } from "./confluence";
 
 export type AgentToolProfile = "all" | "browser" | "developer";
 
@@ -72,6 +73,8 @@ export type Message = {
   createdAt: string;
   turnId?: string | null;
   turnSource?: string | null;
+  turnStartedAt?: string | null;
+  turnEndedAt?: string | null;
   usage?: TokenUsage | null;
   attachments?: MessageAttachment[] | null;
 };
@@ -90,6 +93,28 @@ export type QueuedMessage = {
   createdAt: string;
 };
 
+export type Fact = {
+  id: string;
+  agentId: string | null;
+  content: string;
+  source: "user";
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type FactInput = {
+  agentId: string;
+  content: string;
+  shared: boolean;
+  enabled?: boolean;
+};
+
+export type FactPatch = {
+  content?: string;
+  enabled?: boolean;
+};
+
 export type Routine = {
   id: string;
   agentId: string;
@@ -100,6 +125,8 @@ export type Routine = {
   runAt: string | null;
   enabled: boolean;
   notify: boolean;
+  readOnly: boolean;
+  consecutiveFailures: number;
   lastRunAt: string | null;
   nextRunAt: string | null;
   lastStatus: string | null;
@@ -115,6 +142,7 @@ export type RoutineRun = {
   agentId: string;
   routineName: string;
   trigger: RoutineRunTrigger;
+  readOnly: boolean;
   status: string;
   startedAt: string;
   endedAt: string | null;
@@ -408,7 +436,17 @@ export type SettingsView = {
   hasGithubPat: boolean;
   hasJiraToken: boolean;
   jiraSiteUrl: string;
+  hasConfluenceToken: boolean;
+  confluenceSiteUrl: string;
+  confluenceEmail: string;
+  confluenceMode: ConfluenceMode;
   routinesPaused: boolean;
+};
+
+export type ConfluenceSettingsInput = {
+  siteUrl: string;
+  email: string;
+  mode: ConfluenceMode;
 };
 
 export type AgentInput = {
@@ -472,6 +510,7 @@ export type RoutineInput = {
   runAt: string | null;
   enabled: boolean;
   notify: boolean;
+  readOnly?: boolean;
 };
 
 export type RoutinePatch = {
@@ -482,4 +521,5 @@ export type RoutinePatch = {
   runAt?: string | null;
   enabled?: boolean;
   notify?: boolean;
+  readOnly?: boolean;
 };

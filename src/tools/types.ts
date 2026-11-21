@@ -1,3 +1,4 @@
+import type { ConfluenceMode } from "../shared/confluence";
 import type { HistoryPort } from "../shared/history";
 import type { AskUserRequest } from "../shared/question";
 import type { RoutineDraft } from "../shared/routine-schedule";
@@ -62,6 +63,10 @@ export type ToolContext = {
   githubPat: string | null;
   jiraToken: string | null;
   jiraSite: string | null;
+  confluenceToken: string | null;
+  confluenceSite: string | null;
+  confluenceEmail: string | null;
+  confluenceMode: ConfluenceMode;
   explore?: (question: string) => Promise<string>;
   review?: (target: string) => Promise<string>;
   checkpoint?: CheckpointPort;

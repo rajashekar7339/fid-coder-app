@@ -1,11 +1,14 @@
 /// <reference types="vite/client" />
 
+import agentFactsImage from "../../../docs/guide/images/agent-facts.png";
 import askModeImage from "../../../docs/guide/images/ask-mode.png";
+import confluenceSettingsImage from "../../../docs/guide/images/confluence-settings.png";
 import enhancePromptImage from "../../../docs/guide/images/enhance-prompt.png";
 import messageActionsImage from "../../../docs/guide/images/message-actions.png";
 import projectMapImage from "../../../docs/guide/images/project-map.png";
 import queueWhileRunningImage from "../../../docs/guide/images/queue-while-running.png";
 import routineHistoryImage from "../../../docs/guide/images/routine-history.png";
+import sidebarWorkingImage from "../../../docs/guide/images/sidebar-working.png";
 import skillsLibraryImage from "../../../docs/guide/images/skills-library.png";
 import skillsUseImage from "../../../docs/guide/images/skills-use.png";
 
@@ -42,7 +45,7 @@ const SOURCES: GuideSource[] = [
     title: "Chat with an agent",
     group: "Using Fid Coder",
     summary:
-      "Send messages, queue a follow-up while a turn runs, edit or delete a chat message, improve a draft, follow tool steps, answer a question, hand the browser back for sign-in, read token and credit usage, switch models, stop a turn, and approve deletes, pushes, and downloads.",
+      "Send messages, queue a follow-up while a turn runs, edit or delete a chat message, save a fact, improve a draft, follow tool steps, answer a question, hand the browser back for sign-in, read token and credit usage, switch models, stop a turn, and approve deletes, pushes, and downloads.",
     readMinutes: 9,
     file: "chat-with-an-agent.md",
   },
@@ -59,7 +62,8 @@ const SOURCES: GuideSource[] = [
     id: "create-a-routine",
     title: "Create a routine",
     group: "Using Fid Coder",
-    summary: "Create a routine that runs once or repeats while Fid Coder is open. A slot that passes while the app is closed does not run.",
+    summary:
+      "Create a routine that runs once or repeats while Fid Coder is open. It can do the work or only look and report. A slot that passes while the app is closed does not run.",
     readMinutes: 6,
     file: "create-a-routine.md",
   },
@@ -82,10 +86,10 @@ const SOURCES: GuideSource[] = [
   },
   {
     id: "connect-accounts",
-    title: "Connect Copilot, GitHub, and Jira",
+    title: "Connect Copilot, GitHub, Jira, and Confluence",
     group: "Using Fid Coder",
-    summary: "Sign in to Copilot and add optional GitHub and Jira tokens that stay on this PC.",
-    readMinutes: 4,
+    summary: "Sign in to Copilot and add optional GitHub, Jira, and Confluence tokens that stay on this PC.",
+    readMinutes: 5,
     file: "connect-accounts.md",
   },
 ];
@@ -103,12 +107,15 @@ const IMAGES = import.meta.glob("../../../docs/guide/images/*", {
 }) as Record<string, string>;
 
 const EXPLICIT_IMAGES: Record<string, string> = {
+  "agent-facts.png": agentFactsImage,
   "ask-mode.png": askModeImage,
+  "confluence-settings.png": confluenceSettingsImage,
   "enhance-prompt.png": enhancePromptImage,
   "message-actions.png": messageActionsImage,
   "project-map.png": projectMapImage,
   "queue-while-running.png": queueWhileRunningImage,
   "routine-history.png": routineHistoryImage,
+  "sidebar-working.png": sidebarWorkingImage,
   "skills-library.png": skillsLibraryImage,
   "skills-use.png": skillsUseImage,
 };

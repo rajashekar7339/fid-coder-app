@@ -8,17 +8,17 @@ A developer agent works inside one folder. The app gives the model a workspace b
 
 Open the agent's menu and choose **Edit agent**. Under **Workspace**, use **Browse** to pick the repository folder, then save the agent.
 
-The workspace is required for file, search, git, and shell tools. Without one, those tools stay unavailable.
+The workspace is required for file, search, spreadsheet, git, and shell tools. Without one, those tools stay unavailable.
 
 ## Choose the tool profile
 
-- **All tools** combines the local browser and Jira with files, search, git, and shell.
-- **Browser and Jira** cannot run commands or touch files. Use it for a saved Jira site, web research, or other browser work.
-- **Shell, search, git, and files** cannot control a browser or read Jira. Use it for code work.
+- **All tools** combines the local browser, Jira, and Confluence with files, spreadsheets, search, git, and shell.
+- **Browser and Jira** cannot run commands or edit workspace files. Use it for a saved Jira or Confluence site, web research, or other browser work.
+- **Shell, search, git, and files** cannot control a browser or read Jira. Use it for code work; the native Confluence and spreadsheet tools are still available.
 
 ## Ask or Agent mode
 
-**Mode** chooses access. **Ask mode** ignores the tool profile and registers every read-only tool: discovery, reads, search, git and pull-request reads, browser navigate/snapshot, Jira reads, history, and the read-only explorer. It cannot edit, run shell commands, click or type in the browser, or change git. **Agent mode** reveals **Tools** and registers the full profile you choose. The **Ask mode / Agent mode** switch in the composer changes the same setting.
+**Mode** chooses access. **Ask mode** ignores the tool profile and registers every read-only tool: discovery, reads, search, git and pull-request reads, browser navigate/snapshot, Jira and Confluence reads, spreadsheets, history, and the read-only explorer. It cannot edit, run shell commands, click or type in the browser, or change git. **Agent mode** reveals **Tools** and registers the full profile you choose. The **Ask mode / Agent mode** switch in the composer changes the same setting.
 
 Use Ask for architecture questions, flow diagrams, troubleshooting from a log, and onboarding. Switch to Agent mode when the agent needs to run a test or build command or make an edit. Ask mode is enforced by the tool list the model receives, not only by its instructions.
 

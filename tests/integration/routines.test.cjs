@@ -351,6 +351,8 @@ test("existing routine rows gain the one-time columns", () => {
     assert.ok(routine);
     assert.equal(routine.once, false);
     assert.equal(routine.runAt, null);
+    assert.equal(routine.readOnly, false);
+    assert.equal(routine.consecutiveFailures, 0);
   } finally {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });
@@ -459,6 +461,7 @@ test("a running row left from the last process is interrupted and not fired agai
   try {
     const agent = createAgent(db);
     const routine = repeatingRoutine(db, agent, "Weekday sweep", futureIso());
+    db.setRoutineFailures(routine.id, 3, false);
     db.markRoutineRun(routine.id, "running", routine.nextRunAt);
     const run = db.startRoutineRun({ routineId: routine.id, agentId: agent.id, trigger: "schedule" });
     let calls = 0;
@@ -474,6 +477,7 @@ test("a running row left from the last process is interrupted and not fired agai
     assert.equal(calls, 0);
     assert.equal(db.getRoutineRun(run.id).status, "error: interrupted");
     assert.equal(db.getRoutine(routine.id).lastStatus, "error: interrupted");
+    assert.equal(db.getRoutine(routine.id).consecutiveFailures, 3);
     assert.equal(db.listOpenInbox().length, 1);
     scheduler.stop();
   } finally {
@@ -620,6 +624,253 @@ test("reload drops routine runs and inbox rows older than 90 days", () => {
     }
   } finally {
     db?.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function quietRunner(runTurn, isRunning = () => false) {
+  return { isRunning, runTurn };
+}
+
+test("ten scheduled errors pause the routine and only the first and tenth are posted", async () => {
+  const { dir, db } = tempDatabase();
+  try {
+    const agent = createAgent(db);
+    const routine = repeatingRoutine(db, agent, "Weekday sweep", futureIso());
+    let calls = 0;
+    const scheduler = new Scheduler(
+      db,
+      quietRunner(async () => {
+        calls += 1;
+        throw new Error("ticket API down");
+      }),
+    );
+    for (let index = 0; index < 9; index += 1) await scheduler.fire(routine.id, false);
+    let after = db.getRoutine(routine.id);
+    assert.equal(after.enabled, true);
+    assert.equal(after.consecutiveFailures, 9);
+    assert.equal(db.listOpenInbox().length, 1);
+    assert.match(db.listOpenInbox()[0].body, /ticket API down/);
+    assert.match(db.listOpenInbox()[0].body, /until 10 failures in a row/);
+
+    await scheduler.fire(routine.id, false);
+    after = db.getRoutine(routine.id);
+    assert.equal(calls, 10);
+    assert.equal(after.enabled, false);
+    assert.equal(after.consecutiveFailures, 10);
+    assert.equal(after.nextRunAt, null);
+    const inbox = db.listOpenInbox();
+    assert.equal(inbox.length, 2);
+    assert.match(inbox.map((item) => item.body).join("\n"), /Paused after 10 failures/);
+
+    await scheduler.fire(routine.id, false);
+    assert.equal(calls, 10);
+    scheduler.stop();
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a success clears the streak and a skip or a stop does not add to it", async () => {
+  const { dir, db } = tempDatabase();
+  try {
+    const agent = createAgent(db);
+    const routine = repeatingRoutine(db, agent, "Weekday sweep", futureIso());
+    let fail = true;
+    let busy = false;
+    const scheduler = new Scheduler(
+      db,
+      quietRunner(
+        async () => {
+          if (fail) throw new Error("no");
+          return "done";
+        },
+        () => busy,
+      ),
+    );
+    await scheduler.fire(routine.id, false);
+    await scheduler.fire(routine.id, false);
+    assert.equal(db.getRoutine(routine.id).consecutiveFailures, 2);
+    assert.equal(db.listOpenInbox().length, 1);
+
+    busy = true;
+    await scheduler.fire(routine.id, false);
+    busy = false;
+    assert.equal(db.getRoutine(routine.id).consecutiveFailures, 2);
+    assert.equal(db.listRoutineRuns(agent.id)[0].status, "skipped: agent busy");
+
+    fail = false;
+    await scheduler.fire(routine.id, false);
+    const after = db.getRoutine(routine.id);
+    assert.equal(after.consecutiveFailures, 0);
+    assert.equal(after.enabled, true);
+    assert.equal(after.lastStatus, "ok");
+    assert.equal(db.listOpenInbox().length, 3);
+
+    db.setRoutineFailures(routine.id, 4, false);
+    const orphan = db.startRoutineRun({ routineId: routine.id, agentId: agent.id, trigger: "schedule" });
+    await scheduler.stopRun(orphan.id);
+    assert.equal(db.getRoutineRun(orphan.id).status, "stopped");
+    assert.equal(db.getRoutine(routine.id).consecutiveFailures, 4);
+    scheduler.stop();
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a manual run stays out of the inbox and a success clears the streak", async () => {
+  const { dir, db } = tempDatabase();
+  try {
+    const agent = createAgent(db);
+    const routine = repeatingRoutine(db, agent, "Weekday sweep", futureIso());
+    db.setRoutineFailures(routine.id, 2, false);
+    let fail = true;
+    const scheduler = new Scheduler(
+      db,
+      quietRunner(async () => {
+        if (fail) throw new Error("no");
+        return "done";
+      }),
+    );
+    await scheduler.fire(routine.id, true);
+    assert.equal(db.getRoutine(routine.id).consecutiveFailures, 2);
+    assert.equal(db.listOpenInbox().length, 0);
+
+    fail = false;
+    await scheduler.fire(routine.id, true);
+    assert.equal(db.getRoutine(routine.id).consecutiveFailures, 0);
+    assert.equal(db.getRoutine(routine.id).enabled, true);
+    assert.equal(db.listOpenInbox().length, 0);
+    scheduler.stop();
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("turning a paused routine back on clears the failure count", () => {
+  const { dir, db } = tempDatabase();
+  try {
+    const agent = createAgent(db);
+    const routine = repeatingRoutine(db, agent, "Weekday sweep", futureIso());
+    db.setRoutineFailures(routine.id, 10, true);
+    assert.equal(db.getRoutine(routine.id).enabled, false);
+    const renamed = db.updateRoutine(routine.id, { name: "Still paused" }, null);
+    assert.equal(renamed.consecutiveFailures, 10);
+    assert.equal(renamed.enabled, false);
+    const enabled = db.updateRoutine(routine.id, { enabled: true }, futureIso());
+    assert.equal(enabled.enabled, true);
+    assert.equal(enabled.consecutiveFailures, 0);
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a report-only routine asks the runner for read-only tools", async () => {
+  const { dir, db } = tempDatabase();
+  try {
+    const agent = createAgent(db);
+    const routine = db.createRoutine(
+      {
+        agentId: agent.id,
+        name: "Look only",
+        prompt: "Describe the open tickets.",
+        cron: "0 9 * * 1-5",
+        once: false,
+        runAt: null,
+        enabled: true,
+        notify: false,
+        readOnly: true,
+      },
+      futureIso(),
+    );
+    let seen = null;
+    const scheduler = new Scheduler(
+      db,
+      quietRunner(async (input) => {
+        seen = input;
+        return "Three tickets.";
+      }),
+    );
+    await scheduler.fire(routine.id, false);
+    assert.equal(seen.reportOnly, true);
+    assert.equal(seen.source, "routine");
+    const run = db.listRoutineRuns(agent.id)[0];
+    assert.equal(run.readOnly, true);
+    assert.equal(run.status, "ok");
+
+    const secrets = require("../../dist/main/secrets.js");
+    secrets.hasSecret = () => false;
+    secrets.getSecret = () => null;
+    const { Runner } = require("../../dist/main/chat/runner.js");
+    const { reportOnlyTools } = require("../../dist/tools/registry.js");
+    const names = reportOnlyTools().map((tool) => tool.name);
+    for (const name of ["save_skill", "ask_user", "browser_needs_you", "shell_run", "file_write", "routine_create"]) {
+      assert.equal(names.includes(name), false, name);
+    }
+    assert.equal(names.includes("file_read"), true);
+
+    const developer = db.createAgent({
+      name: "Worker",
+      systemPrompt: "Do the work.",
+      workspaceDir: null,
+      model: "auto",
+      toolProfile: "developer",
+      readOnly: false,
+    });
+    const runner = new Runner(db, {}, {});
+    runner.turnReportOnly.set(developer.id, true);
+    const view = await runner.previewContext(developer.id);
+    assert.match(view.systemMessage, /This routine only looks and reports/);
+    assert.doesNotMatch(view.systemMessage, /call ask_user once/);
+    assert.equal(view.tools.includes("file_read"), true);
+    assert.equal(view.tools.includes("shell_run"), false);
+    assert.equal(view.tools.includes("file_write"), false);
+    assert.equal(view.tools.includes("save_skill"), false);
+    assert.equal(view.tools.includes("ask_user"), false);
+    assert.equal(view.tools.includes("browser_needs_you"), false);
+    scheduler.stop();
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a repeating routine must wait at least 15 minutes and a one-time routine is exempt", () => {
+  const { dir, db } = tempDatabase();
+  try {
+    const agent = createAgent(db);
+    const service = new RoutineService(db, { reload() {} });
+    const draft = {
+      name: "Often",
+      prompt: "Check the tickets.",
+      cron: "*/5 * * * *",
+      once: false,
+      runAt: null,
+      enabled: true,
+      notify: false,
+      readOnly: false,
+    };
+    assert.throws(() => service.create(agent.id, draft), /at least 15 minutes/);
+    const quarter = service.create(agent.id, { ...draft, name: "Quarter hour", cron: "*/15 * * * *" });
+    assert.equal(quarter.cron, "*/15 * * * *");
+    const daily = service.create(agent.id, { ...draft, name: "Nightly", prompt: "Nightly check.", cron: "0 2 * * *" });
+    assert.equal(daily.cron, "0 2 * * *");
+    const once = service.create(agent.id, {
+      ...draft,
+      name: "Once soon",
+      prompt: "Run once.",
+      cron: "* * * * *",
+      once: true,
+      runAt: new Date(Date.now() + 86_400_000).toISOString(),
+    });
+    assert.equal(once.once, true);
+    assert.equal(once.readOnly, false);
+  } finally {
+    db.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

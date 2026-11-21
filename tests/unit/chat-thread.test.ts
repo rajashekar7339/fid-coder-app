@@ -2,7 +2,13 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { groupToolCalls, liveTurnSettled, projectThread, userTurnAccepted, type LiveTurn } from "../../src/shared/chat-thread.ts";
+import {
+  groupToolCalls,
+  liveTurnSettled,
+  projectThread,
+  userTurnAccepted,
+  type LiveTurn,
+} from "../../src/shared/chat-thread.ts";
 import type { Message, MessageRole, TokenUsage } from "../../src/shared/types.ts";
 
 function message(id: string, role: MessageRole, content: string, createdAt: string): Message {
