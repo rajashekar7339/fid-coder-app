@@ -3,6 +3,7 @@ import { Check, FolderOpen, X } from "lucide-react";
 import { AUTO_MODEL_ID } from "../../../shared/model";
 import type { Agent, AgentToolProfile, CopilotModel } from "../../../shared/types";
 import { errorText, fid } from "../../lib/fid";
+import { FactList } from "./FactList";
 import { AgentAvatar } from "./AgentAvatar";
 import { Modal } from "../ui/Modal";
 import { ModelSelect } from "../ui/ModelSelect";
@@ -401,6 +402,8 @@ export function AgentDialog({
               )}
             </div>
           ) : null}
+
+          {agent ? <FactList agentId={agent.id} /> : null}
 
           {error ? (
             <p className="form-error" role="alert">

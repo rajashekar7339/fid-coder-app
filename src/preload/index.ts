@@ -9,12 +9,15 @@ import type {
   ApprovalRequest,
   ApprovalRule,
   BrowserHandoffRequest,
+  ConfluenceSettingsInput,
   QuestionReply,
   QuestionRequest,
   SkillSaveRequest,
   ChatEvent,
   MessageAttachment,
   QueuedMessage,
+  FactInput,
+  FactPatch,
   RoutineInput,
   RoutinePatch,
 } from "../shared/types";
@@ -28,6 +31,10 @@ const channels = {
   agentsUpdate: "agents:update",
   agentsClearMemory: "agents:clear-memory",
   agentsDelete: "agents:delete",
+  factsList: "facts:list",
+  factsCreate: "facts:create",
+  factsUpdate: "facts:update",
+  factsDelete: "facts:delete",
   agentsPlace: "agents:place",
   messagesList: "messages:list",
   chatSend: "chat:send",
@@ -41,6 +48,7 @@ const channels = {
   chatEditMessage: "chat:edit-message",
   chatDeleteMessage: "chat:delete-message",
   chatRunning: "chat:running",
+  chatRunningAll: "chat:running-all",
   chatAbort: "chat:abort",
   chatEnhance: "chat:enhance",
   chatEvent: "chat:event",
@@ -93,6 +101,9 @@ const channels = {
   settingsSaveJiraSite: "settings:save-jira-site",
   settingsSaveJiraToken: "settings:save-jira-token",
   settingsClearJiraToken: "settings:clear-jira-token",
+  settingsSaveConfluence: "settings:save-confluence",
+  settingsSaveConfluenceToken: "settings:save-confluence-token",
+  settingsClearConfluenceToken: "settings:clear-confluence-token",
   dialogPickFolder: "dialog:pick-folder",
   dialogPickFiles: "dialog:pick-files",
   modelsList: "models:list",
@@ -131,6 +142,12 @@ const api: FidApi = {
     delete: (id: string) => ipcRenderer.invoke(channels.agentsDelete, id),
     place: (id: string, placement: AgentPlacement) => ipcRenderer.invoke(channels.agentsPlace, id, placement),
   },
+  facts: {
+    list: (agentId: string) => ipcRenderer.invoke(channels.factsList, agentId),
+    create: (input: FactInput) => ipcRenderer.invoke(channels.factsCreate, input),
+    update: (id: string, patch: FactPatch) => ipcRenderer.invoke(channels.factsUpdate, id, patch),
+    delete: (id: string) => ipcRenderer.invoke(channels.factsDelete, id),
+  },
   messages: {
     list: (agentId: string) => ipcRenderer.invoke(channels.messagesList, agentId),
   },
@@ -156,6 +173,7 @@ const api: FidApi = {
     deleteMessage: (agentId: string, messageId: string) =>
       ipcRenderer.invoke(channels.chatDeleteMessage, agentId, messageId),
     running: (agentId: string) => ipcRenderer.invoke(channels.chatRunning, agentId),
+    runningAll: () => ipcRenderer.invoke(channels.chatRunningAll),
     abort: (agentId: string) => ipcRenderer.invoke(channels.chatAbort, agentId),
     enhance: (agentId: string, text: string) => ipcRenderer.invoke(channels.chatEnhance, agentId, text),
     onEvent: (callback) => {
@@ -276,6 +294,11 @@ const api: FidApi = {
     saveJiraSite: (url: string) => ipcRenderer.invoke(channels.settingsSaveJiraSite, url),
     saveJiraToken: (token: string) => ipcRenderer.invoke(channels.settingsSaveJiraToken, token),
     clearJiraToken: () => ipcRenderer.invoke(channels.settingsClearJiraToken),
+    saveConfluence: (input: ConfluenceSettingsInput) =>
+      ipcRenderer.invoke(channels.settingsSaveConfluence, input),
+    saveConfluenceToken: (token: string) =>
+      ipcRenderer.invoke(channels.settingsSaveConfluenceToken, token),
+    clearConfluenceToken: () => ipcRenderer.invoke(channels.settingsClearConfluenceToken),
   },
   dialog: {
     pickFolder: () => ipcRenderer.invoke(channels.dialogPickFolder),

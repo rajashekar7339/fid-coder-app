@@ -359,3 +359,23 @@ test("an idle enqueue starts without a queue event gap", async () => {
     assert.deepEqual(userEvents(events), ["hello"]);
   });
 });
+
+test("runningAgentIds lists every active turn", async () => {
+  await withRunner(async ({ db, runner }) => {
+    const agent = createAgent(db);
+    assert.deepEqual(runner.runningAgentIds(), []);
+
+    const first = start(runner, agent.id, "first");
+    await waitFor("the first turn", () => sessions.length === 1 && sessions[0].pending);
+    assert.deepEqual(runner.runningAgentIds(), [agent.id]);
+
+    resolveTurn(0, "one");
+    assert.equal(await first, "one");
+    await waitFor("the turn to end", () => !runner.isRunning(agent.id));
+    assert.deepEqual(runner.runningAgentIds(), []);
+
+    const assistant = db.listMessages(agent.id).find((message) => message.role === "assistant");
+    assert.ok(assistant?.turnStartedAt, "the reply carries its turn start");
+    assert.ok(assistant?.turnEndedAt, "the reply carries its turn end");
+  });
+});

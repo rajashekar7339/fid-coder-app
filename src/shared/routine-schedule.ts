@@ -26,6 +26,11 @@ export const MAX_ROUTINE_NAME = 80;
 
 export const ROUTINE_WRITE_TOOL_NAMES = new Set(["routine_create", "routine_delete"]);
 
+export const REPORT_ONLY_EXCLUDED = new Set(["save_skill", "ask_user", "browser_needs_you"]);
+
+export const REPORT_ONLY_HINT =
+  "This routine only looks and reports. Use read-only tools. Do not change files, run shell commands, click, type, ask the user, or save a skill. Describe any change the user would need to make.";
+
 const FREQUENCIES = new Set<RoutineFrequency>(["once", "daily", "weekdays", "weekly", "custom"]);
 
 export const ROUTINE_COMMAND_HINT =
@@ -39,6 +44,7 @@ export type RoutineDraft = {
   runAt: string | null;
   enabled: boolean;
   notify: boolean;
+  readOnly?: boolean;
 };
 
 export type RoutineToolRequest = {
@@ -226,7 +232,7 @@ export function buildRoutineDraft(request: RoutineToolRequest, now = new Date())
   if (frequency === "custom") {
     const cron = request.cron?.trim() ?? "";
     if (!cron) throw new Error("Custom timing needs a five-field cron expression");
-    return { name, prompt: instruction, cron, once: false, runAt: null, enabled: true, notify };
+    return { name, prompt: instruction, cron, once: false, runAt: null, enabled: true, notify, readOnly: false };
   }
 
   const time = request.time?.trim() ?? "";
@@ -241,7 +247,7 @@ export function buildRoutineDraft(request: RoutineToolRequest, now = new Date())
       throw new Error("That time has already passed. Choose a future time.");
     }
     const cron = cronFromSchedule({ frequency, time, weekday: "1", date: dateText, custom: "" });
-    return { name, prompt: instruction, cron, once: true, runAt, enabled: true, notify };
+    return { name, prompt: instruction, cron, once: true, runAt, enabled: true, notify, readOnly: false };
   }
 
   const weekday = request.weekday?.trim() || "1";
@@ -249,7 +255,7 @@ export function buildRoutineDraft(request: RoutineToolRequest, now = new Date())
     throw new Error("weekday must be 0 (Sunday) through 6 (Saturday)");
   }
   const cron = cronFromSchedule({ frequency, time, weekday, date: "", custom: "" });
-  return { name, prompt: instruction, cron, once: false, runAt: null, enabled: true, notify };
+  return { name, prompt: instruction, cron, once: false, runAt: null, enabled: true, notify, readOnly: false };
 }
 
 export function routineCreatedText(routine: Routine, now = new Date()): string {
@@ -267,14 +273,18 @@ export function routineListText(routines: Routine[], now = new Date()): string {
   return [
     `Routines (${routines.length}):`,
     ...routines.map((routine) => {
-      const state = !routine.enabled
-        ? "paused"
-        : routine.once
-          ? "active"
-          : routine.nextRunAt
-            ? `next ${describeRunAt(routine.nextRunAt, now)}`
-            : "active";
-      return `- ${routine.name} · ${routineScheduleLabel(routine, now)} · ${state} · id ${routine.id}\n  Instruction: ${clip(routine.prompt, 300)}`;
+      const pausedAfterFailures = !routine.enabled && routine.consecutiveFailures >= 10;
+      const state = pausedAfterFailures
+        ? "paused after 10 failures"
+        : !routine.enabled
+          ? "paused"
+          : routine.once
+            ? "active"
+            : routine.nextRunAt
+              ? `next ${describeRunAt(routine.nextRunAt, now)}`
+              : "active";
+      const mode = routine.readOnly ? "look and report" : "does the work";
+      return `- ${routine.name} · ${routineScheduleLabel(routine, now)} · ${mode} · ${state} · id ${routine.id}\n  Instruction: ${clip(routine.prompt, 300)}`;
     }),
   ].join("\n");
 }

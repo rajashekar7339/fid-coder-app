@@ -1,5 +1,8 @@
 import type { SkillDraftInput } from "./skill-draft";
 import type {
+  Fact,
+  FactInput,
+  FactPatch,
   Agent,
   AgentInput,
   AgentPlacement,
@@ -15,6 +18,7 @@ import type {
   BrowserPreview,
   ChangeSet,
   ChatEvent,
+  ConfluenceSettingsInput,
   ContextView,
   CopilotModel,
   FileDiff,
@@ -50,6 +54,12 @@ export interface FidApi {
     delete: (id: string) => Promise<void>;
     place: (id: string, placement: AgentPlacement) => Promise<Agent>;
   };
+  facts: {
+    list: (agentId: string) => Promise<Fact[]>;
+    create: (input: FactInput) => Promise<Fact>;
+    update: (id: string, patch: FactPatch) => Promise<Fact>;
+    delete: (id: string) => Promise<Fact>;
+  };
   messages: {
     list: (agentId: string) => Promise<Message[]>;
   };
@@ -73,6 +83,7 @@ export interface FidApi {
     editMessage: (agentId: string, messageId: string, text: string) => Promise<Agent>;
     deleteMessage: (agentId: string, messageId: string) => Promise<Agent>;
     running: (agentId: string) => Promise<boolean>;
+    runningAll: () => Promise<string[]>;
     abort: (agentId: string) => Promise<void>;
     enhance: (agentId: string, text: string) => Promise<EnhanceResult>;
     onEvent: (callback: (event: ChatEvent) => void) => number;
@@ -161,6 +172,9 @@ export interface FidApi {
     saveJiraSite: (url: string) => Promise<void>;
     saveJiraToken: (token: string) => Promise<void>;
     clearJiraToken: () => Promise<void>;
+    saveConfluence: (input: ConfluenceSettingsInput) => Promise<void>;
+    saveConfluenceToken: (token: string) => Promise<void>;
+    clearConfluenceToken: () => Promise<void>;
   };
   dialog: {
     pickFolder: () => Promise<string | null>;

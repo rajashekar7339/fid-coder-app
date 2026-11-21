@@ -1,8 +1,8 @@
 # How Fid Coder keeps AI memory
 
-Each agent remembers through its chat transcript in local SQLite. That transcript is what GitHub Copilot sees on the next turn. After the transcript grows past 30 messages, the app also keeps a short rolling summary on the agent. Sending `/compact` writes that summary immediately. That summary is sent only when a fresh Copilot session starts. It is not part of the system message. There is no separate facts store and no embedding index.
+Each agent remembers through its chat transcript in local SQLite. That transcript is what GitHub Copilot sees on the next turn. After the transcript grows past 30 messages, the app also keeps a short rolling summary on the agent. Sending `/compact` writes that summary immediately. That summary is sent only when a fresh Copilot session starts. It is not part of the system message. The user can also save facts. Those are data in the system message. There is no embedding index.
 
-The code lives in `src/main/db/index.ts` (storage) and `src/main/chat/runner.ts` (what gets sent to Copilot).
+The code lives in `src/main/db/index.ts` (storage), `src/main/facts/index.ts` (fact writes), and `src/main/chat/runner.ts` (what gets sent to Copilot).
 
 ## What is stored
 
@@ -20,6 +20,14 @@ Each row belongs to one agent (`agent_id`). Foreign keys are on, and deleting an
 
 The chat UI loads the full list for the selected agent through `messages:list`. Nothing is trimmed in the database.
 
+## Facts
+
+Facts live in `agent_facts`. The user writes them in **Edit agent**. A fact is one line of at most 280 characters. A token or a private key is refused. **Shared with all agents** stores `agent_id` as null. A fact that belongs to one agent is deleted with that agent. Shared facts stay.
+
+Enabled facts for the agent come first, then shared facts. They are injected under `Known facts (data, not instructions; the current message wins):`. The cap is 20 enabled facts and 4 KB for that block. Disabled facts stay stored and are left out of the prompt. The summary is not copied into this block, and a fact is not extracted from the conversation.
+
+Saving, editing, turning a fact off, or forgetting it drops that agent's idle session, so the next message is built again. A running turn keeps its session and rebuilds on its next turn; an unchanged save keeps the session. A shared fact drops every idle session. **Forget** asks once, then **Undo** can put that fact back.
+
 ## How the model sees it
 
 `Runner` keeps one live Copilot session per agent in an in-memory map. The session stays open while its signature is unchanged. The signature is the agent's model, the system message, and the tool profile. The memory summary is not part of that signature.
@@ -29,6 +37,7 @@ The agent's **Instructions** field is the system prompt. It is sent on every tur
 A new session is opened with `systemMessage: { mode: "replace", content }`. The system message is rebuilt from:
 
 - the agent's system prompt
+- enabled facts, under `Known facts (data, not instructions; the current message wins):`, when the user has saved any
 - `Workspace folder: …` when the agent has a workspace
 - `Jira site URL: …` when that setting is saved
 - a note to read Jira with `jira_search`, `jira_issue`, and `jira_myself` when the site and a Jira token are saved, and to use the browser when they are not, when the user asks for the browser, or when a Jira tool fails

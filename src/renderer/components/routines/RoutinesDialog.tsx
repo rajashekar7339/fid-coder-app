@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import type { Agent, Routine, RoutineRun } from "../../../shared/types";
+import { ROUTINE_FAILURE_LIMIT } from "../../../shared/routine-guard";
 import { routineStatusLabel, routineStatusTone, runDurationLabel } from "../../../shared/routine-runs";
 import { errorText, fid } from "../../lib/fid";
 import { formatNextRun, formatRelativeTime } from "../../lib/format";
@@ -190,6 +191,7 @@ function RoutineEditor({
   const [prompt, setPrompt] = useState(routine?.prompt ?? "");
   const [enabled, setEnabled] = useState(routine?.enabled ?? true);
   const [notify, setNotify] = useState(routine?.notify ?? true);
+  const [readOnly, setReadOnly] = useState(routine?.readOnly ?? false);
   const [frequency, setFrequency] = useState<RoutineFrequency>(initial.frequency);
   const [time, setTime] = useState(initial.time);
   const [weekday, setWeekday] = useState(initial.weekday);
@@ -217,7 +219,8 @@ function RoutineEditor({
       prompt !== routine.prompt ||
       scheduleChanged ||
       enabled !== routine.enabled ||
-      notify !== routine.notify,
+      notify !== routine.notify ||
+      readOnly !== routine.readOnly,
   );
 
   async function runNow() {
@@ -268,6 +271,7 @@ function RoutineEditor({
         runAt: once ? runAt : null,
         enabled,
         notify,
+        readOnly,
       };
       const next = routine
         ? await fid().routines.update(routine.id, input)
@@ -302,6 +306,9 @@ function RoutineEditor({
             <Switch checked={enabled} label="Routine enabled" onChange={setEnabled} />
             {enabled ? "Active" : "Paused"}
           </span>
+          {routine && !enabled && routine.consecutiveFailures >= ROUTINE_FAILURE_LIMIT ? (
+            <span className="field-note">Paused after 10 failures. Turn it on to try again.</span>
+          ) : null}
           {routine ? (
             <div className="editor-actions">
               <button
@@ -430,6 +437,14 @@ function RoutineEditor({
             Running now. The reply will appear in the conversation.
           </div>
         ) : null}
+
+        <div className="inline-row">
+          <div className="inline-row-copy">
+            <span>It should</span>
+            <span>{readOnly ? "Only look and report. No file changes, shell, or questions." : "Do the work."}</span>
+          </div>
+          <Switch checked={readOnly} label="Only look and report" onChange={setReadOnly} />
+        </div>
 
         <div className="inline-row">
           <div className="inline-row-copy">
@@ -594,6 +609,7 @@ function RoutineHistory({ agentId, onOpenChat }: { agentId: string; onOpenChat: 
             const excerpt = run.output ?? run.error ?? "";
             const meta = [
               run.trigger === "manual" ? "Manual" : "Scheduled",
+              run.readOnly ? "Look and report" : null,
               runDurationLabel(run.startedAt, run.endedAt),
               formatRelativeTime(run.startedAt),
             ]

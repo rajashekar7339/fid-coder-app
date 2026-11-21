@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  BookOpen,
   Check,
   Gauge,
   GitBranch,
@@ -23,7 +24,7 @@ import { Switch } from "../ui/Switch";
 import { UsageBar, usageLevel } from "../ui/UsageBar";
 
 export type SignInNote = { tone: "progress" | "ok" | "error"; text: string };
-export type SettingsSection = "copilot" | "github" | "jira" | "safety" | "app";
+export type SettingsSection = "copilot" | "github" | "jira" | "confluence" | "safety" | "app";
 
 type Props = {
   settings: SettingsView | null;
@@ -71,6 +72,13 @@ const SECTIONS: Array<{
     Icon: Ticket,
   },
   {
+    id: "confluence",
+    label: "Confluence",
+    title: "Confluence",
+    subtitle: "The site and token used to search, read, and update Confluence pages.",
+    Icon: BookOpen,
+  },
+  {
     id: "safety",
     label: "Safety",
     title: "Approval rules",
@@ -110,6 +118,11 @@ export function SettingsDialog({
   const [jiraToken, setJiraToken] = useState("");
   const [jiraSite, setJiraSite] = useState("");
   const [jiraSiteDirty, setJiraSiteDirty] = useState(false);
+  const [confluenceToken, setConfluenceToken] = useState("");
+  const [confluenceSite, setConfluenceSite] = useState("");
+  const [confluenceEmail, setConfluenceEmail] = useState("");
+  const [confluenceMode, setConfluenceMode] = useState<"cloud" | "data-center">("data-center");
+  const [confluenceDirty, setConfluenceDirty] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -118,6 +131,14 @@ export function SettingsDialog({
   useEffect(() => {
     if (!jiraSiteDirty && settings) setJiraSite(settings.jiraSiteUrl);
   }, [settings, jiraSiteDirty]);
+
+  useEffect(() => {
+    if (!confluenceDirty && settings) {
+      setConfluenceSite(settings.confluenceSiteUrl);
+      setConfluenceEmail(settings.confluenceEmail);
+      setConfluenceMode(settings.confluenceMode);
+    }
+  }, [settings, confluenceDirty]);
 
   useEffect(() => {
     setMessage(null);
@@ -192,7 +213,13 @@ export function SettingsDialog({
                   ? Boolean(settings?.signedIn)
                   : item.id === "github"
                     ? Boolean(settings?.hasGithubPat)
-                    : Boolean(settings?.hasJiraToken && settings?.jiraSiteUrl);
+                    : item.id === "jira"
+                      ? Boolean(settings?.hasJiraToken && settings?.jiraSiteUrl)
+                      : Boolean(
+                          settings?.hasConfluenceToken &&
+                            settings?.confluenceSiteUrl &&
+                            (settings.confluenceMode !== "cloud" || settings.confluenceEmail),
+                        );
               return (
                 <button
                   key={item.id}
@@ -312,6 +339,55 @@ export function SettingsDialog({
                   void run(async () => {
                     await fid().settings.clearJiraToken();
                   }, "Jira token removed. Jira tools are disabled.")
+                }
+              />
+            ) : null}
+
+            {section === "confluence" ? (
+              <ConfluenceSection
+                hasToken={settings?.hasConfluenceToken ?? false}
+                site={confluenceSite}
+                email={confluenceEmail}
+                mode={confluenceMode}
+                token={confluenceToken}
+                busy={busy}
+                onSite={(value) => {
+                  setConfluenceDirty(true);
+                  setConfluenceSite(value);
+                }}
+                onEmail={(value) => {
+                  setConfluenceDirty(true);
+                  setConfluenceEmail(value);
+                }}
+                onMode={(value) => {
+                  setConfluenceDirty(true);
+                  setConfluenceMode(value);
+                }}
+                onToken={setConfluenceToken}
+                onSaveSettings={() =>
+                  void run(async () => {
+                    await fid().settings.saveConfluence({
+                      siteUrl: confluenceSite,
+                      email: confluenceEmail,
+                      mode: confluenceMode,
+                    });
+                    setConfluenceDirty(false);
+                  }, confluenceSite.trim()
+                    ? settings?.hasConfluenceToken
+                      ? "Confluence settings saved."
+                      : "Confluence settings saved. Add a token to enable the tools."
+                    : "Confluence site removed.")
+                }
+                onSaveToken={() =>
+                  void run(async () => {
+                    await fid().settings.saveConfluenceToken(confluenceToken);
+                    setConfluenceToken("");
+                  }, "Confluence token saved.")
+                }
+                onClearToken={() =>
+                  void run(async () => {
+                    await fid().settings.clearConfluenceToken();
+                  }, "Confluence token removed. Confluence tools are disabled.")
                 }
               />
             ) : null}
@@ -820,6 +896,134 @@ function JiraSection({
         </div>
         <span className="field-note">
           Jira warnings are written to <code>logs\fid-coder.log</code> in the app data folder.
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ConfluenceSection({
+  hasToken,
+  site,
+  email,
+  mode,
+  token,
+  busy,
+  onSite,
+  onEmail,
+  onMode,
+  onToken,
+  onSaveSettings,
+  onSaveToken,
+  onClearToken,
+}: {
+  hasToken: boolean;
+  site: string;
+  email: string;
+  mode: "cloud" | "data-center";
+  token: string;
+  busy: boolean;
+  onSite: (value: string) => void;
+  onEmail: (value: string) => void;
+  onMode: (value: "cloud" | "data-center") => void;
+  onToken: (value: string) => void;
+  onSaveSettings: () => void;
+  onSaveToken: () => void;
+  onClearToken: () => void;
+}) {
+  const configured = Boolean(hasToken && site.trim() && (mode !== "cloud" || email.trim()));
+  return (
+    <div className="connection-card">
+      <div className="connection-head">
+        <div className="connection-icon is-confluence">
+          <BookOpen size={16} aria-hidden="true" />
+        </div>
+        <div className="connection-copy">
+          <div className="connection-name">Confluence access</div>
+          <div className="connection-note">Search, read, and update pages with a site token.</div>
+        </div>
+        <span className={`connection-badge ${configured ? "is-on" : ""}`}>
+          {configured ? "Configured" : "Not configured"}
+        </span>
+      </div>
+      <div className="settings-form">
+        <label className="field">
+          <span className="field-label">Deployment</span>
+          <select
+            className="select"
+            value={mode}
+            onChange={(event) => onMode(event.target.value === "cloud" ? "cloud" : "data-center")}
+          >
+            <option value="data-center">Data Center / Server</option>
+            <option value="cloud">Cloud</option>
+          </select>
+          <span className="field-note">
+            Cloud uses your Atlassian account email and an API token. Data Center uses a personal access token.
+          </span>
+        </label>
+        <div className="field">
+          <label className="field-label" htmlFor="confluence-site">
+            Site URL
+          </label>
+          <input
+            id="confluence-site"
+            className="input"
+            value={site}
+            placeholder="https://confluence.example.com/confluence"
+            onChange={(event) => onSite(event.target.value)}
+          />
+          <span className="field-note">
+            {mode === "cloud"
+              ? "Use the Cloud site, such as https://your-site.atlassian.net. /wiki is added for the API."
+              : "Use the Confluence base URL. If it runs under a context path, include it."}
+          </span>
+        </div>
+        {mode === "cloud" ? (
+          <label className="field">
+            <span className="field-label">Account email</span>
+            <input
+              className="input"
+              type="email"
+              autoComplete="email"
+              value={email}
+              placeholder="you@example.com"
+              onChange={(event) => onEmail(event.target.value)}
+            />
+            <span className="field-note">The email address that owns the API token.</span>
+          </label>
+        ) : null}
+        <label className="field">
+          <span className="field-label">
+            {mode === "cloud" ? "API token" : "Personal access token"}
+          </span>
+          <input
+            className="input"
+            type="password"
+            autoComplete="new-password"
+            value={token}
+            placeholder={hasToken ? "Token saved — paste a new one to replace" : "Confluence token"}
+            onChange={(event) => onToken(event.target.value)}
+          />
+          <span className="field-note">
+            Stored with Windows encryption. The agent never sees the token. Updates always ask for approval.
+          </span>
+        </label>
+        <div className="field-actions">
+          <button type="button" className="btn btn-secondary" disabled={busy} onClick={onSaveSettings}>
+            Save settings
+          </button>
+          <button type="button" className="btn btn-secondary" disabled={busy || !token.trim()} onClick={onSaveToken}>
+            <KeyRound size={12} />
+            Save token
+          </button>
+          {hasToken ? (
+            <button type="button" className="text-button is-danger" disabled={busy} onClick={onClearToken}>
+              Remove token
+            </button>
+          ) : null}
+        </div>
+        <span className="field-note">
+          Confluence updates ask for approval and check the page version first, so a stale page is not overwritten.
         </span>
       </div>
     </div>

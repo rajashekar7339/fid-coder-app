@@ -77,6 +77,7 @@ async function seed() {
       runAt: null,
       enabled: true,
       notify: true,
+      readOnly: true,
     },
     nextRunIso("0 9 * * 1-5"),
   );
@@ -84,6 +85,7 @@ async function seed() {
     routineId: weekday.id,
     agentId: agent.id,
     trigger: "schedule",
+    readOnly: true,
   });
   db.finishRoutineRun(finished.id, { status: "ok", output: "Three tickets are waiting." });
   db.markRoutineRun(weekday.id, "ok", weekday.nextRunAt);
@@ -239,6 +241,7 @@ async function main() {
       /Weekday sweep/.test(historyText) &&
         /Completed/.test(historyText) &&
         /Scheduled/.test(historyText) &&
+        /Look and report/.test(historyText) &&
         /Three tickets are waiting/.test(historyText),
       historyText.replace(/\s+/g, " ").slice(0, 180),
     );
@@ -267,6 +270,10 @@ async function main() {
 
     await page.locator(".new-routine-button").click();
     const editor = page.locator(".routines-modal");
+    check(
+      "a new routine does the work",
+      (await editor.getByRole("switch", { name: "Only look and report" }).getAttribute("aria-checked")) === "false",
+    );
     await editor.getByLabel("Name", { exact: true }).fill("E2E reminder");
     await editor.getByLabel("Instruction").fill("Run the end-to-end checks and report the result.");
     await page.locator(".schedule-grid select").first().selectOption("once");
@@ -288,7 +295,10 @@ async function main() {
 
     const list = await page.evaluate((id) => window.fid.routines.list(id), agentId);
     const created = list.find((routine) => routine.name === "E2E reminder");
-    check("the UI creates a one-time routine", created?.once === true && Boolean(created?.runAt));
+    check(
+      "the UI creates a one-time routine",
+      created?.once === true && Boolean(created?.runAt) && created?.readOnly === false,
+    );
     const createdDate = created ? new Date(created.runAt) : null;
     check(
       "the stored time matches the editor",
@@ -335,6 +345,32 @@ async function main() {
     await watch();
     const afterDelete = await page.evaluate((id) => window.fid.routines.list(id), agentId);
     check("deleting a one-time routine removes it", !afterDelete.some((routine) => routine.name === "E2E reminder"));
+
+    await page.locator(".routines-nav-item").filter({ hasText: "Weekday sweep" }).click();
+    await page.waitForFunction(() => document.querySelector(".routine-editor h2")?.textContent === "Weekday sweep");
+    const reportOnly = editor.getByRole("switch", { name: "Only look and report" });
+    check("the weekday routine looks and reports", (await reportOnly.getAttribute("aria-checked")) === "true");
+    check(
+      "the editor explains report-only",
+      /Only look and report\. No file changes/.test(await editor.innerText()),
+    );
+    await reportOnly.click();
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await page.waitForFunction(
+      () => {
+        const button = [...document.querySelectorAll(".routines-modal button")].find(
+          (item) => item.textContent?.trim() === "Save changes",
+        );
+        return button instanceof HTMLButtonElement && !button.disabled;
+      },
+      null,
+      { timeout: 20_000 },
+    );
+    const savedMode = await page.evaluate((id) => window.fid.routines.list(id), agentId);
+    check(
+      "the report-only switch saves",
+      savedMode.find((routine) => routine.name === "Weekday sweep")?.readOnly === false,
+    );
 
     await page.getByRole("button", { name: "Close routines" }).click();
     await page.waitForSelector(".routines-modal", { state: "detached", timeout: 10_000 });

@@ -4,11 +4,11 @@ Most questions about a checked-out repository do not need an edit. Ask mode read
 
 ## Ask mode
 
-Choose **Ask mode** in the agent editor or in the composer, before the model picker. Ask mode ignores the tool profile and registers every read-only tool: file reads, search, a workspace explorer, git status/diff/log, pull-request reads, browser navigate/snapshot, Jira reads, and history. Choose **Agent mode** when the agent should edit, run tests, or use its full tool profile; Tools appears only in Agent mode. The switch is saved for the agent, and the conversation is kept when you switch.
+Choose **Ask mode** in the agent editor or in the composer, before the model picker. Ask mode ignores the tool profile and registers every read-only tool: file reads, search, spreadsheets, a workspace explorer, git status/diff/log, pull-request reads, browser navigate/snapshot, Jira and Confluence reads, and history. Choose **Agent mode** when the agent should edit, run tests, or use its full tool profile; Tools appears only in Agent mode. The switch is saved for the agent, and the conversation is kept when you switch.
 
 The read-only guarantee is enforced by the tools the agent receives, not only by its instructions. A question that needs a command or a change ends with a suggestion to switch to Agent mode.
 
-For a **Browser & Jira** agent, Ask mode keeps the read-only Jira tools and page reading with `browser_navigate` and `browser_snapshot`. It blocks clicking, typing, and form actions. Switch to Agent mode when the agent needs to operate a page.
+For a **Browser & Jira** agent, Ask mode keeps the read-only Jira and Confluence tools and page reading with `browser_navigate` and `browser_snapshot`. It blocks clicking, typing, and form actions. Switch to Agent mode when the agent needs to operate a page.
 
 ![An agent in Ask mode with the composer mode switch and codebase starter prompts.](images/ask-mode.png)
 

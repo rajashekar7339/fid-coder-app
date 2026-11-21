@@ -20,6 +20,7 @@ const shots = path.join(root, "shots");
 const watchMs = Number(process.env.FID_WATCH_MS ?? 0);
 const require = createRequire(import.meta.url);
 const { AppDatabase } = require("../../dist/main/db/index.js");
+const { channels } = require("../../dist/shared/channels.js");
 const { DatabaseSync } = require("node:sqlite");
 
 const results = [];
@@ -70,6 +71,7 @@ async function seed() {
   raw.prepare("UPDATE messages SET created_at = ? WHERE content = ?").run("2026-02-01T00:00:00.000Z", "Alpha kept this note.");
   raw.prepare("UPDATE agents SET updated_at = ? WHERE name = ?").run("2026-03-01T00:00:00.000Z", "Beta");
   raw.close();
+  return alpha.id;
 }
 
 async function viteRunning() {
@@ -137,7 +139,7 @@ async function titleIs(name) {
 }
 
 async function main() {
-  await seed();
+  const alphaId = await seed();
   await ensureVite();
   try {
     app = await electron.launch({
@@ -160,6 +162,10 @@ async function main() {
 
     await page.getByRole("button", { name: "New agent" }).first().click();
     await page.getByRole("dialog", { name: "New agent" }).waitFor();
+    check(
+      "a new agent has no facts yet",
+      (await page.getByRole("dialog", { name: "New agent" }).getByLabel("Add a fact").count()) === 0,
+    );
     await page.keyboard.press("Control+K");
     await watch();
     const dialogFocus = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
@@ -175,6 +181,9 @@ async function main() {
     await page.keyboard.press("Enter");
     await titleIs("Gamma");
     check("Enter opens the first match", true);
+    // Opening the agent focuses the composer, so put focus back on the search
+    // input before checking that Escape clears it.
+    await page.locator("[aria-label='Search agents']").focus();
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => document.querySelector("[aria-label='Search agents']")?.value === "");
     check("Escape clears the search", JSON.stringify(await listedNames()) === JSON.stringify(["Beta", "Alpha", "Gamma"]));
@@ -219,7 +228,11 @@ async function main() {
     check("search finds an archived agent by description", JSON.stringify(await listedNames()) === JSON.stringify(["Alpha"]));
     await page.keyboard.press("Enter");
     await titleIs("Alpha");
+    // Opening the agent focuses the composer, so put focus back on the search
+    // input before checking that Escape clears it.
+    await page.locator("[aria-label='Search agents']").focus();
     await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.querySelector("[aria-label='Search agents']")?.value === "");
     await page.locator(".archive-group .agent-name-text", { hasText: "Alpha" }).waitFor();
 
     await openMenu("Alpha");
@@ -251,6 +264,77 @@ async function main() {
     );
     check("restore puts a pinned agent back on top", (await page.locator(".agent-list > .agent-row-wrap .agent-pin").count()) === 1);
     await shot("05-restored");
+
+    await openMenu("Alpha");
+    await page.getByRole("menuitem", { name: "Edit agent" }).click();
+    const editor = page.getByRole("dialog", { name: "Edit agent" });
+    await editor.waitFor();
+    const addFact = editor.getByLabel("Add a fact");
+    await addFact.scrollIntoViewIfNeeded();
+    await addFact.fill("The release branch is main.");
+    await editor.getByRole("button", { name: "Add", exact: true }).click();
+    await editor.getByRole("button", { name: "The release branch is main.", exact: true }).waitFor();
+    await editor.getByRole("button", { name: "The release branch is main.", exact: true }).click();
+    await editor.getByLabel("Fact text").fill("The release branch is release.");
+    await editor.getByRole("button", { name: "Save", exact: true }).click();
+    await editor.getByRole("button", { name: "The release branch is release.", exact: true }).waitFor();
+    const factSwitch = editor.getByRole("switch", { name: "Enabled: The release branch is release." });
+    await factSwitch.click();
+    await page.waitForFunction(
+      () => document.querySelector('[aria-label="Enabled: The release branch is release."]')?.getAttribute("aria-checked") === "false",
+    );
+    await factSwitch.click();
+    await page.waitForFunction(
+      () => document.querySelector('[aria-label="Enabled: The release branch is release."]')?.getAttribute("aria-checked") === "true",
+    );
+    await editor.getByRole("button", { name: "The release branch is release.", exact: true }).click();
+    await editor.getByRole("button", { name: "Forget", exact: true }).click();
+    await editor.getByRole("button", { name: "Forget it", exact: true }).click();
+    await editor.getByRole("button", { name: "Undo", exact: true }).waitFor();
+    check("forget removes the fact", (await editor.locator(".fact-text").count()) === 0);
+    await editor.getByRole("button", { name: "Undo", exact: true }).click();
+    await editor.getByRole("button", { name: "The release branch is release.", exact: true }).waitFor();
+    await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+    await editor.waitFor({ state: "detached" });
+    await openMenu("Alpha");
+    await page.getByRole("menuitem", { name: "Edit agent" }).click();
+    await editor.waitFor();
+    await editor.getByRole("button", { name: "The release branch is release.", exact: true }).waitFor();
+    check("reopening the editor keeps the fact", true);
+    await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+    await editor.waitFor({ state: "detached" });
+    await page.reload();
+    await page.waitForSelector(".app-shell", { timeout: 60_000 });
+    await page.waitForSelector(".agent-row", { timeout: 30_000 });
+    await page.waitForFunction(() => Boolean(window.fid?.facts?.list));
+    const stored = await page.evaluate((id) => window.fid.facts.list(id), alphaId);
+    check(
+      "a reload keeps the fact",
+      stored.some((fact) => fact.content === "The release branch is release." && fact.enabled && fact.agentId === alphaId),
+      JSON.stringify(stored),
+    );
+    await shot("07-facts");
+
+    const stubbed = await app.evaluate(
+      ({ ipcMain }, { channel, agentId }) => {
+        try {
+          ipcMain.removeHandler(channel);
+          ipcMain.handle(channel, () => [agentId]);
+          return "ok";
+        } catch (error) {
+          return String(error);
+        }
+      },
+      { channel: channels.chatRunningAll, agentId: alphaId },
+    );
+    check("the test can stub the running set", stubbed === "ok", stubbed);
+    await page.waitForSelector(".agent-row.is-working", { timeout: 5000 });
+    const workingRow = page.locator(".agent-list > .agent-row-wrap").filter({
+      has: page.locator(".agent-name-text", { hasText: "Alpha" }),
+    });
+    check("a working agent says Working", (await workingRow.locator(".agent-working").innerText()).trim() === "Working");
+    check("the sidebar counts working agents", /1 working/i.test(await page.locator(".sidebar-working").innerText()));
+    await shot("06-working");
   } finally {
     await app?.close().catch(() => undefined);
     if (vite) {

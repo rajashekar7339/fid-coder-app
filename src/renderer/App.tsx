@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { CircleHelp, LogIn, Plus, Save, ShieldAlert, X } from "lucide-react";
 import { COPILOT_USAGE_REFRESH_MS, type CopilotUsageView } from "../shared/copilot-usage";
 import { addAttachments } from "../shared/attachments";
@@ -33,6 +33,12 @@ import { SettingsDialog, type SettingsSection, type SignInNote } from "./compone
 import { Sidebar, type CopilotPresence } from "./components/sidebar/Sidebar";
 import type { InboxItem, InboxView } from "../shared/inbox";
 import { errorText, fid, hasFid } from "./lib/fid";
+import {
+  clampWorkspaceWidth,
+  maxWorkspaceWidth,
+  MIN_WORKSPACE_WIDTH,
+  WORKSPACE_WIDTH_KEY,
+} from "./lib/layout";
 
 type Dialog =
   | { kind: "create" }
@@ -45,6 +51,7 @@ type Dialog =
 
 const SIGN_IN_POLL_MS = 2000;
 const SIGN_IN_TIMEOUT_MS = 3 * 60 * 1000;
+const RUNNING_POLL_MS = 1500;
 const DESK_BREAKPOINT = "(min-width: 1181px)";
 
 export function App() {
@@ -55,6 +62,7 @@ export function App() {
   const [agentId, setAgentId] = useState<string | null>(null);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [inbox, setInbox] = useState<InboxView>({ items: [], unread: 0 });
+  const [runningAgentIds, setRunningAgentIds] = useState<ReadonlySet<string>>(() => new Set());
   const [settings, setSettings] = useState<SettingsView | null>(null);
   const [usage, setUsage] = useState<CopilotUsageView | null>(null);
   const [usageMessage, setUsageMessage] = useState<string | null>(null);
@@ -64,6 +72,19 @@ export function App() {
   const [deskOpen, setDeskOpen] = useState(() => window.innerWidth >= 1181);
   const [changesOpen, setChangesOpen] = useState(false);
   const [chatCollapsed, setChatCollapsed] = useState(false);
+  const [workspaceWidth, setWorkspaceWidth] = useState<number | null>(() => {
+    try {
+      const raw = window.localStorage.getItem(WORKSPACE_WIDTH_KEY);
+      const value = raw === null ? Number.NaN : Number(raw);
+      return Number.isFinite(value) ? clampWorkspaceWidth(value, window.innerWidth) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  const workspaceMaxWidth = maxWorkspaceWidth(viewportWidth);
+  const workspaceWidthNow =
+    workspaceWidth === null ? null : clampWorkspaceWidth(workspaceWidth, viewportWidth);
   const [changesRequest, setChangesRequest] = useState<ChangesOpenRequest | null>(null);
   const [changeSets, setChangeSets] = useState<ChangeSet[]>([]);
   const [changesLoading, setChangesLoading] = useState(false);
@@ -269,6 +290,22 @@ export function App() {
   useEffect(() => {
     if (!hasFid()) return;
     const id = fid().chat.onEvent((event) => {
+      if (event.type === "user") {
+        setRunningAgentIds((current) => {
+          if (current.has(event.agentId)) return current;
+          const next = new Set(current);
+          next.add(event.agentId);
+          return next;
+        });
+      }
+      if (event.type === "done" || event.type === "error") {
+        setRunningAgentIds((current) => {
+          if (!current.has(event.agentId)) return current;
+          const next = new Set(current);
+          next.delete(event.agentId);
+          return next;
+        });
+      }
       if (event.type === "approval-request") {
         setApprovalError(null);
         setPendingApprovals((current) => {
@@ -338,6 +375,51 @@ export function App() {
       .catch(() => undefined);
     return () => fid().chat.offEvent(id);
   }, []);
+
+  useEffect(() => {
+    if (!hasFid() || typeof fid().chat.runningAll !== "function") return;
+    let cancelled = false;
+    const refresh = () => {
+      void fid()
+        .chat.runningAll()
+        .then((ids) => {
+          if (cancelled) return;
+          setRunningAgentIds((current) => {
+            if (current.size === ids.length && ids.every((id) => current.has(id))) return current;
+            return new Set(ids);
+          });
+        })
+        .catch(() => undefined);
+    };
+    refresh();
+    const timer = window.setInterval(refresh, RUNNING_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        if (workspaceWidthNow === null) window.localStorage.removeItem(WORKSPACE_WIDTH_KEY);
+        else window.localStorage.setItem(WORKSPACE_WIDTH_KEY, String(workspaceWidthNow));
+      } catch {
+        // A blocked or private storage must not break the layout.
+      }
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [workspaceWidthNow]);
+
+  function updateWorkspaceWidth(next: number | null) {
+    setWorkspaceWidth(next === null ? null : clampWorkspaceWidth(next, viewportWidth));
+  }
 
   const watchSignIn = useCallback(() => {
     stopSignInWatch();
@@ -692,6 +774,10 @@ export function App() {
         : "out";
   const showChanges = Boolean(selected && changesOpen);
   const showDesk = Boolean(selected && deskOpen && !showChanges);
+  const shellStyle =
+    workspaceWidthNow === null
+      ? undefined
+      : ({ "--workspace-width": `${workspaceWidthNow}px` } as CSSProperties);
 
   if (loadError && agents.length === 0 && !hasFid()) {
     return <FullMessage title="Fid Coder" body={loadError} />;
@@ -703,6 +789,7 @@ export function App() {
         className={`app-shell ${showDesk ? "has-desk" : ""} ${showChanges ? "has-changes" : ""} ${
           showChanges && chatCollapsed ? "is-chat-collapsed" : ""
         }`}
+        style={shellStyle}
       >
         <Sidebar
           agents={agents}
@@ -721,6 +808,7 @@ export function App() {
           onHelp={openHelp}
           inboxCount={inbox.unread}
           onInbox={() => setDialog({ kind: "inbox" })}
+          runningAgentIds={runningAgentIds}
         />
 
         <div className="center-column">
@@ -874,6 +962,10 @@ export function App() {
             error={changesError}
             request={changesRequest}
             chatCollapsed={chatCollapsed}
+            workspaceWidth={workspaceWidthNow}
+            minWorkspaceWidth={MIN_WORKSPACE_WIDTH}
+            maxWorkspaceWidth={workspaceMaxWidth}
+            onWorkspaceWidth={updateWorkspaceWidth}
             onToggleChat={() => setChatCollapsed((collapsed) => !collapsed)}
             onActiveContext={setActiveAttachment}
             onClose={closeChanges}

@@ -45,6 +45,7 @@ type Props = {
   onHelp: () => void;
   inboxCount: number;
   onInbox: () => void;
+  runningAgentIds: ReadonlySet<string>;
 };
 
 type AgentMenu = { agent: Agent; x: number; y: number };
@@ -117,6 +118,7 @@ export function Sidebar({
   onHelp,
   inboxCount,
   onInbox,
+  runningAgentIds,
 }: Props) {
   const [query, setQuery] = useState("");
   const [menu, setMenu] = useState<AgentMenu | null>(null);
@@ -126,6 +128,7 @@ export function Sidebar({
   const sawArchivedSelection = useRef(false);
   const needle = query.trim();
   const { listed, archived } = arrangeAgentList(agents, query);
+  const workingCount = listed.filter((agent) => runningAgentIds.has(agent.id)).length;
   const menuAgent = menu ? (agents.find((agent) => agent.id === menu.agent.id) ?? null) : null;
   const selectedIsArchived = Boolean(
     selectedId && agents.some((agent) => agent.id === selectedId && agent.archived),
@@ -184,6 +187,7 @@ export function Sidebar({
 
   function renderAgent(agent: Agent) {
     const active = agent.id === selectedId;
+    const working = runningAgentIds.has(agent.id);
     const presence = signedIn && isRecentlyActive(agent.lastActivityAt) ? "recent" : "idle";
     return (
       <div
@@ -192,7 +196,7 @@ export function Sidebar({
       >
         <button
           type="button"
-          className={`agent-row ${active ? "is-active" : ""}`}
+          className={`agent-row${active ? " is-active" : ""}${working ? " is-working" : ""}`}
           aria-current={active ? "page" : undefined}
           onClick={() => {
             setMenu(null);
@@ -215,9 +219,16 @@ export function Sidebar({
             </span>
             <span className="agent-meta">{agentSubtitle(agent)}</span>
           </span>
-          <span className="agent-when" title={whenTitle(agent)}>
-            {whenLabel(agent)}
-          </span>
+          {working ? (
+            <span className="agent-working" title="Working on a turn">
+              <span className="agent-working-dot" aria-hidden="true" />
+              Working
+            </span>
+          ) : (
+            <span className="agent-when" title={whenTitle(agent)}>
+              {whenLabel(agent)}
+            </span>
+          )}
         </button>
         <button
           type="button"
@@ -304,6 +315,15 @@ export function Sidebar({
       <div className="sidebar-section-label">
         <span>Agents</span>
         <span className="count">{listed.length}</span>
+        {workingCount > 0 ? (
+          <span
+            className="sidebar-working"
+            title={workingCount === 1 ? "1 agent is working" : `${workingCount} agents are working`}
+          >
+            <span className="agent-working-dot" aria-hidden="true" />
+            {workingCount} working
+          </span>
+        ) : null}
       </div>
 
       <nav

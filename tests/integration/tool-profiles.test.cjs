@@ -83,6 +83,9 @@ test("Ask mode exposes every read-only tool and no writes or actions", () => {
     "jira_myself",
     "jira_search",
     "jira_issue",
+    "confluence_search",
+    "confluence_page",
+    "table_read",
     "history_first",
     "history_search",
     "history_turn",
@@ -98,7 +101,21 @@ test("Ask mode exposes every read-only tool and no writes or actions", () => {
     "browser_click",
     "browser_type",
     "review_code",
+    "confluence_update_page",
   ]) {
     assert.equal(names.includes(name), false, name);
+  }
+});
+
+test("table and Confluence tools follow the mode rules", () => {
+  const ask = askTools().map((tool) => tool.name);
+  assert.equal(ask.includes("table_read"), true);
+  assert.equal(ask.includes("confluence_search"), true);
+  assert.equal(ask.includes("confluence_page"), true);
+  assert.equal(ask.includes("confluence_update_page"), false);
+  for (const profile of ["browser", "developer", "all"]) {
+    const names = toolsForAgent(profile).map((tool) => tool.name);
+    assert.equal(names.includes("table_read"), true, profile);
+    assert.equal(names.includes("confluence_update_page"), true, profile);
   }
 });

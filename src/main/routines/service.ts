@@ -10,7 +10,7 @@ import {
   type RoutineDraft,
 } from "../../shared/routine-schedule";
 import type { AppDatabase } from "../db";
-import { assertCron, nextRunIso } from "./cron";
+import { assertCron, assertMinInterval, nextRunIso } from "./cron";
 import type { Scheduler } from "./scheduler";
 
 export class RoutineService {
@@ -48,6 +48,7 @@ export class RoutineService {
       runAt: patch.runAt !== undefined ? patch.runAt : current.runAt,
       enabled: patch.enabled ?? current.enabled,
       notify: patch.notify ?? current.notify,
+      readOnly: patch.readOnly ?? current.readOnly,
     });
     assertNotDuplicate(this.db.listRoutines(current.agentId), merged, id);
     const routine = this.db.updateRoutine(id, merged, nextRunAt(merged));
@@ -95,11 +96,12 @@ export function cleanRoutine(input: RoutineInput, now = new Date()): RoutineInpu
     agentId,
     name,
     prompt,
-    cron: assertCron(cron),
+    cron: once ? assertCron(cron) : assertMinInterval(cron),
     once,
     runAt,
     enabled: input.enabled !== false,
     notify: input.notify !== false,
+    readOnly: input.readOnly === true,
   };
 }
 
