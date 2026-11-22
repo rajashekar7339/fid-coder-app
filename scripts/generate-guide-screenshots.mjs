@@ -172,6 +172,12 @@ try {
     if (cells[0]) cells[0].textContent = "Guide demo";
   });
   await save(page.locator(".settings-modal"), "settings.png");
+  await page.locator(".settings-nav-item").filter({ hasText: "DeepSeek" }).click();
+  await page.waitForTimeout(400);
+  await page.locator(".settings-modal input[type=password]").fill("sk-demo-deepseek-key");
+  await page.getByRole("button", { name: "Save key" }).click();
+  await page.waitForTimeout(700);
+  await save(page.locator(".settings-modal"), "deepseek-settings.png");
   await page.locator(".settings-nav-item").filter({ hasText: "Datadog" }).click();
   await page.waitForTimeout(500);
   await save(page.locator(".settings-modal"), "datadog-settings.png");

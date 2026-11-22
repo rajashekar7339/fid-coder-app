@@ -9,6 +9,7 @@ export const secretKeys = {
   githubPat: "github-pat",
   jira: "jira-token",
   confluence: "confluence-token",
+  deepseek: "deepseek-api-key",
 } as const;
 
 function readFile(): SecretFile {

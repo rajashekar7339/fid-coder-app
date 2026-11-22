@@ -19,6 +19,7 @@ export async function runCodeExplore(parent: ToolContext, question: string): Pro
     },
   }));
   const live = await openSession({
+    provider: parent.provider,
     model: parent.model || "auto",
     systemMessage: [
       "You explore a code workspace and return a brief the editor can use.",

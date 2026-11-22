@@ -6,7 +6,7 @@ An agent is a saved teammate on this PC. It has its own instructions, model, too
 
 ## Before you start
 
-- Sign in to Copilot from **Settings → Copilot**. The agent cannot answer until Copilot is connected.
+- Sign in to Copilot from **Settings → Copilot**, or save a DeepSeek key in **Settings → DeepSeek** and choose the DeepSeek provider. The agent cannot answer until its provider is connected.
 - Have the folder you want the agent to work in. File, search, git, and shell tools need a workspace folder.
 - Decide the job in one sentence. "Draft release notes from the changes since the last tag" is easier to test than "help with releases."
 

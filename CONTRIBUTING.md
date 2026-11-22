@@ -121,6 +121,7 @@ Run the smallest set that proves the change, then the relevant end-to-end path.
 | Live UI | `npm run test:routines-live` | A real turn that asks the agent to create a one-time routine. Needs Copilot. |
 | Live UI | `npm run test:map` | One real project-map build, read-only workspace check, and cached reopen. Needs Copilot. |
 | Live UI | `npm run test:enhance` | One real rewrite, Undo, skips, and no-send checks. Needs Copilot. |
+| Live UI | `npm run test:deepseek-live` | One real DeepSeek BYOK turn with a tool call and token usage. Needs a DeepSeek key, not Copilot. |
 | Live UI | `npm run test:features` | Live changes card and panel, file/turn revert, workspace rules, and context inspector. Needs Copilot. |
 | Live UI | `npm run test:modes` | Creates an agent, switches it to Agent mode, proves a real turn edits a file, then proves Ask mode makes no changes. Also checks every Tools × Mode combination. Needs Copilot. |
 

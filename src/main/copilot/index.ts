@@ -10,9 +10,16 @@ import {
   type CopilotUsageResult,
 } from "../../shared/copilot-usage";
 import { AUTO_MODEL_ID, catalogModels, type CatalogModel } from "../../shared/model";
-import type { CopilotModel, SettingsView } from "../../shared/types";
+import { DEEPSEEK_DEFAULT_MODEL } from "../../shared/providers";
+import type { CopilotModel, ProviderId, SettingsView } from "../../shared/types";
 import type { AppTool, ToolContext } from "../../tools/types";
 import { clearSecret, getSecret, hasSecret, secretKeys } from "../secrets";
+import {
+  deepseekKeySource,
+  deepseekProviderConfig,
+  hasDeepseekKey,
+  listDeepseekModels,
+} from "../providers/deepseek";
 import { userDataDir } from "../paths";
 
 type SdkEvent = { type?: string; data?: Record<string, unknown>; agentId?: string };
@@ -212,6 +219,15 @@ export function listCopilotModels(): Promise<CopilotModel[]> {
   return pending;
 }
 
+/** The model picker shows both providers; DeepSeek prefers the key's catalog. */
+export async function listProviderModels(): Promise<CopilotModel[]> {
+  const [deepseek, copilot] = await Promise.all([
+    listDeepseekModels(),
+    listCopilotModels().catch(() => [] as CopilotModel[]),
+  ]);
+  return [...copilot, ...deepseek];
+}
+
 async function loadCopilotModels(): Promise<CopilotModel[]> {
   const token = hasSecret(secretKeys.copilot) ? getSecret(secretKeys.copilot) : null;
   const copilot = await ensureClient(token);
@@ -255,6 +271,7 @@ async function listSessionModels(session: SessionLike): Promise<CatalogModel[] |
 }
 
 export async function openSession(input: {
+  provider?: ProviderId;
   model: string;
   systemMessage: string;
   tools: AppTool[];
@@ -262,13 +279,19 @@ export async function openSession(input: {
   onToolStart: (name: string, preview: string) => void;
   onToolEnd: (name: string, ok: boolean, text: string) => void;
 }): Promise<LiveSession> {
+  const provider = input.provider ?? "copilot";
+  if (provider === "deepseek" && (!input.model || input.model === AUTO_MODEL_ID)) {
+    throw new Error("Choose a DeepSeek model for this agent.");
+  }
   const token = hasSecret(secretKeys.copilot) ? (await import("../secrets")).getSecret(secretKeys.copilot) : null;
   const copilot = await ensureClient(token);
   const allowed = new Set(input.tools.map((tool) => tool.name));
+  const providerConfig = provider === "deepseek" ? deepseekProviderConfig(input.model) : null;
   const session = await copilot.createSession({
     streaming: true,
     model: input.model,
     clientName: "fid-coder",
+    ...(providerConfig ? { provider: providerConfig } : {}),
     systemMessage: { mode: "replace", content: input.systemMessage },
     availableTools: [...allowed],
     tools: input.tools.map((tool) => ({
@@ -301,7 +324,7 @@ export async function openSession(input: {
     })),
     onPermissionRequest: (request: unknown) => decidePermission(request, allowed),
   });
-  if (input.model !== AUTO_MODEL_ID) {
+  if (provider !== "deepseek" && input.model !== AUTO_MODEL_ID) {
     try {
       await ensureSessionModel(session, input.model);
     } catch (error) {
@@ -522,6 +545,8 @@ export async function getCopilotStatus(): Promise<SettingsView> {
     loginName,
     hasStoredToken: stored,
     hasGithubPat: hasSecret(secretKeys.githubPat),
+    hasDeepseekKey: hasDeepseekKey(),
+    deepseekKeySource: deepseekKeySource(),
     hasJiraToken: hasSecret(secretKeys.jira),
     jiraSiteUrl: "",
     hasConfluenceToken: false,
@@ -539,8 +564,11 @@ export async function completeOnce(
   model: string,
   systemMessage: string,
   prompt: string,
-  options?: { timeoutMs?: number; failure?: string },
+  options?: { provider?: ProviderId; timeoutMs?: number; failure?: string },
 ): Promise<string> {
+  const provider = options?.provider ?? "copilot";
+  const selectedModel =
+    provider === "deepseek" && (!model || model === AUTO_MODEL_ID) ? DEEPSEEK_DEFAULT_MODEL : model;
   let token: string | null = null;
   try {
     token = hasSecret(secretKeys.copilot) ? getSecret(secretKeys.copilot) : null;
@@ -548,17 +576,21 @@ export async function completeOnce(
     token = null;
   }
   const copilot = await ensureClient(token);
+  const providerConfig = provider === "deepseek" ? deepseekProviderConfig(selectedModel) : null;
   const session = await copilot.createSession({
     streaming: false,
-    model,
+    model: selectedModel,
     clientName: "fid-coder",
+    ...(providerConfig ? { provider: providerConfig } : {}),
     systemMessage: { mode: "replace", content: systemMessage },
     availableTools: [],
     tools: [],
     onPermissionRequest: () => ({ kind: "reject", feedback: "No tools" }),
   });
   try {
-    if (model !== AUTO_MODEL_ID) await ensureSessionModel(session, model);
+    if (provider !== "deepseek" && selectedModel !== AUTO_MODEL_ID) {
+      await ensureSessionModel(session, selectedModel);
+    }
     const response = await session.sendAndWait({ prompt }, options?.timeoutMs ?? MEMORY_TIMEOUT_MS);
     return readAssistantText(response, "").trim();
   } catch (error) {

@@ -8,7 +8,7 @@ The user guide (`docs/guide/`), `docs/memory.md`, `docs/build-exe.md`, `docs/wor
 
 ## Product constraints
 
-- GitHub Copilot is the only model backend.
+- GitHub Copilot is the default model backend. DeepSeek is an optional BYOK provider chosen per agent; the key stays in the main process.
 - No Docker and no remote browser.
 - Tools stay rooted in the agent workspace.
 - The browser is local and headed, with one profile per agent.
@@ -22,6 +22,7 @@ The user guide (`docs/guide/`), `docs/memory.md`, `docs/build-exe.md`, `docs/wor
 
 - The cockpit: sidebar, conversation, and Agent Desk.
 - Agent CRUD with model, tool profile, workspace, instructions, and long-term memory.
+- Per-agent model provider: Copilot (default) or DeepSeek. DeepSeek uses an encrypted API key or a test environment key, supports tools, and reports tokens without Copilot credits. DeepSeek Flash accepts images; V4 Pro does not.
 - Ask mode and Agent mode. Ask mode uses the read-only tool set. Agent mode uses the selected tool profile.
 - Per-agent headed browser and Jira tools.
 - GitHub pull request tools and the GitHub token.

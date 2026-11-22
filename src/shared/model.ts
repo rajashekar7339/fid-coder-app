@@ -39,7 +39,7 @@ function namedModels(items: CatalogModel[]): CopilotModel[] {
     const id = listedId(item?.id);
     if (!id || item.policy?.state === "disabled") continue;
     const name = typeof item.name === "string" && item.name.trim() ? item.name.trim() : id;
-    models.push({ id, name });
+    models.push({ id, name, provider: "copilot" });
   }
   return models;
 }

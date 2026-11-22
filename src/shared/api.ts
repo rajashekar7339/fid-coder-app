@@ -175,6 +175,9 @@ export interface FidApi {
     startCopilotLogin: () => Promise<{ ok: boolean; message: string }>;
     saveGithubPat: (token: string) => Promise<void>;
     clearGithubPat: () => Promise<void>;
+    saveDeepseekKey: (token: string) => Promise<void>;
+    clearDeepseekKey: () => Promise<void>;
+    testDeepseek: () => Promise<{ ok: boolean; message: string }>;
     saveJiraSite: (url: string) => Promise<void>;
     saveJiraToken: (token: string) => Promise<void>;
     clearJiraToken: () => Promise<void>;

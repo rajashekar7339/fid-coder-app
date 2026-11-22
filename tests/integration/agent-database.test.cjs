@@ -418,7 +418,7 @@ test("messages keep token usage and add the column on an older database", () => 
     const saved = db.addMessage(agent.id, "assistant", "Hello", null, usage);
     assert.deepEqual(saved.usage, usage);
     const found = db.listMessages(agent.id).find((message) => message.id === saved.id);
-    assert.deepEqual(found?.usage, usage);
+    assert.deepEqual(found?.usage, { ...usage, provider: "copilot" });
   } finally {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });

@@ -6,6 +6,7 @@ import approvalRulesImage from "../../../docs/guide/images/approval-rules.png";
 import askModeImage from "../../../docs/guide/images/ask-mode.png";
 import confluenceSettingsImage from "../../../docs/guide/images/confluence-settings.png";
 import datadogSettingsImage from "../../../docs/guide/images/datadog-settings.png";
+import deepseekSettingsImage from "../../../docs/guide/images/deepseek-settings.png";
 import enhancePromptImage from "../../../docs/guide/images/enhance-prompt.png";
 import messageActionsImage from "../../../docs/guide/images/message-actions.png";
 import needsYouImage from "../../../docs/guide/images/needs-you.png";
@@ -90,9 +91,9 @@ const SOURCES: GuideSource[] = [
   },
   {
     id: "connect-accounts",
-    title: "Connect Copilot, GitHub, Jira, and Confluence",
+    title: "Connect Copilot, DeepSeek, GitHub, Jira, and Confluence",
     group: "Using Fid Coder",
-    summary: "Sign in to Copilot and add optional GitHub, Jira, and Confluence tokens that stay on this PC.",
+    summary: "Sign in to Copilot or add a DeepSeek key, then add optional GitHub, Jira, and Confluence tokens that stay on this PC.",
     readMinutes: 5,
     file: "connect-accounts.md",
   },
@@ -117,6 +118,7 @@ const EXPLICIT_IMAGES: Record<string, string> = {
   "ask-mode.png": askModeImage,
   "confluence-settings.png": confluenceSettingsImage,
   "datadog-settings.png": datadogSettingsImage,
+  "deepseek-settings.png": deepseekSettingsImage,
   "enhance-prompt.png": enhancePromptImage,
   "message-actions.png": messageActionsImage,
   "needs-you.png": needsYouImage,

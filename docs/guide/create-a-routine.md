@@ -28,7 +28,7 @@ The agent translates the local time into the routine's frequency, time, date, or
 
 You can still ask the agent what routines exist or cancel one with `routine_list` and `routine_delete`; the Routines dialog is also there.
 
-Each run is a normal agent turn and uses your Copilot quota. A command run by a routine still follows the usual approval rules.
+Each run is a normal agent turn and uses the agent's model provider (Copilot quota or the DeepSeek key). A command run by a routine still follows the usual approval rules.
 
 ## Open Routines
 

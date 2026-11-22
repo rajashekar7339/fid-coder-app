@@ -39,6 +39,7 @@
     "test:map": "npm run build:node && node tests/e2e-live/project-map.e2e.mjs",
     "test:enhance": "npm run build:node && node tests/e2e-live/enhance-prompt.e2e.mjs",
     "test:native-live": "npm run build:node && node tests/e2e-live/native-data-live.e2e.mjs",
+    "test:deepseek-live": "npm run build:node && node tests/e2e-live/deepseek-live.e2e.mjs",
     "test:datadog-browser-live": "npm run build:node && node tests/e2e-live/datadog-browser-live.e2e.mjs"
   },
   "dependencies": {

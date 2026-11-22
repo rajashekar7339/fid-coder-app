@@ -55,6 +55,7 @@ export async function buildArchitectureMap(parent: ToolContext): Promise<string>
     },
   }));
   const live = await openSession({
+    provider: parent.provider,
     model: parent.model || "auto",
     systemMessage: [
       MAP_SYSTEM,

@@ -7,6 +7,7 @@ import type {
   ApprovalKind,
   ApprovalOutcome,
   BrowserHandoffOutcome,
+  ProviderId,
   QuestionOutcome,
   Routine,
   SkillFile,
@@ -85,6 +86,7 @@ export type ToolContext = {
   skills?: SkillActivation[];
   onSkillUsed?: (id: string) => void;
   writeRoot?: string;
+  provider?: ProviderId;
   model?: string;
   turnId?: string;
   browser: BrowserControl;

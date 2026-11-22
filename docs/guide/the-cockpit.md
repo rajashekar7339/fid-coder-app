@@ -24,14 +24,14 @@ The sidebar lists the agents on this machine. Archived agents stay out of that l
 
 The center column is the saved conversation for the selected agent.
 
-- Replies stream in as Copilot writes them.
+- Replies stream in as the agent's model writes them.
 - Tool calls collapse into one card. The running step is highlighted; expand the card to see each call and a short result summary.
 - The composer at the bottom sends with Enter. Use Shift+Enter for a new line.
 - **Mode** in the agent editor chooses access. Ask mode uses every read-only tool; Agent mode reveals **Tools** for the domain. **Ask mode** and **Agent mode** in the composer, before the model picker, change the same saved mode between read-only questions and the agent's full tools.
 - The map button in the chat header opens the cached project map. Choose **Build map** or **Refresh map** to spend one read-only exploration.
 - The **Workspace** button in the chat header, `/files`, or **Browse files** on the Agent Desk opens the workspace navigator: the answer's references, the selected turn's changed files, and the full file tree. The entries are hidden without a workspace folder. It opens even before a turn has changed a file. On a wide window, **Collapse chat** in the panel header slides the chat left; **Show chat** restores it. Drag the divider between the chat and the panel to resize both, or choose **Hide file list** to collapse the References/Changed/All files column; **Show file list** brings it back. The panel width is remembered. It replaces the Agent Desk while open; close it to return to the desk.
 - Choose **Enhance** to rewrite the draft; nothing is sent until you press Enter. It is manual and one-shot.
-- The model picker is in the composer. It is disabled while the agent is working.
+- The model picker is in the composer and lists the models for the agent's provider. It is disabled while the agent is working.
 - Type `/` in the composer, or choose **Commands**, to open the command list. `/skills <skill> <task>` uses an installed skill for that message.
 - The status pill beside the agent name shows Ready, Working, or Sign in.
 

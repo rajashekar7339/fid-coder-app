@@ -2,7 +2,13 @@ import { useState, type FormEvent } from "react";
 import { Check, FolderOpen, X } from "lucide-react";
 import { DATADOG_AGENT_PROMPT } from "../../../shared/datadog";
 import { AUTO_MODEL_ID } from "../../../shared/model";
-import type { Agent, AgentToolProfile, CopilotModel } from "../../../shared/types";
+import {
+  defaultModelForProvider,
+  modelsForProvider,
+  PROVIDERS,
+  providerInfo,
+} from "../../../shared/providers";
+import type { Agent, AgentToolProfile, CopilotModel, ProviderId } from "../../../shared/types";
 import { errorText, fid } from "../../lib/fid";
 import { FactList } from "./FactList";
 import { AgentAvatar } from "./AgentAvatar";
@@ -105,6 +111,7 @@ export function AgentDialog({
   const [name, setName] = useState(agent?.name ?? "");
   const [systemPrompt, setSystemPrompt] = useState(agent?.systemPrompt ?? DEFAULT_INSTRUCTIONS);
   const [workspaceDir, setWorkspaceDir] = useState(agent?.workspaceDir ?? "");
+  const [provider, setProvider] = useState<ProviderId>(agent?.provider ?? "copilot");
   const [model, setModel] = useState(agent?.model ?? AUTO_MODEL_ID);
   const [toolProfile, setToolProfile] = useState<AgentToolProfile | null>(
     agent?.toolProfile ?? null,
@@ -152,6 +159,7 @@ export function AgentDialog({
         description: agent?.description ?? "",
         systemPrompt: systemPrompt.trim() || DEFAULT_INSTRUCTIONS,
         workspaceDir: workspaceDir.trim() || null,
+        provider,
         model,
         toolProfile: toolProfile ?? "developer",
         readOnly,
@@ -243,10 +251,33 @@ export function AgentDialog({
           </div>
 
           <div className="field">
+            <span className="field-label">Provider</span>
+            <div className="mode-switch agent-provider-switch" role="group" aria-label="Model provider">
+              {PROVIDERS.map((choice) => (
+                <button
+                  key={choice.id}
+                  type="button"
+                  className={provider === choice.id ? "is-active" : ""}
+                  aria-pressed={provider === choice.id}
+                  disabled={saving}
+                  onClick={() => {
+                    setProvider(choice.id);
+                    setModel(defaultModelForProvider(choice.id));
+                  }}
+                >
+                  {choice.label}
+                </button>
+              ))}
+            </div>
+            <span className="field-note">{providerInfo(provider).note}</span>
+          </div>
+
+          <div className="field">
             <span className="field-label">Model</span>
             <ModelSelect
               value={model}
-              models={models}
+              models={modelsForProvider(models, provider)}
+              allowAuto={provider === "copilot"}
               disabled={saving}
               className="model-picker-wide"
               onChange={setModel}
@@ -254,7 +285,9 @@ export function AgentDialog({
             <span className="field-note">
               {modelsLoading
                 ? "Loading available models…"
-                : "Auto lets Copilot choose the model for this agent."}
+                : provider === "deepseek"
+                  ? "DeepSeek uses the key saved in Settings → DeepSeek. Auto is not available."
+                  : "Auto lets Copilot choose the model for this agent."}
             </span>
             {modelsNote ? (
               <button type="button" className="field-link" onClick={onRetryModels}>
@@ -376,13 +409,13 @@ export function AgentDialog({
               </div>
               <span className="field-note">
                 {memoryEnabled
-                  ? "Updates at most once every ten turns after 30 messages, using Auto. Send /compact to summarize now."
+                  ? "Updates at most once every ten turns after 30 messages, using this agent's model. Send /compact to summarize now."
                   : "Automatic updates are off. Send /compact to summarize now, or turn this on to keep memory current."}
               </span>
               {memorySummary.trim() ? (
                 <>
                   <pre id={memoryId} className={`memory-summary ${memoryOpen ? "is-open" : ""}`}>{memoryShown}</pre>
-                  <span className="field-note">Used when this agent starts a fresh Copilot session.</span>
+                  <span className="field-note">Used when this agent starts a fresh session.</span>
                   <div className="field-actions">
                     {memoryTruncated ? (
                       <button

@@ -8,6 +8,7 @@ import {
   normalizeLineRange,
 } from "../../shared/attachments";
 import { imageMimeForPath } from "../../shared/image";
+import { providerSupportsVision } from "../../shared/providers";
 import type { Agent, AttachmentPick, MessageAttachment } from "../../shared/types";
 import { relativeInside } from "../../tools/workspace";
 import { resolveWorkspaceFile } from "./resolve-file";
@@ -137,6 +138,7 @@ function buildWorkspaceFile(agent: Agent, ref: MessageAttachment): BuiltOne {
     name: path.basename(resolved.file),
   };
   if (mime) {
+    assertImagesSupported(agent);
     return {
       sdk: blobAttachment(resolved.file, stored.name, mime),
       stored,
@@ -161,6 +163,7 @@ function buildUpload(agent: Agent, ref: MessageAttachment): BuiltOne {
   const mime = imageMimeForAttachment(ref.path);
   const name = path.basename(ref.path);
   if (mime) {
+    assertImagesSupported(agent);
     return {
       sdk: blobAttachment(ref.path, name, mime),
       stored: { kind: "upload", path: ref.path, name },
@@ -285,6 +288,14 @@ function statFile(file: string): fs.Stats {
   }
   if (!stat.isFile()) throw new Error("That path is not a file.");
   return stat;
+}
+
+function assertImagesSupported(agent: Agent): void {
+  if (!providerSupportsVision(agent.provider, agent.model)) {
+    throw new Error(
+      "This agent's model does not accept images. Choose a model that accepts images, or switch the agent to Copilot.",
+    );
+  }
 }
 
 function imageMimeForAttachment(file: string): string | null {

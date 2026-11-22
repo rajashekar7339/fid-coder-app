@@ -114,7 +114,7 @@ type Props = {
   models: CopilotModel[];
   modelsNote: string | null;
   settingsReady: boolean;
-  signedIn: boolean;
+  modelReady: boolean;
   checkingSignIn: boolean;
   deskOpen: boolean;
   changeSets: ChangeSet[];
@@ -143,6 +143,7 @@ type Props = {
   questionError: string | null;
   onQuestionAnswer: (reply: QuestionReply) => void;
   onStartSignIn: () => void;
+  onOpenModelSettings: () => void;
   onRetryModels: () => void;
   onToggleDesk: () => void;
   onOpenSkills: () => void;
@@ -304,7 +305,7 @@ export function ChatView({
   models,
   modelsNote,
   settingsReady,
-  signedIn,
+  modelReady,
   checkingSignIn,
   deskOpen,
   changeSets,
@@ -333,6 +334,7 @@ export function ChatView({
   questionError,
   onQuestionAnswer,
   onStartSignIn,
+  onOpenModelSettings,
   onRetryModels,
   onToggleDesk,
   onOpenSkills,
@@ -344,6 +346,7 @@ export function ChatView({
   onActivity,
   onAuthRequired,
 }: Props) {
+  const agentProvider = agent.provider ?? "copilot";
   const [messages, setMessages] = useState<Message[]>([]);
   const [live, setLiveState] = useState<LiveTurn | null>(() => liveByAgent.get(agent.id) ?? null);
   const [draft, setDraft] = useState("");
@@ -440,7 +443,7 @@ export function ChatView({
     : skillHintFor(draft, draftCommand, skillInvocation, skillCatalogState);
   const hint = !commandsOpen && !skillPickerOpen ? (skillHint ?? commandHint) : null;
   const canEnhance =
-    settingsReady && signedIn && !running && !enhancing && draft.trim().length > 0;
+    settingsReady && modelReady && !running && !enhancing && draft.trim().length > 0;
   const activeKey = activeAttachment ? attachmentKey(activeAttachment) : null;
   const activePinned =
     activeKey !== null && attachments.some((attachment) => attachmentKey(attachment) === activeKey);
@@ -543,8 +546,10 @@ export function ChatView({
   }, [commandsOpen, skillPickerOpen]);
 
   function commandUnavailable(command: CommandInfo): string | null {
-    if ((command.id === "review" || command.id === "compact") && !signedIn) {
-      return "Sign in to Copilot first.";
+    if ((command.id === "review" || command.id === "compact") && !modelReady) {
+      return agentProvider === "deepseek"
+        ? "Add a DeepSeek key in Settings first."
+        : "Sign in to Copilot first.";
     }
     return commandAvailability(command, agent.toolProfile, hasWorkspace, agent.readOnly);
   }
@@ -742,8 +747,8 @@ export function ChatView({
   }, [agent.id, onActivity, updateLive]);
 
   useEffect(() => {
-    if (signedIn) composer.current?.focus();
-  }, [agent.id, signedIn]);
+    if (modelReady) composer.current?.focus();
+  }, [agent.id, modelReady]);
 
   useLayoutEffect(() => {
     const field = composer.current;
@@ -1183,6 +1188,7 @@ export function ChatView({
         description: agent.description,
         systemPrompt: agent.systemPrompt,
         workspaceDir: agent.workspaceDir,
+        provider: agentProvider,
         model,
         toolProfile: agent.toolProfile,
         readOnly: agent.readOnly,
@@ -1206,6 +1212,7 @@ export function ChatView({
         description: agent.description,
         systemPrompt: agent.systemPrompt,
         workspaceDir: agent.workspaceDir,
+        provider: agentProvider,
         model: agent.model,
         toolProfile: agent.toolProfile,
         readOnly,
@@ -1247,9 +1254,11 @@ export function ChatView({
     ? "Checking"
     : running
       ? "Working"
-      : signedIn
+      : modelReady
         ? "Ready"
-        : "Sign in";
+        : agentProvider === "deepseek"
+          ? "Key needed"
+          : "Sign in";
   let lastDay = "";
 
   return (
@@ -1262,7 +1271,7 @@ export function ChatView({
               <h1>{agent.name}</h1>
               <span
                 className={`status-pill ${
-                  !settingsReady || running ? "is-working" : signedIn ? "is-ready" : "is-warning"
+                  !settingsReady || running ? "is-working" : modelReady ? "is-ready" : "is-warning"
                 }`}
               >
                 <span />
@@ -1334,11 +1343,21 @@ export function ChatView({
         </div>
       </header>
 
-      {settingsReady && !signedIn ? (
+      {settingsReady && !modelReady ? (
         <div className="sign-in-banner">
-          <span>{checkingSignIn ? "Checking Copilot sign-in…" : "Sign in to Copilot before messaging this agent."}</span>
-          <button type="button" onClick={onStartSignIn} disabled={checkingSignIn}>
-            {checkingSignIn ? "Checking…" : "Sign in"}
+          <span>
+            {agentProvider === "deepseek"
+              ? "Add a DeepSeek key in Settings before messaging this agent."
+              : checkingSignIn
+                ? "Checking Copilot sign-in…"
+                : "Sign in to Copilot before messaging this agent."}
+          </span>
+          <button
+            type="button"
+            onClick={agentProvider === "deepseek" ? onOpenModelSettings : onStartSignIn}
+            disabled={agentProvider === "copilot" && checkingSignIn}
+          >
+            {agentProvider === "deepseek" ? "Settings" : checkingSignIn ? "Checking…" : "Sign in"}
           </button>
         </div>
       ) : null}
@@ -1366,7 +1385,7 @@ export function ChatView({
                 </span>
               ) : null}
             </div>
-            {agent.workspaceDir && signedIn ? (
+            {agent.workspaceDir && modelReady ? (
               <div className="starter-block">
                 <div className="starter-head">Understand this codebase</div>
                 <div className="starter-grid">
@@ -1407,12 +1426,14 @@ export function ChatView({
             ) : null}
             <p className="empty-hint">
               {!settingsReady
-                ? "Checking Copilot…"
-                : signedIn
+                ? "Checking model access…"
+                : modelReady
                   ? agent.workspaceDir
                     ? "Pick a starting point, or type below."
                     : "Send a message to start."
-                  : "Sign in to Copilot, then send a message."}
+                  : agentProvider === "deepseek"
+                    ? "Add a DeepSeek key in Settings, then send a message."
+                    : "Sign in to Copilot, then send a message."}
             </p>
           </div>
         ) : (
@@ -1841,18 +1862,20 @@ export function ChatView({
             value={draft}
             placeholder={
               !settingsReady
-                ? "Checking Copilot…"
-                : !signedIn
-                  ? checkingSignIn
-                    ? "Checking Copilot sign-in…"
-                    : "Sign in to Copilot to chat"
+                ? "Checking model access…"
+                : !modelReady
+                  ? agentProvider === "deepseek"
+                    ? "Add a DeepSeek key in Settings to chat"
+                    : checkingSignIn
+                      ? "Checking Copilot sign-in…"
+                      : "Sign in to Copilot to chat"
                   : forceSending
                     ? "Sending your message now…"
                     : running
                       ? `Queue a message for ${agent.name}`
                       : `Message ${agent.name}`
             }
-            disabled={!settingsReady || !signedIn}
+            disabled={!settingsReady || !modelReady}
             readOnly={enhancing || forceSending}
             aria-label={`Message ${agent.name}`}
             aria-expanded={commandsOpen || skillPickerOpen}
@@ -1976,7 +1999,7 @@ export function ChatView({
               className="composer-command composer-attach"
               aria-label="Attach files"
               title="Attach files from this PC"
-              disabled={!settingsReady || !signedIn || enhancing || attaching || forceSending}
+              disabled={!settingsReady || !modelReady || enhancing || attaching || forceSending}
               onClick={() => void attachFiles()}
             >
               {attaching ? (
@@ -1990,7 +2013,8 @@ export function ChatView({
             </button>
             <ModelSelect
               value={agent.model}
-              models={models}
+              models={models.filter((model) => (model.provider ?? "copilot") === agentProvider)}
+              allowAuto={agentProvider === "copilot"}
               disabled={running || savingModel || savingMode}
               className="model-picker-compact"
               onChange={(model) => void changeModel(model)}
@@ -2070,7 +2094,7 @@ export function ChatView({
                   type="submit"
                   className="send-button"
                   aria-label="Send message"
-                  disabled={!settingsReady || !signedIn || !hasContent || enhancing}
+                  disabled={!settingsReady || !modelReady || !hasContent || enhancing}
                 >
                   <ArrowUp size={15} />
                 </button>
@@ -2127,7 +2151,7 @@ export function ChatView({
       {mapOpen ? (
         <ProjectMapDialog
           agent={agent}
-          signedIn={signedIn}
+          modelReady={modelReady}
           onClose={() => setMapOpen(false)}
           onOpenFile={(path, line, endLine, related) => {
             setMapOpen(false);
