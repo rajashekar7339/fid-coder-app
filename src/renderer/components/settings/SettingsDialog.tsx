@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import {
   Activity,
   BookOpen,
+  Bot,
   Check,
   Gauge,
   GitBranch,
@@ -30,6 +31,7 @@ import { UsageBar, usageLevel } from "../ui/UsageBar";
 export type SignInNote = { tone: "progress" | "ok" | "error"; text: string };
 export type SettingsSection =
   | "copilot"
+  | "deepseek"
   | "github"
   | "jira"
   | "confluence"
@@ -68,6 +70,13 @@ const SECTIONS: Array<{
     title: "GitHub Copilot",
     subtitle: "The account your agents use to think and call tools.",
     Icon: Sparkles,
+  },
+  {
+    id: "deepseek",
+    label: "DeepSeek",
+    title: "DeepSeek",
+    subtitle: "An API key for agents that run on DeepSeek instead of Copilot.",
+    Icon: Bot,
   },
   {
     id: "github",
@@ -121,6 +130,8 @@ function sectionConnected(id: SettingsSection, settings: SettingsView | null): b
   switch (id) {
     case "copilot":
       return Boolean(settings?.signedIn);
+    case "deepseek":
+      return Boolean(settings?.hasDeepseekKey);
     case "github":
       return Boolean(settings?.hasGithubPat);
     case "jira":
@@ -156,6 +167,7 @@ export function SettingsDialog({
   onRefresh,
 }: Props) {
   const [githubPat, setGithubPat] = useState("");
+  const [deepseekKey, setDeepseekKey] = useState("");
   const [jiraToken, setJiraToken] = useState("");
   const [jiraSite, setJiraSite] = useState("");
   const [jiraSiteDirty, setJiraSiteDirty] = useState(false);
@@ -202,6 +214,20 @@ export function SettingsDialog({
       await action();
       onSaved();
       setMessage(success);
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function testDeepseek() {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await fid().settings.testDeepseek();
+      setMessage(result.message);
     } catch (caught) {
       setError(errorText(caught));
     } finally {
@@ -314,6 +340,28 @@ export function SettingsDialog({
                 onStartSignIn={onStartSignIn}
                 onSignOut={() => void signOut()}
                 onRecheck={() => void recheck()}
+              />
+            ) : null}
+
+            {section === "deepseek" ? (
+              <DeepseekSection
+                hasKey={settings?.hasDeepseekKey ?? false}
+                keySource={settings?.deepseekKeySource ?? null}
+                token={deepseekKey}
+                busy={busy}
+                onToken={setDeepseekKey}
+                onSave={() =>
+                  void run(async () => {
+                    await fid().settings.saveDeepseekKey(deepseekKey);
+                    setDeepseekKey("");
+                  }, "DeepSeek key saved.")
+                }
+                onClear={() =>
+                  void run(async () => {
+                    await fid().settings.clearDeepseekKey();
+                  }, "Saved DeepSeek key removed.")
+                }
+                onTest={() => void testDeepseek()}
               />
             ) : null}
 
@@ -472,6 +520,14 @@ export function SettingsDialog({
                 <>
                   <ShieldCheck size={12} aria-hidden="true" />
                   <span>Rules stay in the local database. Delete a rule to ask again on the next command.</span>
+                </>
+              ) : section === "deepseek" ? (
+                <>
+                  <Lock size={12} aria-hidden="true" />
+                  <span>
+                    The key stays on this machine. Prompts and tool results are sent to DeepSeek when an agent uses
+                    it.
+                  </span>
                 </>
               ) : section === "datadog" ? (
                 <>
@@ -1056,6 +1112,81 @@ function SafetySection({ agents }: { agents: Agent[] }) {
   );
 }
 
+function DeepseekSection({
+  hasKey,
+  keySource,
+  token,
+  busy,
+  onToken,
+  onSave,
+  onClear,
+  onTest,
+}: {
+  hasKey: boolean;
+  keySource: "saved" | "environment" | null;
+  token: string;
+  busy: boolean;
+  onToken: (value: string) => void;
+  onSave: () => void;
+  onClear: () => void;
+  onTest: () => void;
+}) {
+  return (
+    <div className="connection-card">
+      <div className="connection-head">
+        <div className="connection-icon is-deepseek">
+          <Bot size={16} aria-hidden="true" />
+        </div>
+        <div className="connection-copy">
+          <div className="connection-name">DeepSeek access</div>
+          <div className="connection-note">
+            Agents with the DeepSeek provider use this key instead of Copilot.
+          </div>
+        </div>
+        <span className={`connection-badge ${hasKey ? "is-on" : ""}`}>
+          {hasKey ? (keySource === "environment" ? "Environment" : "Configured") : "Not configured"}
+        </span>
+      </div>
+      <div className="settings-form">
+        <label className="field">
+          <span className="field-label">API key</span>
+          <input
+            className="input"
+            type="password"
+            autoComplete="new-password"
+            value={token}
+            placeholder={hasKey ? "Key saved — paste a new one to replace" : "sk-…"}
+            onChange={(event) => onToken(event.target.value)}
+          />
+          <span className="field-note">
+            {keySource === "environment"
+              ? "Using DEEP_SEEK_API_KEY from the environment for this launch. Save a key to keep it on this PC."
+              : "Stored with Windows encryption. The agent never sees the key."}
+          </span>
+        </label>
+        <div className="field-actions">
+          <button type="button" className="btn btn-secondary" disabled={busy || !token.trim()} onClick={onSave}>
+            <KeyRound size={12} />
+            Save key
+          </button>
+          <button type="button" className="btn btn-secondary" disabled={busy || !hasKey} onClick={onTest}>
+            Test key
+          </button>
+          {keySource === "saved" ? (
+            <button type="button" className="text-button is-danger" disabled={busy} onClick={onClear}>
+              Remove key
+            </button>
+          ) : null}
+        </div>
+        <span className="field-note">
+          DeepSeek Flash and DeepSeek V4 Pro accept tools. Flash accepts images; V4 Pro does not. Prompts and tool
+          results leave this PC when an agent uses DeepSeek.
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function JiraSection({
   hasToken,
   site,
@@ -1326,8 +1457,8 @@ function DatadogSection({
         <span className="field-note">
           The Datadog Analyst opens the Log Explorer in the local headed browser and captures the page's log
           response after you sign in once. The agent is read-only; the browser session stays in the browser and is
-          never copied into a tool or the chat. Log text is sent to Copilot, so keep queries narrow and avoid
-          secrets.
+          never copied into a tool or the chat. Log text is sent to the agent's model provider, so keep queries narrow
+          and avoid secrets.
         </span>
       </div>
     </div>

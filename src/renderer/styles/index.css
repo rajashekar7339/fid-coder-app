@@ -4851,11 +4851,13 @@ select option {
   line-height: 1.4;
 }
 
-.agent-mode-switch {
+.agent-mode-switch,
+.agent-provider-switch {
   align-self: flex-start;
 }
 
-.agent-mode-switch button {
+.agent-mode-switch button,
+.agent-provider-switch button {
   height: 27px;
   padding: 0 10px;
   font-size: 10px;
@@ -6377,6 +6379,10 @@ select option {
 
 .connection-icon.is-datadog {
   color: #c7a4f4;
+}
+
+.connection-icon.is-deepseek {
+  color: #8fb6ff;
 }
 
 .connection-copy {

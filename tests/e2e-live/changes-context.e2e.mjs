@@ -567,11 +567,14 @@ async function main() {
 
     await page.getByRole("button", { name: "Close changes" }).click();
     await page.waitForSelector(".changes-panel", { state: "detached", timeout: 10_000 });
-    await sendAndWait(page, "what are the list of code highlighted.");
+    await sendAndWait(
+      page,
+      "List the code from both highlighted ranges. Include one package.json script and the startup line that sets app userData.",
+    );
     const rangeReply = await lastAssistantText(page);
     check(
       "the two pinned ranges reach the live agent",
-      /(scripts|build:node|postinstall)/i.test(rangeReply) &&
+      /(scripts|build:node|postinstall|"start"|"dev"|"build"|electron)/i.test(rangeReply) &&
         /(user.?data|startup|main.process|whenReady|setName|initializ)/i.test(rangeReply),
       rangeReply.replace(/\s+/g, " ").slice(0, 220),
     );

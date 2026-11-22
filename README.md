@@ -1,13 +1,13 @@
 # Fid Coder
 
-Fid Coder is a Windows desktop app for local AI agents. Each agent chats through GitHub Copilot, uses tools for files, spreadsheets, shell, git, Jira, Confluence, and a local browser, and can run saved routines once or repeatedly while the app is open. A routine does not run after Fid Coder closes, and a missed slot is not caught up. Messages can carry local file uploads and line ranges referenced from the read-only workspace browser. Ask mode gives an agent a read-only set of tools: workspace reads, git, spreadsheets, and Confluence reads for code questions, or Jira reads and page reading for Browser &amp; Jira agents. Agent mode can append to or replace a Confluence page after an approval and a current-version check. Agents, transcripts, file checkpoints, connections, and settings stay on this machine.
+Fid Coder is a Windows desktop app for local AI agents. Each agent chats through GitHub Copilot or DeepSeek, uses tools for files, spreadsheets, shell, git, Jira, Confluence, and a local browser, and can run saved routines once or repeatedly while the app is open. A routine does not run after Fid Coder closes, and a missed slot is not caught up. Messages can carry local file uploads and line ranges referenced from the read-only workspace browser. Ask mode gives an agent a read-only set of tools: workspace reads, git, spreadsheets, and Confluence reads for code questions, or Jira reads and page reading for Browser &amp; Jira agents. Agent mode can append to or replace a Confluence page after an approval and a current-version check. Agents, transcripts, file checkpoints, connections, and settings stay on this machine.
 
 ## Requirements
 
 - Windows 11
 - Node.js 22 or newer (the current test run uses Node 24)
 - npm
-- GitHub Copilot signed in on this machine (Settings → Copilot in the app)
+- GitHub Copilot signed in on this machine (the default), or a DeepSeek API key saved in **Settings → DeepSeek**
 
 ## Run the app
 
@@ -44,6 +44,7 @@ npm run dev
 | `npm run test:message-actions` | Deterministic Electron harness for editing and deleting user messages: inline editor, routine read-only, delete confirmation, and later turns kept. |
 | `npm run test:message-actions-live` | Live harness for editing a message with rewind and rerun, then deleting the edited turn. Needs Copilot. |
 | `npm run test:native-live` | Live harness for `table_read` and Confluence read/update. Uses a temp CSV and a local fake Confluence server; needs Copilot. Set `FID_WATCH_MS=1500` to watch the steps. |
+| `npm run test:deepseek-live` | Live harness for the DeepSeek provider. One real BYOK turn with a tool call and token usage; reads `DEEP_SEEK_API_KEY` from `.env` or the environment. Does not need Copilot. Set `FID_WATCH_MS=1500` to watch the steps. |
 | `npm run test:datadog-browser-live` | Live harness for the Datadog Analyst with **no API keys**. Opens a local fake Datadog page in the real headed browser, captures its JSON log response, reads a temp workspace, and reports the root cause. Needs Copilot. Set `FID_WATCH_MS=1500` to watch the browser and the app. |
 | `npm run dist:win` | Build the portable Windows app into `release/` |
 
@@ -51,11 +52,11 @@ npm run dev
 
 ```text
 src/
-  main/       Electron lifecycle, IPC, SQLite, Copilot sessions, scheduler
+  main/       Electron lifecycle, IPC, SQLite, model sessions, scheduler
   preload/    Sandboxed bridge exposed as window.fid
   renderer/   React UI
   shared/     Types, channels, API contract, and pure helpers
-  tools/      Copilot tool implementations
+  tools/      Tool implementations
 ```
 
 `AGENTS.md` has the detailed folder map and the rules for adding a tool, IPC handler, screen, or database method.

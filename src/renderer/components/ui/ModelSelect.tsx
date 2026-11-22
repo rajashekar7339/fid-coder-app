@@ -9,6 +9,7 @@ type Props = {
   disabled?: boolean;
   className?: string;
   label?: string;
+  allowAuto?: boolean;
   onChange: (model: string) => void;
 };
 
@@ -19,11 +20,14 @@ export function ModelSelect({
   disabled,
   className,
   label = "Agent model",
+  allowAuto = true,
   onChange,
 }: Props) {
-  const known = value === AUTO_MODEL_ID || models.some((model) => model.id === value);
+  const known = (allowAuto && value === AUTO_MODEL_ID) || models.some((model) => model.id === value);
   const selectedLabel =
-    value === AUTO_MODEL_ID ? "Auto" : (models.find((model) => model.id === value)?.name ?? value);
+    allowAuto && value === AUTO_MODEL_ID
+      ? "Auto"
+      : (models.find((model) => model.id === value)?.name ?? value);
   return (
     <span className={`model-picker ${className ?? ""}`}>
       <Sparkles size={12} aria-hidden="true" />
@@ -35,7 +39,7 @@ export function ModelSelect({
         title={selectedLabel}
         onChange={(event) => onChange(event.target.value)}
       >
-        <option value={AUTO_MODEL_ID}>Auto</option>
+        {allowAuto ? <option value={AUTO_MODEL_ID}>Auto</option> : null}
         {models.map((model) => (
           <option key={model.id} value={model.id}>
             {model.name}

@@ -23,6 +23,7 @@ export async function runCodeReview(parent: ToolContext, target: string): Promis
     },
   }));
   const live = await openSession({
+    provider: parent.provider,
     model: parent.model || "auto",
     systemMessage: [
       "You review a code change and return a report. You cannot edit files, run commands, or change git.",

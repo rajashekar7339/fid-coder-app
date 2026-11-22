@@ -1,6 +1,6 @@
-# Connect Copilot, GitHub, Jira, Confluence, and Datadog
+# Connect Copilot, DeepSeek, GitHub, Jira, Confluence, and Datadog
 
-Copilot is the account your agents use to think and call tools. GitHub, Jira, and Confluence tokens are optional connections that give agents access to pull requests, Jira data, and Confluence pages. Datadog is optional too, but it uses the browser session instead of a token.
+Copilot is the default account your agents use to think and call tools. DeepSeek is an optional second provider with its own API key; an agent can use either one. GitHub, Jira, and Confluence tokens are optional connections that give agents access to pull requests, Jira data, and Confluence pages. Datadog is optional too, but it uses the browser session instead of a token.
 
 ![Settings with a demo Copilot account connected. Optional connections appear in the same list.](images/settings.png)
 
@@ -9,6 +9,21 @@ Copilot is the account your agents use to think and call tools. GitHub, Jira, an
 Open **Settings → Copilot** and choose **Sign in with Copilot**. Finish the browser flow. The app checks the connection until your account appears. Use **Re-check** if the state looks stale, and **Sign out** to clear the saved session.
 
 If the CLI is missing, install GitHub Copilot CLI and make sure `copilot` is on PATH.
+
+## Add DeepSeek access
+
+Open **Settings → DeepSeek** and paste a DeepSeek API key. Choose **Save key**, then **Test key**. The badge shows **Configured**, and the key is encrypted with Windows `safeStorage`. The agent never sees the key and it is never printed in chat.
+
+DeepSeek is chosen per agent. Open the agent editor, choose **DeepSeek** under **Provider**, then pick a model from the list your key reports, such as **DeepSeek Flash** or **DeepSeek V4 Pro**. Existing agents stay on Copilot. A DeepSeek agent does not use your Copilot account, so it can run without a Copilot sign-in.
+
+- DeepSeek models accept tools, so file, git, browser, Jira, Confluence, and routine turns work.
+- DeepSeek Flash accepts images. DeepSeek V4 Pro does not; remove the image, choose Flash, or switch the agent to Copilot.
+- DeepSeek turns show tokens, not Copilot AI credits. The sidebar usage bar remains Copilot quota.
+- Prompts and tool results are sent to DeepSeek when an agent uses it. Check with your team before sending source code, tickets, or wiki text.
+
+For tests and local development, the app also reads `FID_CODER_DEEPSEEK_API_KEY` or `DEEP_SEEK_API_KEY` from the environment when no key is saved. A saved key wins.
+
+![DeepSeek settings with a saved key and the Test key action.](images/deepseek-settings.png)
 
 ## Add a GitHub token
 
@@ -65,7 +80,7 @@ The agent has two read-only tools: `datadog_browser_logs` searches the Log Explo
 
 The Datadog profile is read-only. It has no shell, file writes, browser click/type, or Confluence update. Log text is treated as untrusted data. The capture is limited to the configured Datadog origin and records JSON responses only, never cookies or request headers. The session credential stays in the browser; the agent and the model never see it.
 
-Log text is sent to Copilot as tool output. Keep queries narrow and avoid searching for secrets or customer data you should not send to the model.
+Log text is sent to the agent's model provider as tool output. Keep queries narrow and avoid searching for secrets or customer data you should not send to the model.
 
 ## Review approval rules
 
@@ -77,10 +92,10 @@ Below them, choose **New rule** to add a saved rule. Pick **All agents** or one 
 
 ## Where the credentials live
 
-Jira, Confluence, and GitHub tokens are encrypted with Windows `safeStorage` and stored in `secrets.bin.json` under `%USERPROFILE%\.fid_coder_app`. The app does not send them to Copilot or print them in chat. A local tool such as `gh` can use its token to call its own service. Jira diagnostics go to `%USERPROFILE%\.fid_coder_app\logs\fid-coder.log`.
+Jira, Confluence, GitHub, and DeepSeek credentials are encrypted with Windows `safeStorage` and stored in `secrets.bin.json` under `%USERPROFILE%\.fid_coder_app`. The app does not send the keys or tokens to the model or print them in chat. A local tool such as `gh` can use its token to call its own service. DeepSeek requests use the saved key as the API credential; the prompts for a DeepSeek agent go to DeepSeek. Jira diagnostics go to `%USERPROFILE%\.fid_coder_app\logs\fid-coder.log`.
 
 There is no Datadog API key. The Datadog session lives in the agent's persistent browser profile, like any other browser login. Fid Coder does not copy the cookie or token out of the browser.
 
-Saving or clearing a token or the Jira, Confluence, or Datadog site drops every live Copilot session. The saved conversations stay; the next message rebuilds context from the transcript.
+Saving or clearing a token, key, or the Jira, Confluence, or Datadog site drops every live model session. The saved conversations stay; the next message rebuilds context from the transcript.
 
-> **Tip:** Copilot is required. GitHub, Jira, Confluence, and Datadog are optional. A browser agent reads Jira with a saved site and PAT, or through the browser when no PAT is saved. The Datadog Analyst always uses the logged-in local browser; no Datadog API key is stored.
+> **Tip:** Copilot is the default provider. DeepSeek is optional per agent. GitHub, Jira, Confluence, and Datadog are optional connections. A browser agent reads Jira with a saved site and PAT, or through the browser when no PAT is saved. The Datadog Analyst always uses the logged-in local browser; no Datadog API key is stored.

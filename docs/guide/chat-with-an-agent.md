@@ -8,7 +8,7 @@ The conversation is the center column. Messages stream in as the agent works, to
 
 Type in the composer and press **Enter**. Use **Shift+Enter** for a new line. The composer grows up to eight lines.
 
-The agent can only answer after Copilot is connected. If the composer says "Sign in to Copilot to chat", open **Settings → Copilot** and sign in.
+The agent can only answer after its model provider is connected. If the composer says "Sign in to Copilot to chat", open **Settings → Copilot** and sign in. If it says "Add a DeepSeek key in Settings to chat", open **Settings → DeepSeek** and save a key.
 
 ## Queue a follow-up
 
@@ -61,7 +61,7 @@ Attach a workspace folder to get the root-cause step. Without one, the agent sto
 
 Save your Datadog URL in **Settings → Datadog**, such as `https://app.datadoghq.com`; the badge shows **Browser**. No API key is requested or stored. The session credential stays in the browser, and the agent never sees it.
 
-Log text is sent to Copilot as tool output, so keep queries narrow and avoid searching for secrets. The first release can search logs by trace id, but it does not open the full APM trace, RUM sessions, incidents, or dashboards yet.
+Log text is sent to the agent's model provider (Copilot or DeepSeek) as tool output, so keep queries narrow and avoid searching for secrets. The first release can search logs by trace id, but it does not open the full APM trace, RUM sessions, incidents, or dashboards yet.
 
 ## Edit or delete a message
 
@@ -81,7 +81,7 @@ Choose **Enhance** next to **Commands** to rewrite the current draft. It makes t
 
 ![The composer with a rough draft and the Enhance button next to Commands.](images/enhance-prompt.png)
 
-Enhance runs only when you choose it. It does not run on later messages and does not change what Send does. It uses Copilot quota and picks a cheap model when your account lists one. Composer commands and a running agent are skipped with a short reason; any other non-empty draft, including a short one, runs when you choose Enhance.
+Enhance runs only when you choose it. It does not run on later messages and does not change what Send does. It uses the agent's provider: with Copilot it spends Copilot quota and picks a cheap model when your account lists one; with DeepSeek it uses DeepSeek Flash and the DeepSeek key. Composer commands and a running agent are skipped with a short reason; any other non-empty draft, including a short one, runs when you choose Enhance.
 
 ## Follow the work
 
@@ -93,7 +93,7 @@ Between steps, **Thinking** appears beside the agent name with animated bars and
 
 Day dividers mark **Today**, **Yesterday**, and older calendar dates. They stay at the top of the thread while you scroll that day. Hover any time to see the full date and timestamp.
 
-The conversation is saved in the local SQLite database. When Fid Coder rebuilds a Copilot session, it sends the last 30 messages, or the summary plus the latest messages after a summary exists. That transcript is clipped to 12,000 characters. Send `/compact` to summarize before the automatic update.
+The conversation is saved in the local SQLite database. When Fid Coder rebuilds a model session, it sends the last 30 messages, or the summary plus the latest messages after a summary exists. That transcript is clipped to 12,000 characters. Send `/compact` to summarize before the automatic update.
 
 ## Use a command
 
@@ -112,9 +112,9 @@ The **Skills** row at the bottom of the sidebar opens the library. It lists ever
 
 ## Compact the conversation
 
-Send `/compact` when you want the conversation summarized now. Fid Coder uses the same Auto summary it builds after the thread passes 30 messages. The messages stay in the chat. The next message starts a fresh Copilot session that keeps the summary and only the latest messages.
+Send `/compact` when you want the conversation summarized now. Fid Coder uses the same summary it builds after the thread passes 30 messages. The messages stay in the chat. The next message starts a fresh model session that keeps the summary and only the latest messages.
 
-`/compact` also runs when Automatic memory is off, and before the thread is long enough for an automatic update. It spends Copilot quota only when there is something new to summarize. If the summary is already current, the next message still starts from that summary. Send `/compact` on its own.
+`/compact` also runs when Automatic memory is off, and before the thread is long enough for an automatic update. It spends the agent's model quota only when there is something new to summarize. If the summary is already current, the next message still starts from that summary. Send `/compact` on its own.
 
 ## Remember a fact
 
@@ -128,15 +128,20 @@ A developer or all-tools agent has the **/review** command. Type `/review` and a
 
 ## Use the model picker
 
-The model picker sits in the composer. **Auto** lets Copilot choose the model for the agent. The other choices are the models the signed-in Copilot session reports as selectable; if it reports none, only Auto is available. Choose another model when the agent is idle; the picker is disabled while a turn is running. The new model applies to the next reply. If Copilot cannot use the chosen model, the turn stops with an error instead of answering with a different model.
+The model picker sits in the composer and lists the models for this agent's provider. The provider itself is chosen in **Edit agent** → **Provider**; changing it is an agent edit, not a per-message switch.
+
+- **Copilot** — **Auto** lets Copilot choose the model. The other choices are the models the signed-in Copilot session reports as selectable; if it reports none, only Auto is available.
+- **DeepSeek** — choose a model from the list your key reports, such as **DeepSeek Flash** or **DeepSeek V4 Pro**. Auto is not offered. The agent uses the DeepSeek key saved in Settings, not your Copilot account.
+
+Choose another model when the agent is idle; the picker is disabled while a turn is running. The new model applies to the next reply. If the provider cannot use the chosen model, the turn stops with an error instead of answering with a different model.
 
 ## See token and credit usage
 
 Each assistant reply has a small usage line: the total tokens, the AI credits Copilot reported, and the model that produced that reply. Select it to see input, output, cache-read tokens, model calls, and a token-composition bar.
 
-The model on this line is historical: it names the model that served that reply. Changing the picker does not rewrite earlier usage lines. When Copilot chose the model automatically, the line shows `Auto · <model>`.
+The model on this line is historical: it names the model that served that reply. Changing the picker does not rewrite earlier usage lines. When Copilot chose the model automatically, the line shows `Auto · <model>`. A DeepSeek line names the DeepSeek model and has no credit value.
 
-AI credits appear when Copilot reports them for the model call. If the account or model does not report a credit cost, the credits value is hidden. A `~` means some model calls in the turn did not report a cost, so the amount is a subtotal.
+AI credits appear when Copilot reports them for the model call. If the account or model does not report a credit cost, the credits value is hidden. A `~` means some model calls in the turn did not report a cost, so the amount is a subtotal. DeepSeek turns report tokens only; its cost appears on your DeepSeek account, not in the sidebar Copilot quota.
 
 > **Tip:** Cached tokens are part of input; they are not counted twice.
 

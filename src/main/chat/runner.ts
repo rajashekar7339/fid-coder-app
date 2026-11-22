@@ -23,6 +23,7 @@ import {
   type EnhanceResult,
 } from "../../shared/enhance-prompt";
 import { AUTO_MODEL_ID } from "../../shared/model";
+import { DEEPSEEK_DEFAULT_MODEL, providerLabel } from "../../shared/providers";
 import {
   approvalActionDecision,
   approvalActionRemembers,
@@ -72,6 +73,7 @@ import type {
   QuestionOutcome,
   QuestionReply,
   QuestionRequest,
+  ProviderId,
   QueuedMessage,
   SkillSaveOutcome,
   SkillSaveRequest,
@@ -105,6 +107,7 @@ import { runCodeExplore } from "../workspace/explore-session";
 import { runCodeReview } from "../workspace/review-session";
 import { architectureMapKey, buildArchitectureMap } from "../workspace/architecture-map";
 import { getSecret, hasSecret, secretKeys } from "../secrets";
+import { hasDeepseekKey } from "../providers/deepseek";
 import { logInfo, logJiraStatus, logJiraToolFailure, logWarn } from "../log";
 import {
   listSkillFiles,
@@ -546,8 +549,10 @@ export class Runner {
       });
     } catch (error) {
       if (!claimed) {
-        const message = explainCopilotError(
+        const agent = this.db.getAgent(agentId);
+        const message = explainModelError(
           error instanceof Error ? error.message : String(error),
+          agent?.provider ?? "copilot",
         );
         this.sink({ agentId, type: "error", error: message });
       }
@@ -596,7 +601,8 @@ export class Runner {
 
   async enhanceDraft(agentId: string, text: string): Promise<EnhanceResult> {
     const id = agentId.trim();
-    if (!id || !this.db.getAgent(id)) throw new Error("Agent not found");
+    const agent = id ? this.db.getAgent(id) : null;
+    if (!agent) throw new Error("Agent not found");
     const plan = prepareEnhance({
       text,
       running: this.isRunning(id),
@@ -607,18 +613,35 @@ export class Runner {
     if (this.enhancing.has(id)) throw new Error("Enhance is already running.");
     this.enhancing.add(id);
     try {
-      const auth = await getCopilotStatus();
-      if (!auth.signedIn) {
-        throw new Error("Copilot is not signed in. Open Settings, sign in, then try again.");
+      const provider = agent.provider;
+      if (provider === "deepseek") {
+        if (!hasDeepseekKey()) {
+          throw new Error("Add a DeepSeek API key in Settings → DeepSeek, then try again.");
+        }
+      } else {
+        const auth = await getCopilotStatus();
+        if (!auth.signedIn) {
+          throw new Error("Copilot is not signed in. Open Settings, sign in, then try again.");
+        }
       }
-      const model = await selectEnhanceModel(() => listCopilotModels());
+      const model =
+        provider === "deepseek"
+          ? DEEPSEEK_DEFAULT_MODEL
+          : await selectEnhanceModel(() => listCopilotModels());
       const raw = await completeOnce(model, ENHANCE_SYSTEM, plan.prompt, {
+        provider,
         timeoutMs: ENHANCE_TIMEOUT_MS,
-        failure: "Copilot could not enhance the draft.",
+        failure:
+          provider === "deepseek"
+            ? "DeepSeek could not enhance the draft."
+            : "Copilot could not enhance the draft.",
       });
       return finishEnhance(text, raw);
     } catch (error) {
-      const message = explainCopilotError(error instanceof Error ? error.message : String(error));
+      const message = explainModelError(
+        error instanceof Error ? error.message : String(error),
+        agent.provider,
+      );
       throw new Error(message);
     } finally {
       this.enhancing.delete(id);
@@ -916,7 +939,7 @@ export class Runner {
       deltaHolders.set(agent.id, (delta) => {
         streamed += delta;
       });
-      turnUsage.set(agent.id, emptyUsage());
+      turnUsage.set(agent.id, { ...emptyUsage(), provider: agent.provider });
       const visible = input.source === "routine" ? `[Routine] ${text}` : text;
       const userMessage = this.db.addMessage(
         agent.id,
@@ -1031,7 +1054,7 @@ export class Runner {
       const stoppedByUser = this.aborting.has(agent.id);
       const message = stoppedByUser
         ? "Stopped by the user."
-        : explainCopilotError(error instanceof Error ? error.message : String(error));
+        : explainModelError(error instanceof Error ? error.message : String(error), agent.provider);
       if (errorTurnId) {
         const partial = streamed.trim();
         const stored = stoppedByUser
@@ -1110,7 +1133,7 @@ export class Runner {
       });
       return report;
     } catch (error) {
-      const message = explainCopilotError(error instanceof Error ? error.message : String(error));
+      const message = explainModelError(error instanceof Error ? error.message : String(error), agent.provider);
       this.sink({ agentId: agent.id, type: "tool-end", toolName: "review_code", ok: false, text: message });
       throw new Error(message);
     }
@@ -1139,11 +1162,11 @@ export class Runner {
       }
       const latest = this.db.getAgent(agent.id);
       if (!latest || latest.memorySummary === current.memorySummary) {
-        throw new Error("Copilot could not compact this conversation.");
+        throw new Error(`${providerLabel(agent.provider)} could not compact this conversation.`);
       }
       current = latest;
     }
-    if (reply === null) throw new Error("Copilot could not compact this conversation.");
+    if (reply === null) throw new Error(`${providerLabel(agent.provider)} could not compact this conversation.`);
     this.db.addMessage(agent.id, "assistant", reply, turnId);
     this.db.finishTurn(turnId, "ok");
     this.sink({ agentId: agent.id, type: "done", text: reply });
@@ -1169,6 +1192,7 @@ export class Runner {
     }
     const tools = this.toolsFor(agent, [...extraTools.values()]);
     const signature = JSON.stringify([
+      agent.provider,
       agent.model,
       systemMessage,
       agent.toolProfile,
@@ -1183,6 +1207,7 @@ export class Runner {
     if (existing) await this.dropSession(agent.id);
 
     const live = await openSession({
+      provider: agent.provider,
       model: agent.model,
       systemMessage,
       tools,
@@ -1276,6 +1301,7 @@ export class Runner {
       skillDir: skillContext.dir,
       skills: skillContext.skills,
       onSkillUsed: (id) => this.db.markSkillUsed(agentId, id),
+      provider: agent.provider,
       model: agent.model,
       turnId: turnId ?? undefined,
       browser: gateBrowser(this.browser, {
@@ -1824,10 +1850,13 @@ export class Runner {
 
   private async writeMemory(agent: Agent, pending: MemoryTurn[], coveredTurns: number): Promise<boolean> {
     const startSummary = agent.memorySummary;
+    const provider = agent.provider;
+    const model = provider === "deepseek" ? DEEPSEEK_DEFAULT_MODEL : AUTO_MODEL_ID;
     const text = await completeOnce(
-      AUTO_MODEL_ID,
+      model,
       MEMORY_SUMMARY_SYSTEM,
       summaryUpdatePrompt(startSummary, pending),
+      { provider },
     );
     const summary = clipMemorySummary(text);
     if (!summary) return false;
@@ -1848,17 +1877,47 @@ function localIso(value: string | Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}${sign}${pad(Math.floor(absolute / 60))}:${pad(absolute % 60)}`;
 }
 
-function explainCopilotError(message: string): string {
-  if (/No GitHub OAuth token|Copilot HMAC key|not authenticated|authentication required/i.test(message)) {
+function explainModelError(message: string, provider: ProviderId): string {
+  const safe = redactSecret(message);
+  if (provider === "deepseek") {
+    if (/401|403|invalid api key|authentication|unauthorized/i.test(safe)) {
+      return "DeepSeek rejected the API key. Save a valid key in Settings → DeepSeek.";
+    }
+    if (/402|insufficient balance|payment required|no balance/i.test(safe)) {
+      return "DeepSeek says the account has no balance. Top up the account or switch this agent to Copilot.";
+    }
+    if (/429|rate limit|too many requests/i.test(safe)) {
+      return "DeepSeek is rate-limiting requests. Try again shortly.";
+    }
+    if (/context|token limit|too long|maximum.*(prompt|context)/i.test(safe)) {
+      return "This conversation is too long for DeepSeek. Send /compact or start a new agent.";
+    }
+    if (/fetch|network|ECONN|ENOTFOUND|ETIMEDOUT|timeout|socket/i.test(safe)) {
+      return "DeepSeek could not be reached. Check the network or switch this agent to Copilot.";
+    }
+    if (/model/i.test(safe) && /not found|invalid|unknown|not available/i.test(safe)) {
+      return "That DeepSeek model is not available. Choose a model your DeepSeek key lists.";
+    }
+    if (!safe.trim()) return "DeepSeek could not finish the turn. Try again.";
+    return safe;
+  }
+  if (/No GitHub OAuth token|Copilot HMAC key|not authenticated|authentication required/i.test(safe)) {
     return "Copilot is not signed in. Open Settings, sign in, then try again.";
   }
-  if (/authorization|credential|access denied by policy/i.test(message)) {
-    return `${message} GitHub is refusing Copilot requests for this login. Open https://github.com/settings/copilot, confirm Copilot is enabled, then use Settings and Copilot login.`;
+  if (/authorization|credential|access denied by policy/i.test(safe)) {
+    return `${safe} GitHub is refusing Copilot requests for this login. Open https://github.com/settings/copilot, confirm Copilot is enabled, then use Settings and Copilot login.`;
   }
-  if (/unknown model|invalid model|model .* not (found|available)|model is not available/i.test(message)) {
-    return `${message} Choose Auto or another model for this agent.`;
+  if (/unknown model|invalid model|model .* not (found|available)|model is not available/i.test(safe)) {
+    return `${safe} Choose Auto or another model for this agent.`;
   }
-  return message;
+  return safe;
+}
+
+function redactSecret(message: string): string {
+  return message
+    .replace(/\b(?:sk|ds)-[A-Za-z0-9_-]{8,}\b/g, "[redacted]")
+    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(/api[_ -]?key[=:]\s*\S+/gi, "api key [redacted]");
 }
 
 

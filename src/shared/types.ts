@@ -3,12 +3,15 @@ import type { ConfluenceMode } from "./confluence";
 
 export type AgentToolProfile = "all" | "browser" | "developer" | "datadog";
 
+export type ProviderId = "copilot" | "deepseek";
+
 export type Agent = {
   id: string;
   name: string;
   description: string;
   systemPrompt: string;
   workspaceDir: string | null;
+  provider: ProviderId;
   model: string;
   toolProfile: AgentToolProfile;
   readOnly: boolean;
@@ -30,6 +33,7 @@ export type AgentPlacement = {
 export type CopilotModel = {
   id: string;
   name: string;
+  provider?: ProviderId;
 };
 
 export type MessageRole = "user" | "assistant" | "tool";
@@ -44,6 +48,7 @@ export type TokenUsage = {
   reasoningTokens: number;
   modelCalls: number;
   model: string | null;
+  provider?: ProviderId;
   isAuto: boolean;
   nanoAiu: number;
   creditCalls: number;
@@ -442,6 +447,8 @@ export type SettingsView = {
   loginName: string | null;
   hasStoredToken: boolean;
   hasGithubPat: boolean;
+  hasDeepseekKey: boolean;
+  deepseekKeySource: "saved" | "environment" | null;
   hasJiraToken: boolean;
   jiraSiteUrl: string;
   hasConfluenceToken: boolean;
@@ -467,6 +474,7 @@ export type AgentInput = {
   description?: string;
   systemPrompt: string;
   workspaceDir: string | null;
+  provider?: ProviderId;
   model: string;
   toolProfile: AgentToolProfile;
   readOnly?: boolean;

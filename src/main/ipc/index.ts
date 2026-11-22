@@ -6,7 +6,7 @@ import { isApprovalAction } from "../../shared/approval";
 import { parseAgentPlacement } from "../../shared/agent-list";
 import { parseQuestionReply } from "../../shared/question";
 import { parseSkillDraft } from "../../shared/skill-draft";
-import { normalizeModelId } from "../../shared/model";
+import { normalizeAgentProvider, providerModel } from "../../shared/providers";
 import { isConfluenceMode, normalizeConfluenceSite } from "../../shared/confluence";
 import { normalizeDatadogUrl } from "../../shared/datadog";
 import { skillVersionLabel } from "../../shared/skills";
@@ -31,7 +31,7 @@ import type { CheckpointStore } from "../workspace/checkpoints";
 import {
   getCopilotStatus,
   getCopilotUsage,
-  listCopilotModels,
+  listProviderModels,
   signOutCopilot,
   startCopilotLogin,
   stopClient,
@@ -42,6 +42,7 @@ import type { Runner } from "../chat/runner";
 import type { Scheduler } from "../routines/scheduler";
 import type { RoutineService } from "../routines/service";
 import { clearSecret, getSecret, hasSecret, secretKeys, setSecret } from "../secrets";
+import { testDeepseekKey } from "../providers/deepseek";
 import { currentInbox } from "../routines/inbox";
 import { createFact, removeFact, updateFact } from "../facts";
 import { appPresence, saveAppPresence } from "../routines/presence";
@@ -372,6 +373,25 @@ export function registerIpc(services: AppServices): void {
     clearSecret(secretKeys.githubPat);
     await runner.dropAllSessions();
   });
+  ipcMain.handle(channels.settingsSaveDeepseekKey, async (_event, token: string) => {
+    setSecret(secretKeys.deepseek, token);
+    try {
+      getSecret(secretKeys.deepseek);
+    } catch (error) {
+      clearSecret(secretKeys.deepseek);
+      logWarn(
+        `DeepSeek key save failed: Windows could not decrypt the saved key. ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new Error("Windows could not decrypt the saved DeepSeek key, so it was not kept. Save it again.");
+    }
+    await runner.dropAllSessions();
+  });
+  ipcMain.handle(channels.settingsClearDeepseekKey, async () => {
+    clearSecret(secretKeys.deepseek);
+    await runner.dropAllSessions();
+  });
+  ipcMain.handle(channels.settingsTestDeepseek, () => testDeepseekKey());
   ipcMain.handle(channels.settingsSaveJiraSite, async (_event, url: string) => {
     const site = cleanUrl(url);
     db.setSetting("jira_site_url", site);
@@ -435,7 +455,7 @@ export function registerIpc(services: AppServices): void {
     await runner.dropAllSessions();
   });
 
-  ipcMain.handle(channels.modelsList, () => listCopilotModels());
+  ipcMain.handle(channels.modelsList, () => listProviderModels());
   ipcMain.handle(channels.skillsList, (_event, workspaceDir?: string | null) =>
     listSkillInfo(skillRoots(cleanWorkspace(workspaceDir))),
   );
@@ -553,12 +573,14 @@ function cleanAgent(input: AgentInput): AgentInput {
   const systemPrompt = input?.systemPrompt?.trim();
   if (!name) throw new Error("Name is required");
   if (!systemPrompt) throw new Error("System prompt is required");
+  const provider = normalizeAgentProvider(input?.provider, input?.model);
   return {
     name,
     description: input.description?.trim().slice(0, 160) || "",
     systemPrompt,
     workspaceDir: input.workspaceDir?.trim() || null,
-    model: normalizeModelId(input?.model),
+    provider,
+    model: providerModel(provider, input?.model),
     toolProfile: normalizeToolProfile(input?.toolProfile),
     readOnly: input.readOnly === true,
     memoryEnabled: input.memoryEnabled !== false,

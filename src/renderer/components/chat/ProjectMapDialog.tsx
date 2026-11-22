@@ -9,12 +9,12 @@ import { MessageContent } from "./MessageContent";
 
 type Props = {
   agent: Agent;
-  signedIn: boolean;
+  modelReady: boolean;
   onClose: () => void;
   onOpenFile: (path: string, line: number, endLine: number | null, related: Citation[]) => void;
 };
 
-export function ProjectMapDialog({ agent, signedIn, onClose, onOpenFile }: Props) {
+export function ProjectMapDialog({ agent, modelReady, onClose, onOpenFile }: Props) {
   const [view, setView] = useState<WorkspaceMapView | null>(null);
   const [loading, setLoading] = useState(true);
   const [building, setBuilding] = useState(false);
@@ -44,7 +44,7 @@ export function ProjectMapDialog({ agent, signedIn, onClose, onOpenFile }: Props
   }, [agent.id]);
 
   async function buildMap() {
-    if (building || !signedIn) return;
+    if (building || !modelReady) return;
     const id = ++request.current;
     setBuilding(true);
     setError(null);
@@ -72,8 +72,8 @@ export function ProjectMapDialog({ agent, signedIn, onClose, onOpenFile }: Props
             <button
               type="button"
               className="btn btn-secondary"
-              disabled={busy || !signedIn}
-              title={signedIn ? "Refresh the map with a read-only exploration" : "Sign in to refresh the map"}
+              disabled={busy || !modelReady}
+              title={modelReady ? "Refresh the map with a read-only exploration" : "Set up the agent's model to refresh the map"}
               onClick={() => void buildMap()}
             >
               {building ? <Loader2 size={13} className="spin" aria-hidden="true" /> : <RefreshCw size={13} />}
@@ -96,7 +96,7 @@ export function ProjectMapDialog({ agent, signedIn, onClose, onOpenFile }: Props
           <div className="map-empty is-error" role="alert">
             <strong>Could not prepare the map.</strong>
             <span>{error}</span>
-            {signedIn ? (
+            {modelReady ? (
               <button type="button" className="btn btn-secondary" onClick={() => void buildMap()}>
                 Try again
               </button>
@@ -124,13 +124,13 @@ export function ProjectMapDialog({ agent, signedIn, onClose, onOpenFile }: Props
               One read-only pass over the workspace: entry points, components, key flows, a reading order, and risks.
               Nothing is edited.
             </span>
-            {signedIn ? (
+            {modelReady ? (
               <button type="button" className="btn btn-primary" disabled={building} onClick={() => void buildMap()}>
                 {building ? <Loader2 size={13} className="spin" aria-hidden="true" /> : <MapIcon size={13} />}
                 {building ? "Building…" : "Build map"}
               </button>
             ) : (
-              <span className="map-sign-in">Sign in to Copilot to build a map.</span>
+              <span className="map-sign-in">Set up this agent's model in Settings to build a map.</span>
             )}
           </div>
         )}

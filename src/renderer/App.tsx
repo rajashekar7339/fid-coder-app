@@ -773,6 +773,11 @@ export function App() {
   }
 
   const selected = agents.find((agent) => agent.id === agentId) ?? null;
+  const selectedModelReady = selected
+    ? selected.provider === "deepseek"
+      ? Boolean(settings?.hasDeepseekKey)
+      : Boolean(settings?.signedIn)
+    : false;
   const approval = pendingApprovals.find((item) => item.agentId === agentId) ?? null;
   const question = pendingQuestions.find((item) => item.agentId === agentId) ?? null;
   const handoff = pendingHandoffs.find((item) => item.agentId === agentId) ?? null;
@@ -908,7 +913,7 @@ export function App() {
               models={models}
               modelsNote={modelsNote}
               settingsReady={settings !== null}
-              signedIn={settings?.signedIn ?? false}
+              modelReady={selectedModelReady}
               checkingSignIn={checkingSignIn}
               deskOpen={showDesk}
               changeSets={changeSets}
@@ -937,6 +942,9 @@ export function App() {
               questionError={noticeText(questionError, question?.id)}
               onQuestionAnswer={(reply) => void answerQuestion(reply)}
               onStartSignIn={startSignInFromChat}
+              onOpenModelSettings={() =>
+                openSettings(selected.provider === "deepseek" ? "deepseek" : "copilot")
+              }
               onRetryModels={() => void refreshModels()}
               onToggleDesk={toggleDesk}
               onOpenSkills={openSkills}

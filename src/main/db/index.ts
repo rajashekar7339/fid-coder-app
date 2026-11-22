@@ -6,7 +6,8 @@ import {
   DATADOG_AGENT_NAME,
   DATADOG_AGENT_PROMPT,
 } from "../../shared/datadog";
-import { AUTO_MODEL_ID, normalizeModelId } from "../../shared/model";
+import { AUTO_MODEL_ID } from "../../shared/model";
+import { normalizeAgentProvider, providerModel, readProvider, readProviderModel } from "../../shared/providers";
 import { normalizeToolProfile } from "../../shared/tool-profile";
 import {
   approvalRuleMatches,
@@ -45,6 +46,7 @@ type AgentRow = {
   description: string;
   system_prompt: string;
   workspace_dir: string | null;
+  provider: string | null;
   model: string | null;
   tool_profile: string | null;
   read_only: number | null;
@@ -257,6 +259,7 @@ export class AppDatabase {
         description TEXT NOT NULL DEFAULT '',
         system_prompt TEXT NOT NULL,
         workspace_dir TEXT,
+        provider TEXT NOT NULL DEFAULT 'copilot',
         model TEXT NOT NULL DEFAULT 'auto',
         tool_profile TEXT NOT NULL DEFAULT 'all',
         read_only INTEGER NOT NULL DEFAULT 0,
@@ -422,6 +425,7 @@ export class AppDatabase {
     this.db
       .prepare("UPDATE approvals SET decision = 'deny', source = 'aborted', decided_at = ? WHERE decision = 'pending'")
       .run(new Date().toISOString());
+    this.ensureAgentProviderColumn();
     this.ensureAgentModelColumn();
     this.ensureAgentDescriptionColumn();
     this.ensureAgentMemoryColumns();
@@ -454,6 +458,12 @@ export class AppDatabase {
     this.db.prepare("UPDATE agents SET description = ? WHERE name = ? AND description = ''").run(JIRA_DESCRIPTION, JIRA_NAME);
     this.db.prepare("UPDATE agents SET description = ? WHERE name = ? AND description = ''").run(GIT_DESCRIPTION, GIT_NAME);
     this.removeSeededTodo();
+  }
+
+  private ensureAgentProviderColumn(): void {
+    const columns = this.db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+    if (columns.some((column) => column.name === "provider")) return;
+    this.db.exec("ALTER TABLE agents ADD COLUMN provider TEXT NOT NULL DEFAULT 'copilot'");
   }
 
   private ensureAgentModelColumn(): void {
@@ -686,12 +696,14 @@ export class AppDatabase {
   createAgent(input: AgentInput): Agent {
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
+    const provider = normalizeAgentProvider(input.provider, input.model);
+    const model = providerModel(provider, input.model);
     this.db
       .prepare(
         `INSERT INTO agents (
-          id, name, description, system_prompt, workspace_dir, model, tool_profile, read_only, memory_enabled,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, name, description, system_prompt, workspace_dir, provider, model, tool_profile, read_only,
+          memory_enabled, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -699,7 +711,8 @@ export class AppDatabase {
         cleanDescription(input.description),
         input.systemPrompt,
         emptyToNull(input.workspaceDir),
-        normalizeModelId(input.model),
+        provider,
+        model,
         normalizeToolProfile(input.toolProfile),
         input.readOnly === true ? 1 : 0,
         input.memoryEnabled ? 1 : 0,
@@ -711,11 +724,13 @@ export class AppDatabase {
 
   updateAgent(id: string, input: AgentInput): Agent {
     const now = new Date().toISOString();
+    const provider = normalizeAgentProvider(input.provider, input.model);
+    const model = providerModel(provider, input.model);
     const result = this.db
       .prepare(
         `UPDATE agents
-         SET name = ?, description = ?, system_prompt = ?, workspace_dir = ?, model = ?, tool_profile = ?,
-             read_only = ?, memory_enabled = ?, updated_at = ?
+         SET name = ?, description = ?, system_prompt = ?, workspace_dir = ?, provider = ?, model = ?,
+             tool_profile = ?, read_only = ?, memory_enabled = ?, updated_at = ?
          WHERE id = ?`,
       )
       .run(
@@ -723,7 +738,8 @@ export class AppDatabase {
         cleanDescription(input.description),
         input.systemPrompt,
         emptyToNull(input.workspaceDir),
-        normalizeModelId(input.model),
+        provider,
+        model,
         normalizeToolProfile(input.toolProfile),
         input.readOnly === true ? 1 : 0,
         input.memoryEnabled ? 1 : 0,
@@ -1641,13 +1657,15 @@ export class AppDatabase {
 }
 
 function mapAgent(row: AgentRow): Agent {
+  const provider = readProvider(row.provider);
   return {
     id: row.id,
     name: row.name,
     description: row.description,
     systemPrompt: row.system_prompt,
     workspaceDir: row.workspace_dir,
-    model: readModel(row.model),
+    provider,
+    model: readProviderModel(provider, row.model),
     toolProfile: normalizeToolProfile(row.tool_profile),
     readOnly: row.read_only === 1,
     memorySummary: row.memory_summary ?? "",
@@ -1690,6 +1708,7 @@ function parseUsage(raw: string | null): TokenUsage | null {
       reasoningTokens: value.reasoningTokens ?? 0,
       modelCalls: value.modelCalls ?? 1,
       model: value.model ?? null,
+      provider: readProvider(value.provider),
       isAuto: value.isAuto === true,
       nanoAiu: typeof value.nanoAiu === "number" ? Math.max(0, value.nanoAiu) : 0,
       creditCalls: typeof value.creditCalls === "number" ? Math.max(0, value.creditCalls) : 0,
@@ -1883,13 +1902,6 @@ function readApprovalDecision(value: string): "pending" | ApprovalDecision {
 
 function readApprovalSource(value: string | null): ApprovalSource | null {
   return value === "user" || value === "rule" || value === "timeout" || value === "aborted" ? value : null;
-}
-
-function readModel(value: string | null | undefined): string {
-  if (typeof value !== "string") return AUTO_MODEL_ID;
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.toLowerCase() === AUTO_MODEL_ID) return AUTO_MODEL_ID;
-  return trimmed;
 }
 
 function emptyToNull(value: string | null | undefined): string | null {
