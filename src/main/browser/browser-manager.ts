@@ -209,7 +209,11 @@ export class BrowserManager {
       try {
         return await chromium.launchPersistentContext(dir, {
           headless: false,
-          viewport: { width: 1280, height: 800 },
+          // Use the real window size. A fixed viewport stays 1280x800 after
+          // the user maximizes the browser, leaving the page stuck in a small
+          // box with empty space around it.
+          viewport: null,
+          args: ["--start-maximized"],
           ...(channel ? { channel } : {}),
         });
       } catch (error) {

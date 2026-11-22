@@ -39,7 +39,7 @@ The center column is the saved conversation for the selected agent.
 
 The right column shows the selected agent's local work.
 
-- **Browser** shows a live preview when a browser agent opens a page. Choose Open browser to bring the real window to the front.
+- **Browser** shows a live preview when a browser agent opens a page. Choose Open browser to bring the real window to the front. It opens maximized, and the page reflows when you resize or maximize the window.
 - **Changes** is a one-line summary of the latest edited turn. Choose **Open changes** for the turn picker, diff, and file tree.
 - **Approvals** shows recent allow, deny, and timeout decisions. Choose History for the full audit.
 - **Routines** lists saved routines. Use the switch to pause one, or the plus to manage them. A routine runs only while Fid Coder is open. Closing the app skips a slot that comes due while it is closed.
