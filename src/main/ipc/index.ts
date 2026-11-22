@@ -7,13 +7,20 @@ import { parseAgentPlacement } from "../../shared/agent-list";
 import { parseQuestionReply } from "../../shared/question";
 import { parseSkillDraft } from "../../shared/skill-draft";
 import { normalizeModelId } from "../../shared/model";
+import { isConfluenceMode, normalizeConfluenceSite } from "../../shared/confluence";
+import { normalizeDatadogUrl } from "../../shared/datadog";
 import { skillVersionLabel } from "../../shared/skills";
 import { normalizeToolProfile } from "../../shared/tool-profile";
 import type {
   AgentInput,
   ApprovalAction,
+  ApprovalRuleInput,
   AttachmentPick,
+  ConfluenceSettingsInput,
+  DatadogSettingsInput,
   MessageAttachment,
+  FactInput,
+  FactPatch,
   RoutineInput,
   RoutinePatch,
   SkillInstallResult,
@@ -36,6 +43,7 @@ import type { Scheduler } from "../routines/scheduler";
 import type { RoutineService } from "../routines/service";
 import { clearSecret, getSecret, hasSecret, secretKeys, setSecret } from "../secrets";
 import { currentInbox } from "../routines/inbox";
+import { createFact, removeFact, updateFact } from "../facts";
 import { appPresence, saveAppPresence } from "../routines/presence";
 import { assertInboxAction } from "../../shared/inbox";
 import { snoozeUntilIso } from "../../shared/routine-runs";
@@ -93,6 +101,13 @@ export function registerIpc(services: AppServices): void {
     db.deleteAgent(id);
     scheduler.reload();
   });
+
+  ipcMain.handle(channels.factsList, (_event, agentId: string) => db.listFacts(String(agentId ?? "")));
+  ipcMain.handle(channels.factsCreate, (_event, input: FactInput) => createFact(db, runner, input));
+  ipcMain.handle(channels.factsUpdate, (_event, id: string, patch: FactPatch) =>
+    updateFact(db, runner, String(id ?? ""), patch ?? {}),
+  );
+  ipcMain.handle(channels.factsDelete, (_event, id: string) => removeFact(db, runner, String(id ?? "")));
 
   ipcMain.handle(channels.messagesList, (_event, agentId: string) => db.listMessages(agentId));
   ipcMain.handle(
@@ -158,6 +173,7 @@ export function registerIpc(services: AppServices): void {
     }),
   );
   ipcMain.handle(channels.chatRunning, (_event, agentId: string) => runner.isRunning(String(agentId ?? "")));
+  ipcMain.handle(channels.chatRunningAll, () => runner.runningAgentIds());
   ipcMain.handle(channels.chatAbort, async (_event, agentId: string) => {
     await runner.abort(agentId);
   });
@@ -199,6 +215,12 @@ export function registerIpc(services: AppServices): void {
   );
   ipcMain.handle(channels.approvalsRules, (_event, agentId?: string) =>
     db.listApprovalRules(agentId ? String(agentId) : undefined),
+  );
+  ipcMain.handle(channels.approvalsCreateRule, (_event, input: ApprovalRuleInput) =>
+    db.createApprovalRule(input),
+  );
+  ipcMain.handle(channels.approvalsUpdateRule, (_event, id: string, input: ApprovalRuleInput) =>
+    db.updateApprovalRule(String(id ?? ""), input),
   );
   ipcMain.handle(channels.approvalsDeleteRule, (_event, id: string) => db.deleteApprovalRule(String(id ?? "")));
 
@@ -276,6 +298,7 @@ export function registerIpc(services: AppServices): void {
   });
 
   ipcMain.handle(channels.routinesList, (_event, agentId: string) => routines.list(agentId));
+  ipcMain.handle(channels.routinesListAll, () => routines.listAll());
   ipcMain.handle(channels.routinesCreate, (_event, input: RoutineInput) => {
     const { agentId, ...draft } = input;
     return routines.create(agentId, draft);
@@ -319,11 +342,7 @@ export function registerIpc(services: AppServices): void {
 
   ipcMain.handle(channels.settingsGet, async (_event, options?: { refreshAuth?: boolean }) => {
     if (options?.refreshAuth) await stopClient();
-    const status = {
-      ...(await getCopilotStatus()),
-      jiraSiteUrl: db.getSetting("jira_site_url") ?? "",
-      ...appPresence(db),
-    };
+    const status = await settingsSnapshot(db);
     watchCopilotUsage(status.signedIn);
     return status;
   });
@@ -339,11 +358,7 @@ export function registerIpc(services: AppServices): void {
   ipcMain.handle(channels.settingsSignOut, async () => {
     await runner.dropAllSessions();
     await signOutCopilot();
-    return {
-      ...(await getCopilotStatus()),
-      jiraSiteUrl: db.getSetting("jira_site_url") ?? "",
-      ...appPresence(db),
-    };
+    return settingsSnapshot(db);
   });
   ipcMain.handle(channels.settingsLogin, async () => {
     await runner.dropAllSessions();
@@ -382,6 +397,42 @@ export function registerIpc(services: AppServices): void {
     clearSecret(secretKeys.jira);
     await runner.dropAllSessions();
     logJiraSettingsChange("token cleared", db.getSetting("jira_site_url"), false);
+  });
+  ipcMain.handle(channels.settingsSaveConfluence, async (_event, input: ConfluenceSettingsInput) => {
+    if (!isConfluenceMode(input.mode)) throw new Error("Choose Cloud or Data Center for Confluence.");
+    const site = normalizeConfluenceSite(String(input.siteUrl ?? ""), input.mode);
+    db.setSetting("confluence_site_url", site);
+    db.setSetting("confluence_email", String(input.email ?? "").trim());
+    db.setSetting("confluence_mode", input.mode);
+    await runner.dropAllSessions();
+  });
+  ipcMain.handle(channels.settingsSaveConfluenceToken, async (_event, token: string) => {
+    setSecret(secretKeys.confluence, token);
+    try {
+      getSecret(secretKeys.confluence);
+    } catch (error) {
+      clearSecret(secretKeys.confluence);
+      logWarn(
+        `Confluence token save failed: Windows could not decrypt the saved token. ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new Error("Windows could not decrypt the saved Confluence token, so it was not kept. Save it again.");
+    }
+    await runner.dropAllSessions();
+  });
+  ipcMain.handle(channels.settingsClearConfluenceToken, async () => {
+    clearSecret(secretKeys.confluence);
+    await runner.dropAllSessions();
+  });
+  ipcMain.handle(channels.settingsSaveDatadog, async (_event, input: DatadogSettingsInput) => {
+    const raw = String(input?.url ?? "").trim();
+    const url = raw ? normalizeDatadogUrl(raw) : "";
+    db.setSetting("datadog_url", url);
+    // Older builds stored a site preset, an app base, and an API base; clear them.
+    db.setSetting("datadog_site", "");
+    db.setSetting("datadog_app_base", "");
+    db.setSetting("datadog_api_base", "");
+    await runner.dropAllSessions();
   });
 
   ipcMain.handle(channels.modelsList, () => listCopilotModels());
@@ -465,6 +516,32 @@ async function confirmSkillReplace(
     ? await dialog.showMessageBox(parent, options)
     : await dialog.showMessageBox(options);
   return result.response === 0;
+}
+
+function confluenceSettings(db: AppDatabase) {
+  const mode = db.getSetting("confluence_mode");
+  return {
+    hasConfluenceToken: hasSecret(secretKeys.confluence),
+    confluenceSiteUrl: db.getSetting("confluence_site_url") ?? "",
+    confluenceEmail: db.getSetting("confluence_email") ?? "",
+    confluenceMode: isConfluenceMode(mode) ? mode : "data-center",
+  };
+}
+
+function datadogSettings(db: AppDatabase) {
+  return {
+    datadogUrl: db.getSetting("datadog_url") ?? "",
+  };
+}
+
+async function settingsSnapshot(db: AppDatabase) {
+  return {
+    ...(await getCopilotStatus()),
+    jiraSiteUrl: db.getSetting("jira_site_url") ?? "",
+    ...confluenceSettings(db),
+    ...datadogSettings(db),
+    ...appPresence(db),
+  };
 }
 
 function cleanWorkspace(value: unknown): string | null {

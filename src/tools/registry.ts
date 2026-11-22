@@ -1,6 +1,9 @@
+import { REPORT_ONLY_EXCLUDED } from "../shared/routine-schedule";
 import type { AgentToolProfile } from "../shared/types";
 import { askUserTool } from "./ask/ask";
 import { browserTools } from "./browser/browser";
+import { confluenceTools } from "./confluence/confluence";
+import { datadogBrowserTools } from "./datadog/browser";
 import { exploreCodeTool } from "./explore/explore-code";
 import { exploreTools } from "./explore/explore";
 import { fileTools } from "./files/files";
@@ -11,6 +14,7 @@ import { reviewCodeTool } from "./review/review";
 import { routineTools } from "./routines/routines";
 import { saveSkillTool } from "./skills/save";
 import { shellTools } from "./shell/shell";
+import { tableTools } from "./table/table";
 import type { AppTool } from "./types";
 
 const readNames = new Set(["file_read", "read_many"]);
@@ -32,6 +36,11 @@ const askReadNames = new Set([
   "jira_myself",
   "jira_search",
   "jira_issue",
+  "confluence_search",
+  "confluence_page",
+  "datadog_browser_logs",
+  "datadog_browser_error_summary",
+  "table_read",
   "history_first",
   "history_search",
   "history_turn",
@@ -55,6 +64,11 @@ export function askTools(): AppTool[] {
   return toolsForAgent("all").filter((tool) => askReadNames.has(tool.name));
 }
 
+/** A report-only routine: Ask tools, without questions, browser handoff, or saving a skill. */
+export function reportOnlyTools(): AppTool[] {
+  return askTools().filter((tool) => !REPORT_ONLY_EXCLUDED.has(tool.name));
+}
+
 /** The /routine turn exposes only the tool that creates the routine. */
 export function routineCreateTools(): AppTool[] {
   return routineTools.filter((tool) => tool.name === "routine_create");
@@ -66,6 +80,9 @@ export function allTools(): AppTool[] {
     saveSkillTool,
     ...browserTools,
     ...jiraTools,
+    ...confluenceTools,
+    ...datadogBrowserTools,
+    ...tableTools,
     ...shellTools,
     ...exploreTools,
     ...fileTools,
@@ -79,7 +96,17 @@ export function allTools(): AppTool[] {
 
 export function toolsForAgent(profile: AgentToolProfile): AppTool[] {
   if (profile === "browser") {
-    return [askUserTool, saveSkillTool, ...browserTools, ...jiraTools, ...historyTools, ...routineManagementTools];
+    return [
+      askUserTool,
+      saveSkillTool,
+      ...browserTools,
+      ...jiraTools,
+      ...confluenceTools,
+      ...datadogBrowserTools,
+      ...tableTools,
+      ...historyTools,
+      ...routineManagementTools,
+    ];
   }
   if (profile === "developer") {
     return [
@@ -88,11 +115,20 @@ export function toolsForAgent(profile: AgentToolProfile): AppTool[] {
       ...shellTools,
       ...exploreTools,
       ...fileTools,
+      ...tableTools,
+      ...confluenceTools,
       ...gitTools,
       ...historyTools,
       ...routineManagementTools,
       exploreCodeTool,
       reviewCodeTool,
+    ];
+  }
+  if (profile === "datadog") {
+    // Read-only analysis with routine management; spreadsheets are out of scope.
+    return [
+      ...askTools().filter((tool) => tool.name !== "table_read"),
+      ...routineManagementTools,
     ];
   }
   return allTools();

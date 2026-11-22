@@ -35,5 +35,9 @@ export function gateBrowser(
       state.noteSnapshot(agentId);
       return text;
     },
+    async capture(agentId, url, options) {
+      blocked(agentId);
+      return browser.capture(agentId, url, options);
+    },
   };
 }

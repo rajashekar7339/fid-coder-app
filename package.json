@@ -27,6 +27,7 @@
     "test:queue-live": "npm run build:node && node tests/e2e-live/queue-live.e2e.mjs",
     "test:message-actions": "npm run build:node && node tests/e2e-live/message-actions.e2e.mjs",
     "test:message-actions-live": "npm run build:node && node tests/e2e-live/message-actions-live.e2e.mjs",
+    "test:tool-activity": "npm run build:node && node tests/e2e-live/tool-activity.e2e.mjs",
     "test:sidebar": "npm run build:node && node tests/e2e-live/sidebar-list.e2e.mjs",
     "test:handoff": "npm run build:node && node tests/e2e-live/handoff-cards.e2e.mjs",
     "test:handoff-live": "npm run build:node && node tests/e2e-live/handoff-live.e2e.mjs",
@@ -36,19 +37,24 @@
     "start": "electron .",
     "test:skills-reuse": "npm run build:node && node tests/e2e-live/skills-reuse.e2e.mjs",
     "test:map": "npm run build:node && node tests/e2e-live/project-map.e2e.mjs",
-    "test:enhance": "npm run build:node && node tests/e2e-live/enhance-prompt.e2e.mjs"
+    "test:enhance": "npm run build:node && node tests/e2e-live/enhance-prompt.e2e.mjs",
+    "test:native-live": "npm run build:node && node tests/e2e-live/native-data-live.e2e.mjs",
+    "test:datadog-browser-live": "npm run build:node && node tests/e2e-live/datadog-browser-live.e2e.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",
     "@github/copilot-sdk": "^1.0.26",
     "@vscode/ripgrep": "^1.18.0",
+    "csv-parse": "^7.0.3",
     "highlight.js": "^11.12.0",
     "lucide-react": "^1.61.0",
+    "markdown-it": "^15.0.3",
     "mermaid": "^12.2.0",
     "node-cron": "^4.6.0",
     "playwright": "^1.64.1",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "read-excel-file": "^9.3.17"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -59,6 +65,7 @@
     "concurrently": "^10.0.6",
     "electron": "^45.0.0",
     "electron-builder": "^26.18.0",
+    "fflate": "^0.8.3",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
@@ -84,6 +91,10 @@
     ],
     "extraResources": [
       {
+        "from": "assets/app-icon",
+        "to": "app-icon"
+      },
+      {
         "from": "node_modules/@vscode/ripgrep-win32-x64/bin/rg.exe",
         "to": "ripgrep/rg.exe"
       },
@@ -94,6 +105,7 @@
     ],
     "asar": true,
     "win": {
+      "icon": "assets/app-icon/icon.ico",
       "target": [
         "portable"
       ]

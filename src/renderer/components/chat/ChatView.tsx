@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
+  Activity,
   ArrowDown,
   ArrowUp,
   BookOpen,
@@ -39,7 +40,6 @@ import {
   Undo2,
   Wrench,
   X,
-  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { HandoffCard } from "../approvals/HandoffCard";
@@ -54,7 +54,14 @@ import {
   attachmentLabel,
   attachmentsForSend,
 } from "../../../shared/attachments";
-import { groupToolCalls, liveTurnSettled, projectThread, userTurnAccepted, type LiveTool, type LiveTurn } from "../../../shared/chat-thread";
+import {
+  groupToolCalls,
+  liveTurnSettled,
+  projectThread,
+  userTurnAccepted,
+  type LiveTool,
+  type LiveTurn,
+} from "../../../shared/chat-thread";
 import { isEditableUserMessage } from "../../../shared/message-actions";
 import { COMMANDS, commandAvailability, filterCommands, parseCommand, type CommandInfo } from "../../../shared/commands";
 import { changeTotals, findChangedFile } from "../../../shared/changes";
@@ -65,7 +72,7 @@ import {
   skillVersionLabel,
   SKILL_SOURCE_LABELS,
 } from "../../../shared/skills";
-import { summarizeTool } from "../../../shared/summary";
+import { summarizeTool, toolGroupSummary, workDurationLabel } from "../../../shared/summary";
 import { WORKSPACE_STARTERS, type Starter } from "../../../shared/starters";
 import type {
   Agent,
@@ -162,8 +169,22 @@ const TOOL_META: Record<string, ToolMeta> = {
   list_dir: { label: "Listed a folder", active: "Listing a folder", Icon: Folder },
   glob_files: { label: "Found files", active: "Finding files", Icon: Folder },
   search_text: { label: "Searched the code", active: "Searching the code", Icon: ScanSearch },
+  table_read: { label: "Read a table", active: "Reading a table", Icon: FileText },
   file_read: { label: "Read a file", active: "Reading a file", Icon: FileText },
   read_many: { label: "Read files", active: "Reading files", Icon: FileText },
+  confluence_search: { label: "Searched Confluence", active: "Searching Confluence", Icon: BookOpen },
+  confluence_page: { label: "Read a Confluence page", active: "Reading a Confluence page", Icon: BookOpen },
+  confluence_update_page: {
+    label: "Updated a Confluence page",
+    active: "Updating a Confluence page",
+    Icon: BookOpen,
+  },
+  datadog_browser_logs: { label: "Read Datadog logs", active: "Reading Datadog logs", Icon: Activity },
+  datadog_browser_error_summary: {
+    label: "Grouped Datadog errors",
+    active: "Grouping Datadog errors",
+    Icon: Activity,
+  },
   file_write: { label: "Wrote a file", active: "Writing a file", Icon: FileText },
   apply_patch: { label: "Patched a file", active: "Patching a file", Icon: FileText },
   git_status: { label: "Checked git status", active: "Checking git status", Icon: Terminal },
@@ -1416,6 +1437,7 @@ export function ChatView({
                       agent={agent}
                       message={item.message}
                       streaming={projected.streaming && item.message.id === "live-assistant"}
+                      liveStartedAt={item.message.id === "live-assistant" ? live?.startedAt : undefined}
                       copied={copiedId === item.message.id}
                       onCopy={(content) => {
                         void navigator.clipboard.writeText(content).then(() => {
@@ -1482,8 +1504,8 @@ export function ChatView({
                 onDecide={onApprovalDecision}
               />
             ) : null}
-            {projected.pendingToolId || approval || question || handoff || skillSave ? null : projected.thinking ? (
-              <TypingRow agent={agent} />
+            {projected.pendingToolId || approval || question || handoff || skillSave ? null : projected.thinking && live ? (
+              <LiveActivity agent={agent} live={live} />
             ) : null}
           </div>
         )}
@@ -2031,42 +2053,18 @@ export function ChatView({
                   <Loader2 size={13} className="spin" />
                 </button>
               ) : running ? (
-                <>
-                  {hasContent ? (
-                    <>
-                      <button
-                        type="button"
-                        className="send-button is-queue"
-                        aria-label="Queue message"
-                        title="Queue for after this turn (Enter)"
-                        onClick={() => send()}
-                      >
-                        <ArrowUp size={15} />
-                      </button>
-                      <button
-                        type="button"
-                        className="send-button is-now"
-                        aria-label="Send now and stop the current turn"
-                        title="Stop the current turn and send this message (Ctrl+Enter)"
-                        onClick={() => sendNow()}
-                      >
-                        <Zap size={13} />
-                      </button>
-                    </>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="send-button is-stop"
-                    aria-label="Stop generating"
-                    onClick={() => {
-                      void fid()
-                        .chat.abort(agent.id)
-                        .catch((caught: unknown) => setError(errorText(caught)));
-                    }}
-                  >
-                    <Square size={11} fill="currentColor" />
-                  </button>
-                </>
+                <button
+                  type="button"
+                  className="send-button is-stop"
+                  aria-label="Stop generating"
+                  onClick={() => {
+                    void fid()
+                      .chat.abort(agent.id)
+                      .catch((caught: unknown) => setError(errorText(caught)));
+                  }}
+                >
+                  <Square size={11} fill="currentColor" />
+                </button>
               ) : (
                 <button
                   type="submit"
@@ -2142,18 +2140,31 @@ export function ChatView({
   );
 }
 
-function TypingRow({ agent }: { agent: Agent }) {
+function LiveActivity({ agent, live }: { agent: Agent; live: LiveTurn }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [live.startedAt]);
+
+  const duration = workDurationLabel(new Date(live.startedAt).toISOString(), null, now);
+  const elapsed = duration?.replace(/^Working for /, "") ?? "";
+
   return (
-    <div className="message">
+    <div className="message live-activity">
       <div className="message-head">
         <AgentAvatar agent={agent} size="xs" />
         <span className="message-author">{agent.name}</span>
-        <span className="typing-label">Thinking</span>
-      </div>
-      <div className="typing-dots" aria-label="Thinking">
-        <span className="typing-dot" />
-        <span className="typing-dot" />
-        <span className="typing-dot" />
+        <span className="activity-bars" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+        <span className="activity-thinking" role="status" aria-live="polite">
+          Thinking
+        </span>
+        {elapsed ? <span className="activity-time">{elapsed}</span> : null}
       </div>
     </div>
   );
@@ -2175,10 +2186,12 @@ function MessageRow({
   onCancelEdit,
   onSaveEdit,
   onDelete,
+  liveStartedAt,
 }: {
   agent: Agent;
   message: Message;
   streaming: boolean;
+  liveStartedAt?: number;
   copied: boolean;
   onCopy: (content: string) => void;
   onOpenFile: (path: string, line: number, endLine: number | null, related: Citation[]) => void;
@@ -2357,6 +2370,9 @@ function MessageRow({
         {streaming ? <span className="stream-caret" /> : null}
       </div>
       <div className="message-foot">
+        {message.role === "assistant" ? (
+          <TurnDuration message={message} liveStartedAt={streaming ? liveStartedAt : undefined} />
+        ) : null}
         {message.usage ? <TokenUsage usage={message.usage} live={streaming} /> : null}
         {!streaming ? (
           <button type="button" className="message-copy" onClick={() => onCopy(message.content)}>
@@ -2369,14 +2385,42 @@ function MessageRow({
   );
 }
 
+function TurnDuration({ message, liveStartedAt }: { message: Message; liveStartedAt?: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (liveStartedAt === undefined) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [liveStartedAt]);
+
+  const startedAt =
+    liveStartedAt !== undefined ? new Date(liveStartedAt).toISOString() : message.turnStartedAt;
+  const endedAt = liveStartedAt !== undefined ? null : message.turnEndedAt;
+  if (!startedAt || (liveStartedAt === undefined && !endedAt)) return null;
+  const label = workDurationLabel(startedAt, endedAt, now);
+  if (!label) return null;
+  return <span className="message-duration">{label}</span>;
+}
+
 function ToolGroup({ calls, pendingId }: { calls: Message[]; pendingId: string | null }) {
   const live = calls.some((call) => call.id.startsWith("live-tool-"));
-  const names = calls.map((call) => {
+  const steps = calls.map((call) => {
     const split = splitTool(call.content);
-    const meta = toolMeta(split.name);
-    return call.id === pendingId ? meta.active : meta.label;
+    return {
+      call,
+      name: split.name,
+      body: split.body,
+      meta: toolMeta(split.name),
+      pending: call.id === pendingId,
+      failed: split.body.startsWith("failed:"),
+    };
   });
-  const summary = pendingId ? names.slice(-2).join(" · ") : names.slice(0, 2).join(" · ");
+  const pendingStep = steps.find((step) => step.pending);
+  const summary = pendingStep
+    ? `${pendingStep.meta.active}…`
+    : toolGroupSummary(steps.map((step) => ({ name: step.name, label: step.meta.label })));
+  const issues = steps.filter((step) => step.failed).length;
 
   return (
     <details className={live ? "tool-card is-live" : "tool-card"}>
@@ -2386,16 +2430,21 @@ function ToolGroup({ calls, pendingId }: { calls: Message[]; pendingId: string |
         </span>
         <b>{calls.length === 1 ? "1 tool step" : `${calls.length} tool steps`}</b>
         <span className="tool-summary">{summary}</span>
+        {issues > 0 ? (
+          <span className="tool-issues">
+            {issues === 1 ? "1 issue" : `${issues} issues`}
+          </span>
+        ) : null}
         <ChevronDown size={12} className="tool-chevron" aria-hidden="true" />
       </summary>
       <div className="tool-steps">
-        {calls.map((call) => {
-          const split = splitTool(call.content);
-          const meta = toolMeta(split.name);
-          const pending = call.id === pendingId;
+        {steps.map(({ call, name, body, meta, pending, failed }) => {
           const Icon = meta.Icon;
           return (
-            <details className={pending ? "tool-step is-running" : "tool-step"} key={call.id}>
+            <details
+              className={`tool-step${pending ? " is-running" : ""}${failed ? " is-failed" : ""}`}
+              key={call.id}
+            >
               <summary>
                 {pending ? (
                   <Loader2 size={12} className="tool-step-icon spin" aria-hidden="true" />
@@ -2403,7 +2452,8 @@ function ToolGroup({ calls, pendingId }: { calls: Message[]; pendingId: string |
                   <Icon size={12} className="tool-step-icon" aria-hidden="true" />
                 )}
                 <span className="tool-step-label">{pending ? meta.active : meta.label}</span>
-                <code>{meta.command ? `/${meta.command}` : split.name}</code>
+                <code>{meta.command ? `/${meta.command}` : name}</code>
+                {failed ? <span className="tool-step-state">Failed</span> : null}
                 <time
                   className="tool-step-time"
                   dateTime={call.createdAt}
@@ -2413,7 +2463,7 @@ function ToolGroup({ calls, pendingId }: { calls: Message[]; pendingId: string |
                 </time>
                 <ChevronDown size={10} className="tool-step-chevron" aria-hidden="true" />
               </summary>
-              {split.body ? <pre>{split.body}</pre> : null}
+              {body ? <pre>{body}</pre> : null}
             </details>
           );
         })}

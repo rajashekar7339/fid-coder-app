@@ -91,7 +91,7 @@ If the owner says “then I will review those,” stop after the review. If they
 - **Tools and mode:** `readOnly` chooses access and `toolProfile` chooses the Agent-mode domain. Decide the tools at session build time: Ask mode ignores `toolProfile` and registers `askTools()`, the full read-only set, so it covers file, git, browser, and Jira reads at once. Agent mode registers `toolsForAgent(toolProfile)`. The editor shows Tools only in Agent mode and requires a profile there; the composer switch saves the same `readOnly`. Instructions describe the role and never a permission rule. Never rely on prompt-only restrictions. Switching modes may drop the live session; replaying the conversation is expected.
 - **Project map:** explicit build, one read-only exploration, cached by workspace and git key. Opening the dialog or reading a saved map must not call a model. Mark stale maps; do not inject the map into every turn.
 - **Model calls:** a throwaway session still spends quota. Document it. Do not add a standing model call to a normal turn without asking.
-- **Routines from chat:** `/routine` is the only path that exposes `routine_create`. The runner gives that turn only the create tool and a routine hint; normal turns and Ask mode never get it. Tools are scoped to `ctx.agentId`, capped at 20 per agent, and deduplicated. A bare time is a one-time run, not a daily routine. Routine write tools are removed during a routine turn. **Limitation:** routines run only while the app is open. Closing the window quits. Do not keep the process alive in the tray, do not start at login, and do not catch up a slot that passed while the app was closed. A one-time run in that case is marked missed and paused and does not run. A repeating routine keeps its next future time.
+- **Routines from chat:** `/routine` is the only path that exposes `routine_create`. The runner gives that turn only the create tool and a routine hint; normal turns and Ask mode never get it. Tools are scoped to `ctx.agentId`, capped at 20 per agent, and deduplicated. A bare time is a one-time run, not a daily routine. Routine write tools are removed during a routine turn. **Limitation:** routines run only while the app is open. Closing the window quits. Do not keep the process alive in the tray, do not start at login, and do not catch up a slot that passed while the app was closed. A one-time run in that case is marked missed and paused and does not run. A repeating routine keeps its next future time. A repeating routine must wait at least 15 minutes; ten counted errors pause it; report-only runs use the read-only tools without questions, browser handoff, or saving a skill.
 
 ## Testing
 
@@ -104,12 +104,13 @@ Run the smallest set that proves the change, then the relevant end-to-end path.
 | Integration | `npm test` (integration part) | DB, main-process wiring, tools, IPC-adjacent logic. Mock Copilot. |
 | Deterministic UI | `npm run test:changes` | Seeded changes card, Workspace panel, changed list, lazy file tree, citation bridge, file revert, and turn revert. No Copilot turn. |
 | Deterministic UI | `npm run test:skills` | Electron UI, Ask mode, starters, cached project map, the in-place citation view, navigator references, the lazy workspace tree, clean diagram labels, full-screen diagrams, library, help screenshots. No Copilot turn. |
-| Deterministic UI | `npm run test:routines` | Electron UI for one-time and repeating routines, the Once editor, creation, deletion, the Desk list, run history, and the inbox. No Copilot turn. |
+| Deterministic UI | `npm run test:routines` | Electron UI for one-time and repeating routines, the Once editor, creation, deletion, the Desk list, run history, the Needs you board, and the all-routines list. No Copilot turn. |
 | Deterministic UI | `npm run test:questions` | Electron UI for the ask_user card: choices, own answer, skip, a resolved event, and the other-agent banner. No Copilot turn. |
 | Deterministic UI | `npm run test:queue` | Electron UI for the queued-message panel: visible row actions, edit, cancel, Send next, and Clear. No Copilot turn. |
 | Live UI | `npm run test:queue-live` | Queue during a real ask_user turn, let it drain, then Send now and keep the remaining queue. Needs Copilot. |
 | Deterministic UI | `npm run test:message-actions` | Electron UI for user-message Edit/Delete: inline editor, cancel, routine read-only, delete confirm, and later turns kept. No Copilot turn. |
 | Live UI | `npm run test:message-actions-live` | Two real turns, edit the first with rewind and rerun, then delete the edited turn. Needs Copilot. |
+| Deterministic UI | `npm run test:tool-activity` | Electron UI for the grouped tool summary, issue count, failed step, and turn duration. No Copilot turn. |
 | Deterministic UI | `npm run test:sidebar` | Electron UI for pin, archive, restore, and Ctrl+K search. No Copilot turn. |
 | Deterministic UI | `npm run test:handoff` | Electron UI for the browser handoff card and the save-skill card. No Copilot turn. |
 | Live UI | `npm run test:handoff-live` | One real browser turn: navigate, call `browser_needs_you`, Done, fresh snapshot, and report the page title. Needs Copilot. |
@@ -133,6 +134,7 @@ Rules:
 - Use a temporary `FID_CODER_USER_DATA`; never touch the real profile. Set `FID_CLEAN=1` to delete artifacts.
 - If a suite is blocked by account state (for example, no selectable models), report it as blocked, not passed.
 - After a behavior change, update the test that encoded the old behavior. Do not leave a stale test name.
+- **Restart Electron after a `src/main` or `src/preload` change.** The dev script rebuilds those files, but the running process and preload keep the old bridge. Vite's renderer reload is not enough when a new IPC channel or preload method is added; a missing method shows as `... is not a function`.
 
 ### Screenshots
 

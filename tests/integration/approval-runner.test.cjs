@@ -93,6 +93,7 @@ test("always deny saves a deny rule that wins over an allow rule", async () => {
       kind: "shell",
       decision: "allow",
       match: "git push",
+      matcher: "exact",
       cwd: "D:\\repo",
     });
     const rules = db.listApprovalRules(agent.id);
@@ -100,6 +101,37 @@ test("always deny saves a deny rule that wins over an allow rule", async () => {
     const next = await runner.requestApproval(agent.id, request({ command: "git push" }));
     assert.equal(next.approved, false);
     assert.equal(next.source, "rule");
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a built-in deny resolves without a card and cannot be overridden", async () => {
+  const { dir, db, agent, runner, events } = setup();
+  try {
+    const outcome = await runner.requestApproval(agent.id, request({ command: "format D: /q" }));
+    assert.equal(outcome.approved, false);
+    assert.equal(outcome.source, "rule");
+    assert.match(outcome.reason, /Format a disk/);
+    assert.equal(runner.listPendingApprovals(agent.id).length, 0);
+    const record = db.listApprovals(agent.id, 10)[0];
+    assert.equal(record.decision, "deny");
+    assert.equal(record.source, "rule");
+    assert.equal(events.filter((event) => event.type === "approval-resolved").length, 1);
+
+    db.createApprovalRule({
+      agentId: agent.id,
+      kind: "shell",
+      decision: "allow",
+      match: "format d: /q",
+      matcher: "exact",
+      cwd: "D:\\repo",
+    });
+    const again = await runner.requestApproval(agent.id, request({ command: "format D: /q" }));
+    assert.equal(again.approved, false);
+    assert.equal(again.source, "rule");
+    assert.match(again.reason, /built-in/i);
   } finally {
     db.close();
     fs.rmSync(dir, { recursive: true, force: true });

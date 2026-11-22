@@ -1,6 +1,6 @@
 # Fid Coder
 
-Fid Coder is a Windows desktop app for local AI agents. Each agent chats through GitHub Copilot, uses tools for files, shell, git, Jira, and a local browser, and can run saved routines once or repeatedly while the app is open. A routine does not run after Fid Coder closes, and a missed slot is not caught up. Messages can carry local file uploads and line ranges referenced from the read-only workspace browser. Ask mode gives an agent a read-only set of tools: workspace reads and git for code questions, or Jira reads and page reading for Browser &amp; Jira agents. Agents, transcripts, file checkpoints, and settings stay on this machine.
+Fid Coder is a Windows desktop app for local AI agents. Each agent chats through GitHub Copilot, uses tools for files, spreadsheets, shell, git, Jira, Confluence, and a local browser, and can run saved routines once or repeatedly while the app is open. A routine does not run after Fid Coder closes, and a missed slot is not caught up. Messages can carry local file uploads and line ranges referenced from the read-only workspace browser. Ask mode gives an agent a read-only set of tools: workspace reads, git, spreadsheets, and Confluence reads for code questions, or Jira reads and page reading for Browser &amp; Jira agents. Agent mode can append to or replace a Confluence page after an approval and a current-version check. Agents, transcripts, file checkpoints, connections, and settings stay on this machine.
 
 ## Requirements
 
@@ -43,6 +43,8 @@ npm run dev
 | `npm run test:queue-live` | Live harness for queueing during a turn, auto-drain, Send now, and keeping the remaining queue. Needs Copilot. |
 | `npm run test:message-actions` | Deterministic Electron harness for editing and deleting user messages: inline editor, routine read-only, delete confirmation, and later turns kept. |
 | `npm run test:message-actions-live` | Live harness for editing a message with rewind and rerun, then deleting the edited turn. Needs Copilot. |
+| `npm run test:native-live` | Live harness for `table_read` and Confluence read/update. Uses a temp CSV and a local fake Confluence server; needs Copilot. Set `FID_WATCH_MS=1500` to watch the steps. |
+| `npm run test:datadog-browser-live` | Live harness for the Datadog Analyst with **no API keys**. Opens a local fake Datadog page in the real headed browser, captures its JSON log response, reads a temp workspace, and reports the root cause. Needs Copilot. Set `FID_WATCH_MS=1500` to watch the browser and the app. |
 | `npm run dist:win` | Build the portable Windows app into `release/` |
 
 ## Project layout
@@ -70,7 +72,7 @@ The app stores its SQLite database at `%USERPROFILE%\.fid_coder_app\fid-coder.sq
 
 - `docs/guide/` — end-user guide
 - `docs/features.md` — feature backlog, with shipped items marked DONE
-- `docs/memory.md` — how an agent's transcript and rolling summary work
+- `docs/memory.md` — how an agent's transcript, rolling summary, and saved facts work
 - `docs/build-exe.md` — packaging notes
 - `docs/archive/` — original POC planning notes, kept for history
 - `AGENTS.md` — repository conventions and where new code belongs

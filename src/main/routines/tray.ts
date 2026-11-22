@@ -1,4 +1,5 @@
 import { app, Menu, nativeImage, Tray, type BrowserWindow, type NativeImage } from "electron";
+import { trayIconImage } from "../icon";
 
 let dot: NativeImage | null = null;
 
@@ -40,7 +41,8 @@ export function createAppTray(actions: {
   onTogglePause: () => void;
   onQuit: () => void;
 }): { update: () => void; destroy: () => void } {
-  const tray = new Tray(dotImage());
+  const icon = trayIconImage();
+  const tray = new Tray(icon.isEmpty() ? dotImage() : icon);
   const update = () => {
     const paused = actions.isPaused();
     const waiting = actions.waiting();

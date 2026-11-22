@@ -34,13 +34,13 @@ Keep the first version short. You can edit the agent later from the menu on its 
 
 In **Agent mode**, **Tools** offers three profiles:
 
-- **All tools** gives the agent the browser, Jira, files, search, git, and shell.
-- **Browser and Jira** is for web work and a saved Jira site. It cannot run commands or touch files.
-- **Shell, search, git, and files** is for code work. It cannot control a browser or read Jira.
+- **All tools** gives the agent the browser, Jira, Confluence, files, spreadsheets, search, git, and shell.
+- **Browser and Jira** is for web work and a saved Jira or Confluence site. It cannot run commands or edit workspace files.
+- **Shell, search, git, and files** is for code work. It cannot control a browser or read Jira; Confluence and spreadsheets are still available.
 
 In Agent mode, choose one explicitly; the editor does not preselect All tools. For this release assistant, switch to **Agent mode**, choose **Shell, search, git, and files**, and pick the repository folder. The file and search tools stay inside that folder. The shell starts in that folder too, but it is not a full sandbox. Without a workspace folder, the local tools stay unavailable.
 
-**Mode** decides access. **Ask mode** registers every read-only tool — file reads, search, git, browser pages, and Jira — so there is no tool profile to choose; the browser can navigate and snapshot but not click or type. **Agent mode** lets you pick **Tools**: all tools, Browser and Jira, or shell/search/git/files. The **Ask mode / Agent mode** switch in the composer changes the same setting. The choice is saved for the agent. Instructions describe the role; they do not grant or deny access.
+**Mode** decides access. **Ask mode** registers every read-only tool — file reads, search, git, browser pages, Jira and Confluence reads, and spreadsheets — so there is no tool profile to choose; the browser can navigate and snapshot but not click or type. **Agent mode** lets you pick **Tools**: all tools, Browser and Jira, or shell/search/git/files. The **Ask mode / Agent mode** switch in the composer changes the same setting. The choice is saved for the agent. Instructions describe the role; they do not grant or deny access.
 
 Skills are not assigned in the editor. Open **Skills** in the sidebar to browse or upload them, then use `/skills <skill> <task>` in the chat. See **Use skills on demand** in this guide.
 

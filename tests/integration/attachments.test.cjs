@@ -166,26 +166,57 @@ test("copies CSV and Excel uploads as workspace paths", () => {
   }
 });
 
-test("rejects a text upload when the agent cannot read files", () => {
+test("attaches a text upload directly when the agent has no workspace", () => {
   const { root, workspace } = workspaceFixture();
   try {
-    const upload = path.join(root, "notes.txt");
-    fs.writeFileSync(upload, "hello\n", "utf8");
+    const upload = path.join(root, "notes.csv");
+    fs.writeFileSync(upload, "name,value\nalpha,1\n", "utf8");
+    const noWorkspace = { ...agentFor(null), workspaceDir: null };
+    const built = buildCopilotAttachments(noWorkspace, [
+      { kind: "upload", path: upload, name: "notes.csv" },
+    ]);
+    assert.equal(built.sdk.length, 1);
+    const sdk = built.sdk[0];
+    assert.equal(sdk.type, "selection");
+    assert.equal(sdk.filePath, upload);
+    assert.equal(sdk.displayName, "notes.csv");
+    assert.equal(sdk.text, "name,value\nalpha,1\n");
+    assert.deepEqual(sdk.selection.start, { line: 0, character: 0 });
+    assert.deepEqual(sdk.selection.end, { line: 1, character: 7 });
+    assert.equal(built.stored[0].path, upload);
+    assert.match(built.prompt, /notes\.csv \(attached text/);
+
+    const browser = { ...agentFor(workspace), toolProfile: "browser" };
+    const browserBuilt = buildCopilotAttachments(browser, [
+      { kind: "upload", path: upload, name: "notes.csv" },
+    ]);
+    assert.equal(browserBuilt.sdk[0].type, "selection");
+
+    const imagePath = path.join(root, "pixel.png");
+    fs.writeFileSync(imagePath, PNG);
+    const image = buildCopilotAttachments(noWorkspace, [
+      { kind: "upload", path: imagePath, name: "pixel.png" },
+    ]);
+    assert.equal(image.sdk[0].type, "blob");
+
+    const binary = path.join(root, "data.bin");
+    fs.writeFileSync(binary, Buffer.from([0x61, 0x00, 0x62]));
     assert.throws(
       () =>
-        buildCopilotAttachments(
-          { ...agentFor(null), workspaceDir: null },
-          [{ kind: "upload", path: upload, name: "notes.txt" }],
-        ),
-      /cannot read files/i,
+        buildCopilotAttachments(noWorkspace, [
+          { kind: "upload", path: binary, name: "data.bin" },
+        ]),
+      /needs a workspace folder and file tools/i,
     );
+
+    const large = path.join(root, "large.txt");
+    fs.writeFileSync(large, "x".repeat(200_001));
     assert.throws(
       () =>
-        buildCopilotAttachments(
-          { ...agentFor(workspace), toolProfile: "browser" },
-          [{ kind: "upload", path: upload, name: "notes.txt" }],
-        ),
-      /cannot read files/i,
+        buildCopilotAttachments(noWorkspace, [
+          { kind: "upload", path: large, name: "large.txt" },
+        ]),
+      /too large/i,
     );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

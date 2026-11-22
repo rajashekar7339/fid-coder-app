@@ -281,6 +281,63 @@ async function main() {
       `${Math.round(restoredWidth)} vs ${Math.round(splitWidth)}`,
     );
 
+    const diffPane = page.locator(".changes-diff-pane");
+    const diffBefore = await diffPane.evaluate((element) => element.getBoundingClientRect().width);
+    await page.getByRole("button", { name: "Hide file list" }).click();
+    await page.waitForFunction(
+      () => getComputedStyle(document.querySelector(".changes-navigator")).display === "none",
+      null,
+      { timeout: 10_000 },
+    );
+    const diffAfter = await diffPane.evaluate((element) => element.getBoundingClientRect().width);
+    check(
+      "hiding the file list widens the code view",
+      diffAfter > diffBefore + 150,
+      `${Math.round(diffBefore)} -> ${Math.round(diffAfter)}`,
+    );
+    await page.getByRole("button", { name: "Show file list" }).click();
+    await page.waitForFunction(
+      () => getComputedStyle(document.querySelector(".changes-navigator")).display !== "none",
+      null,
+      { timeout: 10_000 },
+    );
+
+    const resizer = page.getByRole("separator", { name: "Resize workspace panel" });
+    const resizerBox = await resizer.boundingBox();
+    const chatBefore = await page
+      .locator(".center-column")
+      .evaluate((element) => element.getBoundingClientRect().width);
+    const panelBefore = await panel.evaluate((element) => element.getBoundingClientRect().width);
+    if (!resizerBox) throw new Error("The workspace divider is not visible");
+    await page.mouse.move(resizerBox.x + resizerBox.width / 2, resizerBox.y + 120);
+    await page.mouse.down();
+    await page.mouse.move(resizerBox.x + resizerBox.width / 2 - 40, resizerBox.y + 120, { steps: 4 });
+    await page.mouse.up();
+    await page.waitForTimeout(350);
+    const panelAfter = await panel.evaluate((element) => element.getBoundingClientRect().width);
+    const chatAfter = await page
+      .locator(".center-column")
+      .evaluate((element) => element.getBoundingClientRect().width);
+    check(
+      "dragging the divider resizes the workspace and chat",
+      panelAfter > panelBefore + 20 && chatAfter < chatBefore - 20,
+      `${Math.round(panelBefore)} -> ${Math.round(panelAfter)}, chat ${Math.round(chatBefore)} -> ${Math.round(chatAfter)}`,
+    );
+    const storedWidth = await page.evaluate(() => localStorage.getItem("fid.workspaceWidth"));
+    check(
+      "the workspace width is remembered",
+      storedWidth !== null && Number(storedWidth) > 500,
+      storedWidth ?? "",
+    );
+    await resizer.dblclick();
+    await page.waitForTimeout(350);
+    const resetWidth = await panel.evaluate((element) => element.getBoundingClientRect().width);
+    check(
+      "double-clicking the divider resets the width",
+      Math.abs(resetWidth - panelBefore) < 3,
+      `${Math.round(resetWidth)} vs ${Math.round(panelBefore)}`,
+    );
+
     await page.keyboard.press("Control+P");
     const filterFocused = await page.evaluate(
       () => document.activeElement?.getAttribute("aria-label") ?? "",
@@ -758,6 +815,64 @@ async function main() {
       "the files command is hidden without a workspace",
       (await page.locator(".command-menu").getByRole("option", { name: /\/files/ }).count()) === 0,
     );
+
+    await page.getByRole("button", { name: "Open settings" }).click();
+    const settings = page.locator(".settings-modal");
+    await settings.waitFor();
+    await settings.getByRole("button", { name: "Safety", exact: true }).click();
+    await page.locator(".approval-rule.is-built-in").first().waitFor();
+    const builtInRules = await page.locator(".approval-rule.is-built-in").allInnerTexts();
+    check(
+      "settings lists the built-in deny rules",
+      builtInRules.length === 3,
+      String(builtInRules.length),
+    );
+    check(
+      "the built-in rules name the dangerous commands",
+      /format/i.test(builtInRules.join(" ")) &&
+        /diskpart/i.test(builtInRules.join(" ")) &&
+        /rm -rf \//i.test(builtInRules.join(" ")),
+      builtInRules.join(" ").replace(/\s+/g, " ").slice(0, 180),
+    );
+
+    await settings.getByRole("button", { name: "New rule" }).click();
+    await settings.getByLabel("Rule command").fill("git push");
+    await settings.getByLabel("Rule decision").selectOption("deny");
+    await settings.getByLabel("Rule agent").selectOption("");
+    await settings.getByLabel("Rule match").selectOption("prefix");
+    await settings.getByRole("button", { name: "Add rule" }).click();
+    await page.waitForFunction(
+      () => document.querySelectorAll(".approval-rule:not(.is-built-in)").length === 1,
+      null,
+      { timeout: 10_000 },
+    );
+    const savedRule = await page.locator(".approval-rule:not(.is-built-in)").first().innerText();
+    check(
+      "a new saved rule appears",
+      /git push/.test(savedRule) && /All agents/.test(savedRule) && /starts with/.test(savedRule),
+      savedRule.replace(/\s+/g, " ").slice(0, 140),
+    );
+
+    await settings.getByRole("button", { name: "Edit deny rule for git push" }).click();
+    await settings.getByLabel("Rule command").fill("git push --force");
+    await settings.getByRole("button", { name: "Save rule" }).click();
+    await page.waitForFunction(
+      () => document.querySelector(".approval-rule:not(.is-built-in) code")?.textContent === "git push --force",
+      null,
+      { timeout: 10_000 },
+    );
+    check("editing a saved rule changes its command", true);
+
+    await settings.getByRole("button", { name: "Delete deny rule for git push --force" }).click();
+    await page.waitForFunction(
+      () => document.querySelectorAll(".approval-rule:not(.is-built-in)").length === 0,
+      null,
+      { timeout: 10_000 },
+    );
+    check("deleting a saved rule removes it", true);
+
+    await page.getByRole("button", { name: "Close settings" }).click();
+    await settings.waitFor({ state: "detached" });
   } finally {
     await app?.close().catch(() => undefined);
     if (vite) {

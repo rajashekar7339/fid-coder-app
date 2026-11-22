@@ -1,5 +1,8 @@
 import type { SkillDraftInput } from "./skill-draft";
 import type {
+  Fact,
+  FactInput,
+  FactPatch,
   Agent,
   AgentInput,
   AgentPlacement,
@@ -7,6 +10,7 @@ import type {
   ApprovalRecord,
   ApprovalRequest,
   ApprovalRule,
+  ApprovalRuleInput,
   BrowserHandoffRequest,
   QuestionReply,
   QuestionRequest,
@@ -15,6 +19,8 @@ import type {
   BrowserPreview,
   ChangeSet,
   ChatEvent,
+  ConfluenceSettingsInput,
+  DatadogSettingsInput,
   ContextView,
   CopilotModel,
   FileDiff,
@@ -23,6 +29,7 @@ import type {
   QueuedMessage,
   Routine,
   RoutineInput,
+  RoutineOverview,
   RoutinePatch,
   RoutineRun,
   SettingsView,
@@ -50,6 +57,12 @@ export interface FidApi {
     delete: (id: string) => Promise<void>;
     place: (id: string, placement: AgentPlacement) => Promise<Agent>;
   };
+  facts: {
+    list: (agentId: string) => Promise<Fact[]>;
+    create: (input: FactInput) => Promise<Fact>;
+    update: (id: string, patch: FactPatch) => Promise<Fact>;
+    delete: (id: string) => Promise<Fact>;
+  };
   messages: {
     list: (agentId: string) => Promise<Message[]>;
   };
@@ -73,6 +86,7 @@ export interface FidApi {
     editMessage: (agentId: string, messageId: string, text: string) => Promise<Agent>;
     deleteMessage: (agentId: string, messageId: string) => Promise<Agent>;
     running: (agentId: string) => Promise<boolean>;
+    runningAll: () => Promise<string[]>;
     abort: (agentId: string) => Promise<void>;
     enhance: (agentId: string, text: string) => Promise<EnhanceResult>;
     onEvent: (callback: (event: ChatEvent) => void) => number;
@@ -96,6 +110,8 @@ export interface FidApi {
     pending: (agentId?: string) => Promise<ApprovalRequest[]>;
     history: (agentId: string, limit?: number) => Promise<ApprovalRecord[]>;
     rules: (agentId?: string) => Promise<ApprovalRule[]>;
+    createRule: (input: ApprovalRuleInput) => Promise<ApprovalRule>;
+    updateRule: (id: string, input: ApprovalRuleInput) => Promise<ApprovalRule>;
     deleteRule: (id: string) => Promise<void>;
   };
   browser: {
@@ -131,6 +147,7 @@ export interface FidApi {
   };
   routines: {
     list: (agentId: string) => Promise<Routine[]>;
+    listAll: () => Promise<RoutineOverview[]>;
     create: (input: RoutineInput) => Promise<Routine>;
     update: (id: string, patch: RoutinePatch) => Promise<Routine>;
     delete: (id: string) => Promise<void>;
@@ -161,6 +178,10 @@ export interface FidApi {
     saveJiraSite: (url: string) => Promise<void>;
     saveJiraToken: (token: string) => Promise<void>;
     clearJiraToken: () => Promise<void>;
+    saveConfluence: (input: ConfluenceSettingsInput) => Promise<void>;
+    saveConfluenceToken: (token: string) => Promise<void>;
+    clearConfluenceToken: () => Promise<void>;
+    saveDatadog: (input: DatadogSettingsInput) => Promise<void>;
   };
   dialog: {
     pickFolder: () => Promise<string | null>;

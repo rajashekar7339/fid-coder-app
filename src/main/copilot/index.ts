@@ -524,6 +524,11 @@ export async function getCopilotStatus(): Promise<SettingsView> {
     hasGithubPat: hasSecret(secretKeys.githubPat),
     hasJiraToken: hasSecret(secretKeys.jira),
     jiraSiteUrl: "",
+    hasConfluenceToken: false,
+    confluenceSiteUrl: "",
+    confluenceEmail: "",
+    confluenceMode: "data-center",
+    datadogUrl: "",
     routinesPaused: false,
   };
 }

@@ -19,7 +19,7 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), "fid-coder-routines-"));
 const userData = path.join(root, "userdata");
 const workspace = path.join(root, "workspace");
 const shots = path.join(root, "shots");
-const agentName = "Routines E2E";
+const agentName = "Release desk";
 const clean = process.env.FID_CLEAN === "1";
 const slowMs = Number(process.env.FID_E2E_SLOW_MS || 0);
 const require = createRequire(import.meta.url);
@@ -77,6 +77,7 @@ async function seed() {
       runAt: null,
       enabled: true,
       notify: true,
+      readOnly: true,
     },
     nextRunIso("0 9 * * 1-5"),
   );
@@ -84,6 +85,7 @@ async function seed() {
     routineId: weekday.id,
     agentId: agent.id,
     trigger: "schedule",
+    readOnly: true,
   });
   db.finishRoutineRun(finished.id, { status: "ok", output: "Three tickets are waiting." });
   db.markRoutineRun(weekday.id, "ok", weekday.nextRunAt);
@@ -94,6 +96,38 @@ async function seed() {
     title: "Weekday sweep",
     body: "Completed. Three tickets are waiting.",
   });
+  db.addInboxItem({
+    agentId: agent.id,
+    kind: "turn",
+    refId: "turn-build",
+    title: "Build failed",
+    body: "The compile step failed.",
+  });
+
+  const other = db.createAgent({
+    name: "Night desk",
+    description: "Second agent",
+    systemPrompt: "Keep replies short.",
+    workspaceDir: workspace,
+    model: "auto",
+    toolProfile: "developer",
+    readOnly: false,
+    memoryEnabled: false,
+  });
+  const nightly = db.createRoutine(
+    {
+      agentId: other.id,
+      name: "Nightly report",
+      prompt: "Summarize the day.",
+      cron: "0 2 * * *",
+      once: false,
+      runAt: null,
+      enabled: false,
+      notify: false,
+      readOnly: false,
+    },
+    nextRunIso("0 2 * * *"),
+  );
 
   const onceDate = futureDate(2);
   const onceRun = onceDate.toISOString();
@@ -114,7 +148,13 @@ async function seed() {
   db.addMessage(agent.id, "user", "Show me what is scheduled.");
   db.addMessage(agent.id, "assistant", "You have a weekday sweep and a one-time reminder.");
   db.close();
-  return { agentId: agent.id, onceDate: localDateText(onceDate) };
+  return {
+    agentId: agent.id,
+    otherAgentId: other.id,
+    weekdayId: weekday.id,
+    nightlyId: nightly.id,
+    onceDate: localDateText(onceDate),
+  };
 }
 
 async function viteRunning() {
@@ -183,8 +223,55 @@ async function openRoutines(page) {
   await watch();
 }
 
+function request(agent, id, createdAt) {
+  return {
+    id,
+    agentId: agent.id,
+    agentName: agent.name,
+    createdAt,
+    expiresAt: new Date(Date.now() + 120_000).toISOString(),
+  };
+}
+
+async function installBoardStubs() {
+  await app.evaluate(({ ipcMain }) => {
+    const state = { approval: null, question: null, handoff: null, run: null };
+    globalThis.__fidNeedsYou = state;
+    ipcMain.removeHandler("chat:approval");
+    ipcMain.handle("chat:approval", (_event, id, action) => {
+      state.approval = { id, action };
+      return true;
+    });
+    ipcMain.removeHandler("chat:question");
+    ipcMain.handle("chat:question", (_event, id, reply) => {
+      state.question = { id, reply };
+      return true;
+    });
+    ipcMain.removeHandler("browser:handoff-done");
+    ipcMain.handle("browser:handoff-done", (_event, id) => {
+      state.handoff = id;
+      return true;
+    });
+    ipcMain.removeHandler("routines:run");
+    ipcMain.handle("routines:run", (_event, id) => {
+      state.run = id;
+      return { id };
+    });
+  });
+}
+
+async function boardState() {
+  return app.evaluate(() => globalThis.__fidNeedsYou);
+}
+
+async function sendBoardEvent(event) {
+  await app.evaluate(({ BrowserWindow }, next) => {
+    BrowserWindow.getAllWindows()[0]?.webContents.send("chat:event", next);
+  }, event);
+}
+
 async function main() {
-  const { agentId, onceDate } = await seed();
+  const { agentId, otherAgentId, weekdayId, nightlyId, onceDate } = await seed();
   await ensureVite();
   try {
     app = await electron.launch({
@@ -239,6 +326,7 @@ async function main() {
       /Weekday sweep/.test(historyText) &&
         /Completed/.test(historyText) &&
         /Scheduled/.test(historyText) &&
+        /Look and report/.test(historyText) &&
         /Three tickets are waiting/.test(historyText),
       historyText.replace(/\s+/g, " ").slice(0, 180),
     );
@@ -267,6 +355,10 @@ async function main() {
 
     await page.locator(".new-routine-button").click();
     const editor = page.locator(".routines-modal");
+    check(
+      "a new routine does the work",
+      (await editor.getByRole("switch", { name: "Only look and report" }).getAttribute("aria-checked")) === "false",
+    );
     await editor.getByLabel("Name", { exact: true }).fill("E2E reminder");
     await editor.getByLabel("Instruction").fill("Run the end-to-end checks and report the result.");
     await page.locator(".schedule-grid select").first().selectOption("once");
@@ -288,7 +380,10 @@ async function main() {
 
     const list = await page.evaluate((id) => window.fid.routines.list(id), agentId);
     const created = list.find((routine) => routine.name === "E2E reminder");
-    check("the UI creates a one-time routine", created?.once === true && Boolean(created?.runAt));
+    check(
+      "the UI creates a one-time routine",
+      created?.once === true && Boolean(created?.runAt) && created?.readOnly === false,
+    );
     const createdDate = created ? new Date(created.runAt) : null;
     check(
       "the stored time matches the editor",
@@ -336,20 +431,182 @@ async function main() {
     const afterDelete = await page.evaluate((id) => window.fid.routines.list(id), agentId);
     check("deleting a one-time routine removes it", !afterDelete.some((routine) => routine.name === "E2E reminder"));
 
+    await page.locator(".routines-nav-item").filter({ hasText: "Weekday sweep" }).click();
+    await page.waitForFunction(() => document.querySelector(".routine-editor h2")?.textContent === "Weekday sweep");
+    const reportOnly = editor.getByRole("switch", { name: "Only look and report" });
+    check("the weekday routine looks and reports", (await reportOnly.getAttribute("aria-checked")) === "true");
+    check(
+      "the editor explains report-only",
+      /Only look and report\. No file changes/.test(await editor.innerText()),
+    );
+    await reportOnly.click();
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await page.waitForFunction(
+      () => {
+        const button = [...document.querySelectorAll(".routines-modal button")].find(
+          (item) => item.textContent?.trim() === "Save changes",
+        );
+        return button instanceof HTMLButtonElement && !button.disabled;
+      },
+      null,
+      { timeout: 20_000 },
+    );
+    const savedMode = await page.evaluate((id) => window.fid.routines.list(id), agentId);
+    check(
+      "the report-only switch saves",
+      savedMode.find((routine) => routine.name === "Weekday sweep")?.readOnly === false,
+    );
+
     await page.getByRole("button", { name: "Close routines" }).click();
     await page.waitForSelector(".routines-modal", { state: "detached", timeout: 10_000 });
     const deskAfter = await page.locator(".agent-desk").innerText();
     check("the desk keeps the seeded routines", /Weekday sweep/.test(deskAfter) && /Once reminder/.test(deskAfter));
     await shot(page, "06-after-delete");
 
+    await installBoardStubs();
+    const selectedAgent = { id: agentId, name: agentName };
     await page.getByRole("button", { name: /Inbox/ }).click();
     await page.waitForSelector(".inbox-modal", { timeout: 10_000 });
     const inboxText = await page.locator(".inbox-modal").innerText();
     check(
       "the inbox lists the finished routine",
-      /Weekday sweep/.test(inboxText),
-      inboxText.replace(/\s+/g, " ").slice(0, 180),
+      /Weekday sweep/.test(inboxText) && /Updates/.test(inboxText) && /Build failed/.test(inboxText),
+      inboxText.replace(/\s+/g, " ").slice(0, 220),
     );
+    await page.locator(".inbox-row").filter({ hasText: "Build failed" }).getByRole("button", { name: "Dismiss" }).click();
+    await page.waitForFunction(
+      () => !document.querySelector(".inbox-modal")?.textContent?.includes("Build failed"),
+      null,
+      { timeout: 10_000 },
+    );
+    check("dismiss removes a stored update", true);
+
+    const askedAt = new Date().toISOString();
+    const question = {
+      ...request(selectedAgent, "board-question", askedAt),
+      question: "Which release should I prepare?",
+      choices: ["Patch", "Minor"],
+    };
+    await sendBoardEvent({ agentId, type: "question-request", question });
+    await page.locator(".inbox-modal").getByRole("button", { name: "Minor" }).waitFor({ timeout: 10_000 });
+    check(
+      "a question is grouped under the agent",
+      /Waiting on you/.test(await page.locator(".inbox-modal").innerText()) &&
+        /Release desk · 1/.test(await page.locator(".inbox-modal").innerText()),
+    );
+    await page.locator(".inbox-modal").screenshot({ path: path.join(shots, "needs-you.png") });
+    await page.locator(".inbox-modal").getByRole("button", { name: "Minor" }).click();
+    await page.waitForFunction(() => document.querySelectorAll(".question-card").length === 0, null, { timeout: 10_000 });
+    const asked = await boardState();
+    check(
+      "answering from the inbox reaches the question",
+      asked?.question?.id === "board-question" && asked.question.reply?.kind === "choice" && asked.question.reply.index === 1,
+      JSON.stringify(asked?.question),
+    );
+
+    const approval = {
+      ...request(selectedAgent, "board-approval", new Date().toISOString()),
+      turnId: null,
+      kind: "shell",
+      title: "Run a sensitive command?",
+      command: "git push origin main",
+      cwd: workspace,
+      reason: "This pushes commits to a remote repository.",
+    };
+    await sendBoardEvent({ agentId, type: "approval-request", approval });
+    await page.locator(".inbox-modal").getByRole("button", { name: "Allow once" }).click();
+    await page.waitForFunction(() => document.querySelectorAll(".approval-card").length === 0, null, { timeout: 10_000 });
+    const allowed = await boardState();
+    check(
+      "allowing from the inbox reaches the approval",
+      allowed?.approval?.id === "board-approval" && allowed.approval.action === "approve",
+      JSON.stringify(allowed?.approval),
+    );
+
+    const handoff = {
+      ...request(selectedAgent, "board-handoff", new Date().toISOString()),
+      reason: "Sign in to the ticket site.",
+      takenOver: false,
+    };
+    await sendBoardEvent({ agentId, type: "handoff-request", handoff });
+    await page.locator(".inbox-modal").getByRole("button", { name: "Done" }).click();
+    await page.waitForFunction(() => document.querySelectorAll(".question-card").length === 0, null, { timeout: 10_000 });
+    const handed = await boardState();
+    check("done from the inbox reaches the handoff", handed?.handoff === "board-handoff", JSON.stringify(handed?.handoff));
+
+    await page.locator(".inbox-modal").getByRole("button", { name: "Routines", exact: true }).click();
+    await page.getByText("Nightly report").waitFor({ timeout: 10_000 });
+    const routinesText = await page.locator(".inbox-modal").innerText();
+    check(
+      "all routines lists every agent",
+      /Release desk/.test(routinesText) && /Night desk/.test(routinesText) && /Weekday sweep/.test(routinesText) && /Nightly report/.test(routinesText),
+      routinesText.replace(/\s+/g, " ").slice(0, 240),
+    );
+    await page.locator(".inbox-modal").screenshot({ path: path.join(shots, "all-routines.png") });
+    const nightlyRow = page.locator(".inbox-routine").filter({ hasText: "Nightly report" });
+    await nightlyRow.getByRole("switch", { name: "Enabled: Nightly report" }).click();
+    let enabledNightly = false;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      enabledNightly = await page.evaluate(
+        ([routineId, ownerId]) =>
+          window.fid.routines.listAll().then((list) => {
+            const routine = list.find((item) => item.id === routineId);
+            return routine?.enabled === true && routine.agentId === ownerId;
+          }),
+        [nightlyId, otherAgentId],
+      );
+      if (enabledNightly) break;
+      await pause(50);
+    }
+    check("the all-routines switch enables a routine", enabledNightly === true);
+    const weekdayRow = page.locator(".inbox-routine").filter({ hasText: "Weekday sweep" });
+    await weekdayRow.getByRole("button", { name: "Run now" }).click();
+    let ran = null;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      ran = await boardState();
+      if (ran?.run === weekdayId) break;
+      await pause(50);
+    }
+    check("run now from the all-routines list starts that routine", ran?.run === weekdayId, JSON.stringify(ran?.run));
+    await nightlyRow.getByRole("button", { name: "Open" }).click();
+    await page.waitForSelector(".routines-modal", { timeout: 10_000 });
+    const openedAgent = await page.locator(".routines-modal .modal-kicker").innerText();
+    check(
+      "open switches to that agent's routines",
+      openedAgent.trim().toLowerCase() === "night desk",
+      openedAgent,
+    );
+    await page.waitForFunction(
+      () => document.querySelector(".routine-editor h2")?.textContent === "Nightly report",
+      null,
+      { timeout: 10_000 },
+    );
+    check("the opened dialog shows the nightly routine", true);
+    await page.getByRole("button", { name: "Close routines" }).click();
+    await page.waitForSelector(".routines-modal", { state: "detached", timeout: 10_000 });
+
+    await ensureAgent(page);
+    await page.getByRole("button", { name: /Inbox/ }).click();
+    await page.waitForSelector(".inbox-modal", { timeout: 10_000 });
+    const settled = {
+      ...request(selectedAgent, "chat-approval", new Date().toISOString()),
+      turnId: null,
+      kind: "shell",
+      title: "Run a sensitive command?",
+      command: "del notes.tmp",
+      cwd: workspace,
+      reason: "This deletes files or data.",
+    };
+    await sendBoardEvent({ agentId, type: "approval-request", approval: settled });
+    await page.locator(".inbox-modal").getByText("del notes.tmp").waitFor({ timeout: 10_000 });
+    await page.getByRole("button", { name: "Close inbox" }).click();
+    await page.waitForSelector(".inbox-modal", { state: "detached", timeout: 10_000 });
+    await page.getByRole("button", { name: "Reject" }).click();
+    await page.waitForSelector(".approval-card", { state: "detached", timeout: 10_000 });
+    await page.getByRole("button", { name: /Inbox/ }).click();
+    await page.waitForSelector(".inbox-modal", { timeout: 10_000 });
+    const afterChat = await page.locator(".inbox-modal").innerText();
+    check("answering in the chat removes the inbox row", !/del notes\.tmp/.test(afterChat), afterChat.replace(/\s+/g, " ").slice(0, 180));
     await shot(page, "09-inbox");
     await page.getByRole("button", { name: "Snooze" }).click();
     await page.waitForFunction(

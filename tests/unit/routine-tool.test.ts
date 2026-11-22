@@ -24,6 +24,8 @@ function routine(overrides: Partial<Routine> = {}): Routine {
     runAt: null,
     enabled: true,
     notify: true,
+    readOnly: false,
+    consecutiveFailures: 0,
     lastRunAt: null,
     nextRunAt: localDateTimeIso("2026-11-11", "16:00"),
     lastStatus: null,
@@ -40,6 +42,7 @@ test("a bare time becomes one one-time run at the next occurrence", () => {
   assert.equal(draft.cron, "0 16 11 11 *");
   assert.equal(draft.name, "Run the tests");
   assert.equal(draft.notify, true);
+  assert.equal(draft.readOnly, false);
 });
 
 test("a past time without a date moves to tomorrow", () => {
@@ -128,4 +131,10 @@ test("the created and listed text carries the schedule, id, and instruction", ()
   assert.match(list, /id routine-1/);
   assert.match(list, /Instruction: Run the tests/);
   assert.match(list, /next Today, 4:00/);
+  assert.match(list, /does the work/);
+
+  const report = routineListText([routine({ readOnly: true })], NOW);
+  assert.match(report, /look and report/);
+  const paused = routineListText([routine({ enabled: false, consecutiveFailures: 10 })], NOW);
+  assert.match(paused, /paused after 10 failures/);
 });

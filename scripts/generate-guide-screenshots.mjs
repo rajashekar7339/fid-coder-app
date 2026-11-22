@@ -141,6 +141,8 @@ try {
   await page.waitForSelector(".routine-history-row", { timeout: 10000 });
   await page.waitForTimeout(300);
   await save(page.locator(".routines-modal"), "routine-history.png");
+  // needs-you.png and all-routines.png are captured by tests/e2e-live/routines-ui.e2e.mjs.
+  // They need a second agent, a seeded inbox row, and a question card.
   await page.getByRole("button", { name: "Close routines" }).click();
   await page.waitForTimeout(300);
 
@@ -170,6 +172,13 @@ try {
     if (cells[0]) cells[0].textContent = "Guide demo";
   });
   await save(page.locator(".settings-modal"), "settings.png");
+  await page.locator(".settings-nav-item").filter({ hasText: "Datadog" }).click();
+  await page.waitForTimeout(500);
+  await save(page.locator(".settings-modal"), "datadog-settings.png");
+  await page.locator(".settings-nav-item").filter({ hasText: "Safety" }).click();
+  await page.locator(".approval-rule.is-built-in").first().waitFor({ state: "visible" });
+  await page.waitForTimeout(400);
+  await save(page.locator(".settings-modal"), "approval-rules.png");
   await page.getByRole("button", { name: "Close settings" }).click();
   await page.waitForTimeout(300);
 
@@ -192,6 +201,27 @@ try {
   await page.keyboard.press("Escape");
   await modal.waitFor({ state: "hidden" });
   await page.waitForTimeout(300);
+
+  await page.getByRole("button", { name: /JIRA Agent/ }).first().click();
+  await page.waitForTimeout(300);
+  await page.getByRole("button", { name: "Actions for JIRA Agent" }).click();
+  await page.getByRole("menuitem", { name: "Edit agent" }).click();
+  const factsModal = page.locator(".agent-modal");
+  await factsModal.waitFor({ state: "visible" });
+  await factsModal.locator(".fact-row").first().waitFor({ state: "visible" });
+  await page.addStyleTag({
+    content:
+      ".agent-modal { max-height: none !important; height: auto !important; } .agent-form-scroll { overflow: visible !important; }",
+  });
+  await factsModal.locator(".agent-form-scroll").evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await page.waitForTimeout(500);
+  await save(factsModal, "agent-facts.png");
+  await page.keyboard.press("Escape");
+  await factsModal.waitFor({ state: "hidden" });
+  await page.waitForTimeout(300);
+
   await page.getByRole("button", { name: /JIRA Agent/ }).first().click();
   await page.waitForTimeout(300);
   await page.getByRole("button", { name: "Open skills" }).click();
@@ -219,6 +249,29 @@ try {
   await page.waitForTimeout(300);
   await save(page.locator(".composer-dock"), "enhance-prompt.png");
   await page.locator(".composer-input").fill("");
+  await page.waitForTimeout(200);
+
+  // A real turn is not needed to show the sidebar state. Stub the running set
+  // for the poll, then select another agent so the working row is not active.
+  const demoAgents = await page.evaluate(() => window.fid.agents.list());
+  const jiraAgent = demoAgents.find((agent) => agent.name === "JIRA Agent");
+  if (!jiraAgent) throw new Error("JIRA Agent was not found");
+  await page.getByRole("button", { name: /GIT PR Review/ }).first().click();
+  await page.waitForTimeout(300);
+  await app.evaluate(
+    ({ ipcMain }, { channel, agentId }) => {
+      try {
+        ipcMain.removeHandler(channel);
+      } catch {
+        // No handler in an older build; handle() below is enough.
+      }
+      ipcMain.handle(channel, () => [agentId]);
+    },
+    { channel: "chat:running-all", agentId: jiraAgent.id },
+  );
+  await page.waitForSelector(".agent-row.is-working", { timeout: 5000 });
+  await page.waitForTimeout(300);
+  await save(page.locator(".sidebar"), "sidebar-working.png");
 } finally {
   await app.close().catch(() => undefined);
   if (vite) vite.kill();
@@ -265,34 +318,44 @@ async function seedDemoData(page) {
   database.exec("PRAGMA busy_timeout = 5000");
   const now = Date.now();
   const at = (minutesAgo) => new Date(now - minutesAgo * 60_000).toISOString();
+  const insertTurn = database.prepare(
+    "INSERT INTO turns (id, agent_id, source, started_at, ended_at, status) VALUES (?, ?, 'chat', ?, ?, 'ok')",
+  );
+  const firstTurn = randomUUID();
+  const secondTurn = randomUUID();
+  insertTurn.run(firstTurn, jira.id, at(26), at(20));
+  insertTurn.run(secondTurn, jira.id, at(8), at(6));
+
   const insertMessage = database.prepare(
-    "INSERT INTO messages (id, agent_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO messages (id, agent_id, role, content, created_at, turn_id) VALUES (?, ?, ?, ?, ?, ?)",
   );
   const messages = [
-    ["user", "Draft a concise standup update and call out the release risk.", at(26)],
-    ["tool", "browser_navigate: url: https://fid.atlassian.net/jira/your-work\ntitle: Jira — Your work", at(24)],
-    ["tool", "browser_snapshot: Read 7 assigned issues\n(+14 more lines)", at(23)],
-    ["tool", "browser_click: clicked text=Assigned to me on https://fid.atlassian.net/jira/your-work", at(22)],
+    [firstTurn, "user", "Draft a concise standup update and call out the release risk.", at(26)],
+    [firstTurn, "tool", "browser_navigate: url: https://fid.atlassian.net/jira/your-work\ntitle: Jira — Your work", at(24)],
+    [firstTurn, "tool", "browser_snapshot: Read 7 assigned issues\n(+14 more lines)", at(23)],
+    [firstTurn, "tool", "browser_click: clicked text=Assigned to me on https://fid.atlassian.net/jira/your-work", at(22)],
     [
+      firstTurn,
       "assistant",
       "Morning check is done. Three things need your attention before standup:\n\n- **FID-482 · Checkout retry loop** — QA flagged a duplicate charge when payments time out. This is the release blocker.\n- **FID-471 · Export job stuck** — Code-complete, waiting on a second approval.\n- **FID-456 · SSO group mapping** — Blocks onboarding for two new hires.\n\nToday: verify the retry fix with QA and unblock the export approval.",
       at(20),
     ],
-    ["user", "Draft a short update for standup.", at(8)],
+    [secondTurn, "user", "Draft a short update for standup.", at(8)],
     [
+      secondTurn,
       "assistant",
       "**Standup update**\n\n- Two release blockers are open: **FID-482** and **FID-456**.\n- **FID-471** is code-complete and waiting on a second approval.\n- Today: take ownership of FID-482 and confirm the retry fix with QA.\n\n> Release risk: High. **FID-482** needs verification today.",
       at(6),
     ],
   ];
-  for (const [role, content, createdAt] of messages) {
-    insertMessage.run(randomUUID(), jira.id, role, content, createdAt);
+  for (const [turnId, role, content, createdAt] of messages) {
+    insertMessage.run(randomUUID(), jira.id, role, content, createdAt, turnId);
   }
 
   const insertRoutine = database.prepare(
     `INSERT INTO routines (
-      id, agent_id, name, prompt, cron, enabled, notify, last_run_at, next_run_at, last_status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, agent_id, name, prompt, cron, enabled, notify, read_only, last_run_at, next_run_at, last_status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const tomorrow = new Date(now + 24 * 60 * 60_000);
   tomorrow.setHours(9, 0, 0, 0);
@@ -307,10 +370,28 @@ async function seedDemoData(page) {
   const createdAt = new Date(now - 7 * 24 * 60 * 60_000).toISOString();
   const updatedAt = new Date(now).toISOString();
 
+  const insertFact = database.prepare(
+    "INSERT INTO agent_facts (id, agent_id, content, source, enabled, created_at, updated_at) VALUES (?, ?, ?, 'user', 1, ?, ?)",
+  );
+  insertFact.run(
+    randomUUID(),
+    jira.id,
+    "The release branch is main; publish release notes under docs/releases.",
+    createdAt,
+    updatedAt,
+  );
+  insertFact.run(
+    randomUUID(),
+    null,
+    "Use the ticket key in every commit message.",
+    createdAt,
+    updatedAt,
+  );
+
   const insertOnce = database.prepare(
     `INSERT INTO routines (
-      id, agent_id, name, prompt, cron, once, run_at, enabled, notify, last_run_at, next_run_at, last_status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, 1, ?, 1, 1, NULL, ?, NULL, ?, ?)`,
+      id, agent_id, name, prompt, cron, once, run_at, enabled, notify, read_only, last_run_at, next_run_at, last_status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, 1, ?, 1, 1, 0, NULL, ?, NULL, ?, ?)`,
   );
   insertOnce.run(
     randomUUID(),
@@ -333,6 +414,7 @@ async function seedDemoData(page) {
     "0 9 * * 1-5",
     1,
     1,
+    1,
     at(24 * 60),
     tomorrow.toISOString(),
     "ok",
@@ -342,8 +424,8 @@ async function seedDemoData(page) {
   database
     .prepare(
       `INSERT INTO routine_runs (
-        id, routine_id, agent_id, trigger, status, started_at, ended_at, turn_id, output, error
-      ) VALUES (?, ?, ?, 'schedule', 'ok', ?, ?, NULL, ?, NULL)`,
+        id, routine_id, agent_id, trigger, read_only, status, started_at, ended_at, turn_id, output, error
+      ) VALUES (?, ?, ?, 'schedule', 1, 'ok', ?, ?, NULL, ?, NULL)`,
     )
     .run(
       randomUUID(),
@@ -361,6 +443,7 @@ async function seedDemoData(page) {
     "0 16 * * 5",
     0,
     1,
+    0,
     at(7 * 24 * 60),
     null,
     "ok",
@@ -375,6 +458,7 @@ async function seedDemoData(page) {
     "0 10 * * 1-5",
     1,
     1,
+    0,
     at(24 * 60),
     gitNext.toISOString(),
     "ok",
@@ -457,6 +541,7 @@ async function seedDemoData(page) {
       await window.fid.settings.saveGithubPat("ghp_demo_guide_token");
       await window.fid.settings.saveJiraToken("jira_demo_guide_token");
       await window.fid.settings.saveJiraSite("https://fid.atlassian.net");
+      await window.fid.settings.saveDatadog({ url: "https://app.datadoghq.com" });
       return { ok: true };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };

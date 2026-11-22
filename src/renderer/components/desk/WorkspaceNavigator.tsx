@@ -115,7 +115,11 @@ export function WorkspaceNavigator({
   );
   const filtering = query.length > 0 || changedOnly;
   return (
-    <aside className="changes-tree changes-navigator" aria-label="Workspace navigator">
+    <aside
+      id="workspace-navigator"
+      className="changes-tree changes-navigator"
+      aria-label="Workspace navigator"
+    >
       {related.length > 0 ? (
         <section className="changes-nav-section">
           <button

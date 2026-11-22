@@ -1,9 +1,18 @@
 import fs from "fs";
 import path from "path";
 import { DatabaseSync } from "node:sqlite";
+import {
+  DATADOG_AGENT_DESCRIPTION,
+  DATADOG_AGENT_NAME,
+  DATADOG_AGENT_PROMPT,
+} from "../../shared/datadog";
 import { AUTO_MODEL_ID, normalizeModelId } from "../../shared/model";
 import { normalizeToolProfile } from "../../shared/tool-profile";
-import { normalizeApprovalMatch } from "../../shared/approval";
+import {
+  approvalRuleMatches,
+  isApprovalMatcher,
+  normalizeApprovalMatch,
+} from "../../shared/approval";
 import { parseMessageAttachments } from "../../shared/attachments";
 import type {
   Agent,
@@ -15,12 +24,14 @@ import type {
   ApprovalRule,
   ApprovalRuleInput,
   ApprovalSource,
+  Fact,
   FileChangeKind,
   Message,
   MessageAttachment,
   MessageRole,
   Routine,
   RoutineInput,
+  RoutineOverview,
   RoutinePatch,
   RoutineRun,
   RoutineRunTrigger,
@@ -58,6 +69,12 @@ const AGENT_SELECT = `
   FROM agents a
 `;
 
+const APPROVAL_RULE_SELECT = `
+  SELECT r.*, a.name AS agent_name
+  FROM approval_rules r
+  LEFT JOIN agents a ON a.id = r.agent_id
+`;
+
 type MessageRow = {
   id: string;
   agent_id: string;
@@ -66,6 +83,8 @@ type MessageRow = {
   created_at: string;
   turn_id: string | null;
   turn_source?: string | null;
+  turn_started_at?: string | null;
+  turn_ended_at?: string | null;
   usage: string | null;
   attachments: string | null;
 };
@@ -112,11 +131,12 @@ type ApprovalRow = {
 
 type ApprovalRuleRow = {
   id: string;
-  agent_id: string;
-  agent_name?: string;
+  agent_id: string | null;
+  agent_name?: string | null;
   kind: string;
   decision: string;
   match: string;
+  matcher: string;
   cwd: string;
   created_at: string;
 };
@@ -173,6 +193,8 @@ type RoutineRow = {
   run_at: string | null;
   enabled: number;
   notify: number;
+  read_only: number | null;
+  consecutive_failures: number | null;
   last_run_at: string | null;
   next_run_at: string | null;
   last_status: string | null;
@@ -333,13 +355,13 @@ export class AppDatabase {
 
       CREATE TABLE IF NOT EXISTS approval_rules (
         id TEXT PRIMARY KEY,
-        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE,
         kind TEXT NOT NULL,
         decision TEXT NOT NULL,
         match TEXT NOT NULL,
+        matcher TEXT NOT NULL DEFAULT 'exact',
         cwd TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        UNIQUE(agent_id, kind, decision, match, cwd)
+        created_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_approval_rules_agent ON approval_rules(agent_id, created_at);
 
@@ -379,6 +401,17 @@ export class AppDatabase {
       );
       CREATE INDEX IF NOT EXISTS idx_inbox_agent ON inbox_items(agent_id, created_at);
 
+      CREATE TABLE IF NOT EXISTS agent_facts (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'user',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_agent_facts_agent ON agent_facts(agent_id, created_at);
+
       CREATE TABLE IF NOT EXISTS workspace_maps (
         workspace_dir TEXT PRIMARY KEY,
         cache_key TEXT NOT NULL,
@@ -399,6 +432,9 @@ export class AppDatabase {
     this.ensureAgentReadOnlyColumn();
     this.ensureAgentPlacementColumns();
     this.ensureRoutineOnceColumns();
+    this.ensureRoutineGuardColumns();
+    this.ensureRoutineRunModeColumn();
+    this.ensureApprovalRuleColumns();
     const now = new Date().toISOString();
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(JIRA_NAME, now, OLD_JIRA_NAME);
     this.db.prepare("UPDATE agents SET name = ?, updated_at = ? WHERE name = ?").run(GIT_NAME, now, OLD_GIT_NAME);
@@ -481,6 +517,68 @@ export class AppDatabase {
     }
   }
 
+  private ensureRoutineGuardColumns(): void {
+    const columns = this.db.prepare("PRAGMA table_info(routines)").all() as { name: string }[];
+    const names = new Set(columns.map((column) => column.name));
+    if (!names.has("read_only")) {
+      this.db.exec("ALTER TABLE routines ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0");
+    }
+    if (!names.has("consecutive_failures")) {
+      this.db.exec("ALTER TABLE routines ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0");
+    }
+  }
+
+  private ensureRoutineRunModeColumn(): void {
+    const columns = this.db.prepare("PRAGMA table_info(routine_runs)").all() as { name: string }[];
+    if (columns.some((column) => column.name === "read_only")) return;
+    this.db.exec("ALTER TABLE routine_runs ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0");
+  }
+
+  /**
+   * Rebuild the old per-agent, exact-only rules table. SQLite cannot drop the
+   * NOT NULL on agent_id in place, and old rows need matcher = 'exact'.
+   */
+  private ensureApprovalRuleColumns(): void {
+    const columns = this.db
+      .prepare("PRAGMA table_info(approval_rules)")
+      .all() as { name: string; notnull: number }[];
+    const agent = columns.find((column) => column.name === "agent_id");
+    const hasMatcher = columns.some((column) => column.name === "matcher");
+    const uniqueIndex = `CREATE UNIQUE INDEX IF NOT EXISTS idx_approval_rules_unique
+      ON approval_rules(COALESCE(agent_id, ''), kind, decision, match, matcher, cwd);`;
+    if (hasMatcher && agent && agent.notnull === 0) {
+      this.db.exec(uniqueIndex);
+      return;
+    }
+    const matcher = hasMatcher ? "matcher" : "'exact'";
+    this.db.exec("BEGIN");
+    try {
+      this.db.exec(`
+        DROP TABLE IF EXISTS approval_rules_new;
+        CREATE TABLE approval_rules_new (
+          id TEXT PRIMARY KEY,
+          agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE,
+          kind TEXT NOT NULL,
+          decision TEXT NOT NULL,
+          match TEXT NOT NULL,
+          matcher TEXT NOT NULL DEFAULT 'exact',
+          cwd TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+        INSERT INTO approval_rules_new (id, agent_id, kind, decision, match, matcher, cwd, created_at)
+          SELECT id, agent_id, kind, decision, match, ${matcher}, cwd, created_at FROM approval_rules;
+        DROP TABLE approval_rules;
+        ALTER TABLE approval_rules_new RENAME TO approval_rules;
+        CREATE INDEX IF NOT EXISTS idx_approval_rules_agent ON approval_rules(agent_id, created_at);
+        ${uniqueIndex}
+      `);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   private ensureMessageTurnColumn(): void {
     const columns = this.db.prepare("PRAGMA table_info(messages)").all() as { name: string }[];
     if (columns.some((column) => column.name === "turn_id")) return;
@@ -514,22 +612,61 @@ export class AppDatabase {
 
   private seed(): void {
     const count = this.db.prepare("SELECT COUNT(*) AS c FROM agents").get() as { c: number };
-    if (count.c > 0) return;
-
-    const now = new Date().toISOString();
-    const insertAgent = this.db.prepare(
-      `INSERT INTO agents (id, name, description, system_prompt, workspace_dir, model, tool_profile, created_at, updated_at)
-       VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
-    );
-    this.db.exec("BEGIN");
-    try {
-      insertAgent.run(crypto.randomUUID(), JIRA_NAME, JIRA_DESCRIPTION, JIRA_PROMPT, AUTO_MODEL_ID, "browser", now, now);
-      insertAgent.run(crypto.randomUUID(), GIT_NAME, GIT_DESCRIPTION, GIT_PROMPT, AUTO_MODEL_ID, "developer", now, now);
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
+    if (count.c === 0) {
+      const now = new Date().toISOString();
+      const insertAgent = this.db.prepare(
+        `INSERT INTO agents (id, name, description, system_prompt, workspace_dir, model, tool_profile, created_at, updated_at)
+         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+      );
+      this.db.exec("BEGIN");
+      try {
+        insertAgent.run(crypto.randomUUID(), JIRA_NAME, JIRA_DESCRIPTION, JIRA_PROMPT, AUTO_MODEL_ID, "browser", now, now);
+        insertAgent.run(crypto.randomUUID(), GIT_NAME, GIT_DESCRIPTION, GIT_PROMPT, AUTO_MODEL_ID, "developer", now, now);
+        this.db.exec("COMMIT");
+      } catch (error) {
+        this.db.exec("ROLLBACK");
+        throw error;
+      }
     }
+    this.ensureDatadogAgent();
+  }
+
+  /**
+   * Add the Datadog analyst once for existing installs, and move a saved
+   * native API prompt to the browser-only contract. The saved flag means
+   * deleting the agent later does not bring it back on the next launch.
+   */
+  private ensureDatadogAgent(): void {
+    const existing = this.db
+      .prepare("SELECT id, system_prompt FROM agents WHERE name = ?")
+      .get(DATADOG_AGENT_NAME) as { id: string; system_prompt: string } | undefined;
+    if (existing) {
+      // Earlier 21 November builds used native API tools. Move that saved
+      // prompt to the browser-only contract without touching custom prompts.
+      if (
+        existing.system_prompt.includes("datadog_logs_search") ||
+        existing.system_prompt.includes("datadog_logs_aggregate")
+      ) {
+        this.db
+          .prepare(
+            "UPDATE agents SET system_prompt = ?, tool_profile = ?, updated_at = ? WHERE id = ?",
+          )
+          .run(DATADOG_AGENT_PROMPT, "datadog", new Date().toISOString(), existing.id);
+      }
+    }
+    if (this.getSetting("datadog_agent_seeded")) return;
+    if (!existing) {
+      this.createAgent({
+        name: DATADOG_AGENT_NAME,
+        description: DATADOG_AGENT_DESCRIPTION,
+        systemPrompt: DATADOG_AGENT_PROMPT,
+        workspaceDir: null,
+        model: AUTO_MODEL_ID,
+        toolProfile: "datadog",
+        memoryEnabled: true,
+      });
+    }
+    this.setSetting("datadog_agent_seeded", "1");
   }
 
   listAgents(): Agent[] {
@@ -673,7 +810,8 @@ export class AppDatabase {
   listMessages(agentId: string): Message[] {
     const rows = this.db
       .prepare(
-        `SELECT m.*, t.source AS turn_source
+        `SELECT m.*, t.source AS turn_source,
+                t.started_at AS turn_started_at, t.ended_at AS turn_ended_at
          FROM messages m
          LEFT JOIN turns t ON t.id = m.turn_id
          WHERE m.agent_id = ?
@@ -686,7 +824,8 @@ export class AppDatabase {
   getMessage(id: string): Message | null {
     const row = this.db
       .prepare(
-        `SELECT m.*, t.source AS turn_source
+        `SELECT m.*, t.source AS turn_source,
+                t.started_at AS turn_started_at, t.ended_at AS turn_ended_at
          FROM messages m
          LEFT JOIN turns t ON t.id = m.turn_id
          WHERE m.id = ?`,
@@ -1023,52 +1162,115 @@ export class AppDatabase {
   }
 
   findApprovalRule(agentId: string, kind: ApprovalKind, match: string, cwd: string): ApprovalRule | null {
-    const row = this.db
+    const rows = this.db
       .prepare(
-        `SELECT r.*, a.name AS agent_name
-         FROM approval_rules r
-         JOIN agents a ON a.id = r.agent_id
-         WHERE r.agent_id = ? AND r.kind = ? AND r.match = ? AND (r.cwd = ? OR r.cwd = '')
-         ORDER BY CASE r.decision WHEN 'deny' THEN 0 ELSE 1 END, r.created_at DESC
-         LIMIT 1`,
+        `${APPROVAL_RULE_SELECT}
+         WHERE r.kind = ? AND (r.agent_id = ? OR r.agent_id IS NULL)
+           AND (r.cwd = ? OR r.cwd = '')`,
       )
-      .get(agentId, kind, normalizeApprovalMatch(match), cwd) as ApprovalRuleRow | undefined;
-    return row ? mapApprovalRule(row) : null;
+      .all(kind, agentId, cwd) as ApprovalRuleRow[];
+    return (
+      rows
+        .map(mapApprovalRule)
+        .filter((rule) => approvalRuleMatches(rule, match))
+        .sort((left, right) => {
+          if (left.decision !== right.decision) return left.decision === "deny" ? -1 : 1;
+          if ((left.agentId === null) !== (right.agentId === null)) {
+            return left.agentId === null ? 1 : -1;
+          }
+          return right.createdAt.localeCompare(left.createdAt);
+        })[0] ?? null
+    );
   }
 
-  createApprovalRule(input: ApprovalRuleInput): ApprovalRule {
+  private cleanApprovalRuleInput(
+    input: ApprovalRuleInput,
+  ): { agentId: string | null; match: string; cwd: string } {
     if (input.decision !== "allow" && input.decision !== "deny") {
       throw new Error("Approval rule decision must be allow or deny");
     }
+    if (!isApprovalMatcher(input.matcher)) {
+      throw new Error("Approval rule match type must be exact or prefix");
+    }
     const match = normalizeApprovalMatch(input.match);
     if (!match) throw new Error("Approval rule match is required");
-    const cwd = input.cwd.trim();
-    const decision = input.decision;
+    const agentId = input.agentId?.trim() || null;
+    if (agentId && !this.getAgent(agentId)) throw new Error("Agent not found");
+    return { agentId, match, cwd: input.cwd.trim() };
+  }
+
+  createApprovalRule(input: ApprovalRuleInput): ApprovalRule {
+    const { agentId, match, cwd } = this.cleanApprovalRuleInput(input);
     const createdAt = new Date().toISOString();
     this.db
       .prepare(
-        `INSERT OR IGNORE INTO approval_rules (id, agent_id, kind, decision, match, cwd, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO approval_rules
+           (id, agent_id, kind, decision, match, matcher, cwd, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(crypto.randomUUID(), input.agentId, input.kind, decision, match, cwd, createdAt);
+      .run(
+        crypto.randomUUID(),
+        agentId,
+        input.kind,
+        input.decision,
+        match,
+        input.matcher,
+        cwd,
+        createdAt,
+      );
     const row = this.db
       .prepare(
-        `SELECT r.*, a.name AS agent_name
-         FROM approval_rules r
-         JOIN agents a ON a.id = r.agent_id
-         WHERE r.agent_id = ? AND r.kind = ? AND r.decision = ? AND r.match = ? AND r.cwd = ?`,
+        `${APPROVAL_RULE_SELECT}
+         WHERE r.agent_id IS ? AND r.kind = ? AND r.decision = ? AND r.match = ?
+           AND r.matcher = ? AND r.cwd = ?`,
       )
-      .get(input.agentId, input.kind, decision, match, cwd) as ApprovalRuleRow | undefined;
+      .get(
+        agentId,
+        input.kind,
+        input.decision,
+        match,
+        input.matcher,
+        cwd,
+      ) as ApprovalRuleRow | undefined;
     if (!row) throw new Error("Could not save the approval rule");
     return mapApprovalRule(row);
   }
 
+  updateApprovalRule(id: string, input: ApprovalRuleInput): ApprovalRule {
+    const current = this.getApprovalRule(id);
+    if (!current) throw new Error("Approval rule not found");
+    const { agentId, match, cwd } = this.cleanApprovalRuleInput(input);
+    try {
+      this.db
+        .prepare(
+          `UPDATE approval_rules
+           SET agent_id = ?, kind = ?, decision = ?, match = ?, matcher = ?, cwd = ?
+           WHERE id = ?`,
+        )
+        .run(agentId, input.kind, input.decision, match, input.matcher, cwd, id);
+    } catch (error) {
+      if (error instanceof Error && /unique/i.test(error.message)) {
+        throw new Error("A rule for that command already exists.");
+      }
+      throw error;
+    }
+    const updated = this.getApprovalRule(id);
+    if (!updated) throw new Error("Could not update the approval rule");
+    return updated;
+  }
+
+  getApprovalRule(id: string): ApprovalRule | null {
+    const row = this.db
+      .prepare(`${APPROVAL_RULE_SELECT} WHERE r.id = ?`)
+      .get(id) as ApprovalRuleRow | undefined;
+    return row ? mapApprovalRule(row) : null;
+  }
+
   listApprovalRules(agentId?: string): ApprovalRule[] {
-    const sql = `SELECT r.*, a.name AS agent_name
-      FROM approval_rules r
-      JOIN agents a ON a.id = r.agent_id
-      ${agentId ? "WHERE r.agent_id = ?" : ""}
-      ORDER BY a.name COLLATE NOCASE, r.created_at DESC`;
+    const sql = `${APPROVAL_RULE_SELECT}
+      ${agentId ? "WHERE r.agent_id = ? OR r.agent_id IS NULL" : ""}
+      ORDER BY CASE WHEN r.agent_id IS NULL THEN 0 ELSE 1 END,
+        a.name COLLATE NOCASE, r.created_at DESC`;
     const statement = this.db.prepare(sql);
     const rows = (agentId ? statement.all(agentId) : statement.all()) as ApprovalRuleRow[];
     return rows.map(mapApprovalRule);
@@ -1090,6 +1292,18 @@ export class AppDatabase {
     return rows.map(mapRoutine);
   }
 
+  listAllRoutines(): RoutineOverview[] {
+    const rows = this.db
+      .prepare(
+        `SELECT r.*, a.name AS agent_name
+         FROM routines r
+         JOIN agents a ON a.id = r.agent_id
+         ORDER BY a.name COLLATE NOCASE, r.enabled DESC, r.name COLLATE NOCASE`,
+      )
+      .all() as Array<RoutineRow & { agent_name: string }>;
+    return rows.map((row) => ({ ...mapRoutine(row), agentName: row.agent_name }));
+  }
+
   getRoutine(id: string): Routine | null {
     const row = this.db.prepare("SELECT * FROM routines WHERE id = ?").get(id) as RoutineRow | undefined;
     return row ? mapRoutine(row) : null;
@@ -1101,8 +1315,9 @@ export class AppDatabase {
     this.db
       .prepare(
         `INSERT INTO routines (
-          id, agent_id, name, prompt, cron, once, run_at, enabled, notify, last_run_at, next_run_at, last_status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL, ?, ?)`,
+          id, agent_id, name, prompt, cron, once, run_at, enabled, notify, read_only, consecutive_failures,
+          last_run_at, next_run_at, last_status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, NULL, ?, ?)`,
       )
       .run(
         id,
@@ -1114,6 +1329,7 @@ export class AppDatabase {
         input.runAt ?? null,
         input.enabled !== false ? 1 : 0,
         input.notify !== false ? 1 : 0,
+        input.readOnly ? 1 : 0,
         nextRunAt,
         now,
         now,
@@ -1126,10 +1342,12 @@ export class AppDatabase {
     const now = new Date().toISOString();
     const once = patch.once ?? current.once;
     const runAt = once ? (patch.runAt !== undefined ? patch.runAt : current.runAt) : null;
+    const enabling = (patch.enabled ?? current.enabled) && !current.enabled;
     this.db
       .prepare(
         `UPDATE routines
-         SET name = ?, prompt = ?, cron = ?, once = ?, run_at = ?, enabled = ?, notify = ?, next_run_at = ?, updated_at = ?
+         SET name = ?, prompt = ?, cron = ?, once = ?, run_at = ?, enabled = ?, notify = ?, read_only = ?,
+             consecutive_failures = ?, next_run_at = ?, updated_at = ?
          WHERE id = ?`,
       )
       .run(
@@ -1140,6 +1358,8 @@ export class AppDatabase {
         runAt,
         (patch.enabled ?? current.enabled) ? 1 : 0,
         (patch.notify ?? current.notify) ? 1 : 0,
+        (patch.readOnly ?? current.readOnly) ? 1 : 0,
+        enabling ? 0 : current.consecutiveFailures,
         nextRunAt,
         now,
         id,
@@ -1161,16 +1381,100 @@ export class AppDatabase {
       .run(new Date().toISOString(), status.slice(0, 500), nextRunAt, new Date().toISOString(), id);
   }
 
-  startRoutineRun(input: { routineId: string; agentId: string; trigger: RoutineRunTrigger }): RoutineRun {
+  startRoutineRun(input: {
+    routineId: string;
+    agentId: string;
+    trigger: RoutineRunTrigger;
+    readOnly?: boolean;
+  }): RoutineRun {
     const id = crypto.randomUUID();
     const startedAt = new Date().toISOString();
     this.db
       .prepare(
-        `INSERT INTO routine_runs (id, routine_id, agent_id, trigger, status, started_at)
-         VALUES (?, ?, ?, ?, 'running', ?)`,
+        `INSERT INTO routine_runs (id, routine_id, agent_id, trigger, read_only, status, started_at)
+         VALUES (?, ?, ?, ?, ?, 'running', ?)`,
       )
-      .run(id, input.routineId, input.agentId, input.trigger, startedAt);
+      .run(id, input.routineId, input.agentId, input.trigger, input.readOnly ? 1 : 0, startedAt);
     return this.requireRoutineRun(id);
+  }
+
+  setRoutineFailures(id: string, count: number, disable: boolean): Routine {
+    const now = new Date().toISOString();
+    if (disable) {
+      this.db
+        .prepare(
+          `UPDATE routines
+           SET consecutive_failures = ?, enabled = 0, next_run_at = NULL, updated_at = ?
+           WHERE id = ?`,
+        )
+        .run(count, now, id);
+    } else {
+      this.db
+        .prepare("UPDATE routines SET consecutive_failures = ?, updated_at = ? WHERE id = ?")
+        .run(count, now, id);
+    }
+    return this.requireRoutine(id);
+  }
+
+  listFacts(agentId: string): Fact[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM agent_facts
+         WHERE agent_id = ? OR agent_id IS NULL
+         ORDER BY CASE WHEN agent_id IS NULL THEN 1 ELSE 0 END, created_at ASC`,
+      )
+      .all(agentId) as FactRow[];
+    return rows.map(mapFact);
+  }
+
+  listAllFacts(): Fact[] {
+    const rows = this.db
+      .prepare("SELECT * FROM agent_facts ORDER BY created_at ASC")
+      .all() as FactRow[];
+    return rows.map(mapFact);
+  }
+
+  getFact(id: string): Fact | null {
+    const row = this.db.prepare("SELECT * FROM agent_facts WHERE id = ?").get(id) as FactRow | undefined;
+    return row ? mapFact(row) : null;
+  }
+
+  insertFact(input: { agentId: string | null; content: string; enabled: boolean }): Fact {
+    const now = new Date().toISOString();
+    const id = crypto.randomUUID();
+    this.db
+      .prepare(
+        `INSERT INTO agent_facts (id, agent_id, content, source, enabled, created_at, updated_at)
+         VALUES (?, ?, ?, 'user', ?, ?, ?)`,
+      )
+      .run(id, input.agentId, input.content, input.enabled ? 1 : 0, now, now);
+    const fact = this.getFact(id);
+    if (!fact) throw new Error("Could not save the fact");
+    return fact;
+  }
+
+  updateFact(id: string, patch: { content?: string; enabled?: boolean }): Fact {
+    const current = this.getFact(id);
+    if (!current) throw new Error("Fact not found");
+    const now = new Date().toISOString();
+    this.db
+      .prepare("UPDATE agent_facts SET content = ?, enabled = ?, updated_at = ? WHERE id = ?")
+      .run(
+        patch.content ?? current.content,
+        (patch.enabled ?? current.enabled) ? 1 : 0,
+        now,
+        id,
+      );
+    const fact = this.getFact(id);
+    if (!fact) throw new Error("Fact not found");
+    return fact;
+  }
+
+  deleteFact(id: string): Fact {
+    const current = this.getFact(id);
+    if (!current) throw new Error("Fact not found");
+    this.db.prepare("DELETE FROM agent_facts WHERE id = ?").run(id);
+    return current;
   }
 
   finishRoutineRun(
@@ -1366,6 +1670,8 @@ function mapMessage(row: MessageRow): Message {
     createdAt: row.created_at,
     turnId: row.turn_id ?? null,
     turnSource: row.turn_source ?? null,
+    turnStartedAt: row.turn_started_at ?? null,
+    turnEndedAt: row.turn_ended_at ?? null,
     usage: parseUsage(row.usage),
     attachments: parseMessageAttachments(row.attachments),
   };
@@ -1399,12 +1705,23 @@ function parseUsage(raw: string | null): TokenUsage | null {
   }
 }
 
+type FactRow = {
+  id: string;
+  agent_id: string | null;
+  content: string;
+  source: string;
+  enabled: number;
+  created_at: string;
+  updated_at: string;
+};
+
 type RoutineRunRow = {
   id: string;
   routine_id: string;
   agent_id: string;
   routine_name: string;
   trigger: string;
+  read_only: number | null;
   status: string;
   started_at: string;
   ended_at: string | null;
@@ -1431,6 +1748,7 @@ function mapRoutineRun(row: RoutineRunRow): RoutineRun {
     agentId: row.agent_id,
     routineName: row.routine_name,
     trigger: row.trigger === "manual" ? "manual" : "schedule",
+    readOnly: row.read_only === 1,
     status: row.status,
     startedAt: row.started_at,
     endedAt: row.ended_at,
@@ -1464,9 +1782,23 @@ function mapRoutine(row: RoutineRow): Routine {
     runAt: row.run_at,
     enabled: row.enabled === 1,
     notify: row.notify === 1,
+    readOnly: row.read_only === 1,
+    consecutiveFailures: row.consecutive_failures ?? 0,
     lastRunAt: row.last_run_at,
     nextRunAt: row.next_run_at,
     lastStatus: row.last_status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapFact(row: FactRow): Fact {
+  return {
+    id: row.id,
+    agentId: row.agent_id,
+    content: row.content,
+    source: "user",
+    enabled: row.enabled === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1531,10 +1863,11 @@ function mapApprovalRule(row: ApprovalRuleRow): ApprovalRule {
   return {
     id: row.id,
     agentId: row.agent_id,
-    agentName: row.agent_name ?? "",
+    agentName: row.agent_name ?? "All agents",
     kind: readApprovalKind(row.kind),
     decision: row.decision === "deny" ? "deny" : "allow",
     match: row.match,
+    matcher: row.matcher === "prefix" ? "prefix" : "exact",
     cwd: row.cwd,
     createdAt: row.created_at,
   };

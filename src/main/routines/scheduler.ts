@@ -1,5 +1,6 @@
 import { schedule, validate, type ScheduledTask } from "node-cron";
 import { SETTING_ROUTINES_PAUSED } from "../../shared/app-settings";
+import { nextRoutineFailures, routineFailureNotice } from "../../shared/routine-guard";
 import { pruneBeforeIso, routineStatusLabel, runExcerpt } from "../../shared/routine-runs";
 import type { Routine } from "../../shared/types";
 import type { AppDatabase } from "../db";
@@ -14,6 +15,7 @@ type TurnRunner = {
     agentId: string;
     text: string;
     source: "chat" | "routine";
+    reportOnly?: boolean;
     notify?: (text: string) => void;
   }): Promise<string>;
   abort?(agentId: string): Promise<void>;
@@ -173,6 +175,7 @@ export class Scheduler {
       routineId: routine.id,
       agentId: routine.agentId,
       trigger: manual ? "manual" : "schedule",
+      readOnly: routine.readOnly,
     });
     this.inflight.set(id, run.id);
     const busy = this.activeAgents.has(routine.agentId) || this.runner.isRunning(routine.agentId);
@@ -181,10 +184,7 @@ export class Scheduler {
       if (busy) {
         const finished = this.db.finishRoutineRun(run.id, { status: "skipped: agent busy" });
         this.db.markRoutineRun(id, "skipped: agent busy", next);
-        if (!manual) this.noteFinished(routine, finished);
-        if (!manual && routine.notify) {
-          notify(routine.name, "Skipped because the agent is already working.", () => this.onOpenAgent?.(routine.agentId));
-        }
+        this.settleRun(routine, finished, "skipped: agent busy", manual, "Skipped because the agent is already working.");
         return;
       }
       this.db.markRoutineRun(id, "running", next);
@@ -192,6 +192,7 @@ export class Scheduler {
         agentId: routine.agentId,
         text: routine.prompt,
         source: "routine",
+        reportOnly: routine.readOnly,
         notify: !manual && routine.notify ? (message) => notify(routine.name, message, () => this.onOpenAgent?.(routine.agentId)) : undefined,
       });
       const turn = this.db.latestTurn(routine.agentId);
@@ -200,10 +201,7 @@ export class Scheduler {
       const status = stopped ? "stopped" : "ok";
       const finished = this.db.finishRoutineRun(run.id, { status, turnId, output: runExcerpt(text) });
       this.db.markRoutineRun(id, status, next);
-      if (!manual && routine.notify) {
-        notify(routine.name, text || routineStatusLabel(status), () => this.onOpenAgent?.(routine.agentId));
-      }
-      if (!manual) this.noteFinished(routine, finished);
+      this.settleRun(routine, finished, status, manual, text || routineStatusLabel(status));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const stopped = this.stopping.has(id);
@@ -214,13 +212,55 @@ export class Scheduler {
         output: runExcerpt(message),
       });
       this.db.markRoutineRun(id, status, next);
-      if (!manual && routine.notify) notify(routine.name, message, () => this.onOpenAgent?.(routine.agentId));
-      if (!manual) this.noteFinished(routine, finished);
+      this.settleRun(routine, finished, status, manual, message);
     } finally {
       this.inflight.delete(id);
       if (!busy) this.activeAgents.delete(routine.agentId);
       this.stopping.delete(id);
       this.onInbox?.();
+    }
+  }
+
+  private settleRun(
+    routine: Routine,
+    run: { id: string; status: string; output: string | null; error: string | null },
+    status: string,
+    manual: boolean,
+    toast: string,
+  ): void {
+    const outcome = nextRoutineFailures(status, routine.consecutiveFailures, manual);
+    if (outcome.changed || outcome.disable) {
+      this.db.setRoutineFailures(routine.id, outcome.count, outcome.disable);
+      if (outcome.disable) this.dropJob(routine.id);
+    }
+    if (manual) return;
+    if (outcome.notice && outcome.changed) {
+      const body = routineFailureNotice(outcome.notice, run.error ?? run.output ?? "");
+      this.db.addInboxItem({
+        agentId: routine.agentId,
+        kind: "routine",
+        refId: run.id,
+        title: routine.name,
+        body,
+      });
+      if (routine.notify) notify(routine.name, body, () => this.onOpenAgent?.(routine.agentId));
+      return;
+    }
+    if (outcome.notice === null && status.startsWith("error:")) return;
+    if (routine.notify) notify(routine.name, toast, () => this.onOpenAgent?.(routine.agentId));
+    this.noteFinished(routine, run);
+  }
+
+  private dropJob(id: string): void {
+    const job = this.jobs.get(id);
+    if (job) {
+      void job.destroy();
+      this.jobs.delete(id);
+    }
+    const timer = this.onceJobs.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      this.onceJobs.delete(id);
     }
   }
 
